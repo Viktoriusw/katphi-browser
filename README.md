@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="Katphi Browser" width="220" />
+  <img src="logokatphi.png" alt="Katphi Browser" width="220" />
 </p>
 
 ## Katphi Browser
