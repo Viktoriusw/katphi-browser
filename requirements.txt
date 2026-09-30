@@ -1,0 +1,36 @@
+# Katphi Browser — dependencias de Python
+#
+# PySide6 (con Qt WebEngine) es OBLIGATORIO: instálalo primero y por separado
+#   pip install --upgrade "PySide6>=6.5.0"
+#   python3 -c "from PySide6.QtWebEngineWidgets import QWebEngineView"
+# Katphi usa PySide6 exclusivamente (PyQt5/PyQt6 no son compatibles).
+
+# ── Núcleo del navegador ──────────────────────────────────────────────────────
+PySide6>=6.5.0
+requests>=2.28.0
+PySocks>=1.7.1            # proxys SOCKS (Tor) para requests
+beautifulsoup4>=4.11.0
+numpy>=1.24.0
+PyYAML>=6.0
+PyJWT>=2.8.0
+cryptography>=41.0.0
+psutil>=5.9.0
+packaging>=23.0
+stem>=1.8.0               # control de Tor
+
+# ── Librerías disponibles para los plugins de la tienda ──────────────────────
+# Los plugins descargados solo pueden usar la biblioteca estándar y estas
+# librerías, que deben estar instaladas en el entorno del navegador.
+lxml>=4.9.0
+aiohttp>=3.8.0
+aiohttp-socks>=0.7.0
+pandas>=1.5.0
+openpyxl>=3.0.0
+Pillow>=9.0.0
+reportlab>=4.0.0
+textstat>=0.7.3
+schedule>=1.2.0
+
+# ── Opcional: navegación asistida por IA (embeddings locales) ─────────────────
+# Descarga torch (varios GB). Sin ella, el resto del navegador funciona igual.
+# sentence-transformers>=2.2.0

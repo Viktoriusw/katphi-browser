@@ -1,0 +1,62 @@
+# Plantilla de configuración de Katphi Browser.
+# Copia este archivo como config.yaml y rellena tus propios valores.
+# config.yaml está en .gitignore y NUNCA debe commitearse.
+backend:
+  fallback_urls: []
+  initial_retry_delay: 1.0
+  license_validation:
+    cache_duration: 300
+    interval: 300
+  max_retries: 5
+  max_retry_delay: 30.0
+  primary_url: https://api.katphi.com
+  retry_backoff: 2.0
+  timeouts:
+    api: 20
+    auth: 30
+    connection_check: 15
+    plugin_download: 120
+    quick_check: 10
+database:
+  bookmarks: bookmarks.db
+  passwords: passwords.db
+  session_file: session.db
+frontend:
+  dashboard_url: https://katphi.com/app/dashboard.html
+  login_url: https://katphi.com/auth/login.html
+  registration_url: https://katphi.com/auth/registro.html
+  url: https://katphi.com
+logging:
+  backup_count: 3
+  file: katphi_browser.log
+  level: INFO
+  max_size: 10485760
+network:
+  connection_timeout: 10
+  health_check_interval: 30
+  mode: network
+plugins:
+  backup_directory: ./plugin_backups
+  cache_duration: 300
+  create_backup: true
+  directory: ../products
+  validate_checksum: true
+  validate_signature: false
+  validation_interval: 300
+security:
+  access_token_expire_minutes: 30
+  algorithm: HS256
+  refresh_token_expire_days: 7
+  secret_key: CHANGE_ME_SET_VIA_ENV_VAR
+  use_keyring: true
+  use_qsettings: true
+smtp:
+  from_email: noreply@katphi.com
+  host: localhost
+  port: 1025
+  web_port: 8025
+tor:
+  control_port: 9151
+  enabled: false
+  pending_restore_urls: []
+  socks_port: 9150

@@ -1,0 +1,69 @@
+{
+  "id": "light",
+  "name": "Light Theme",
+  "description": "Modern Light Theme (Material Design)",
+  "version": "2.0.0",
+  "colors": {
+    "primary": "#202124",
+    "secondary": "#5F6368",
+    "background": "#FFFFFF",
+    "surface": "#F1F3F4",
+    "accent": "#1A73E8",
+    "success": "#1E8E3E",
+    "warning": "#F9AB00",
+    "error": "#D93025",
+    "border": "#DADCE0",
+    "hover": "#f1f3f4",
+    "selected": "#E8F0FE",
+    "button_background": "transparent",
+    "button_border": "transparent",
+    "button_hover": "#F1F3F4",
+    "button_pressed": "#E8EAED",
+    "toolbar_background": "#FFFFFF",
+    "toolbar_border": "#F1F3F4",
+    "input_background": "#F1F3F4",
+    "input_border": "transparent",
+    "input_focus": "#1A73E8",
+    "tab_background": "#F1F3F4",
+    "tab_selected": "#FFFFFF",
+    "tab_hover": "#E8EAED",
+    "login_button": "#1A73E8",
+    "login_button_hover": "#174EA6",
+    "login_button_pressed": "#0D47A1",
+    "logout_button": "#D93025",
+    "logout_button_hover": "#A50E0E",
+    "logout_button_pressed": "#820A0A",
+    "status_success": "#188038",
+    "icon_color": "#5F6368",
+    "glow_accent": "#1A73E8",
+    "url_bar_background": "#F1F3F4",
+    "url_bar_text": "#202124",
+    "url_bar_border": "#DADCE0",
+    "url_bar_placeholder": "#5F6368"
+  },
+  "fonts": {
+    "family": "Segoe UI, Arial, sans-serif",
+    "size_small": "9pt",
+    "size_normal": "10pt",
+    "size_large": "12pt",
+    "size_title": "14pt"
+  },
+  "spacing": {
+    "xs": "2px",
+    "sm": "4px",
+    "md": "8px",
+    "lg": "12px",
+    "xl": "16px"
+  },
+  "borders": {
+    "radius": "8px",
+    "width": "1px"
+  },
+  "effects": {
+    "glow": false,
+    "neon": false,
+    "scan_lines": false,
+    "glow_intensity": 0,
+    "hover_brightness": 0
+  }
+}

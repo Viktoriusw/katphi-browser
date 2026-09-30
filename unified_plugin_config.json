@@ -1,0 +1,156 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2024-01-01T00:00:00Z",
+  "plugins": {
+    "scraping": {
+      "name": "Advanced Scraping",
+      "version": "1.0.0",
+      "author": "Katphi Team",
+      "description": "Professional web scraping and data extraction tools. Analyze HTML, select elements, detect patterns, and extract data automatically.",
+      "premium": true,
+      "price": 9.99,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "category": "data_extraction",
+      "tags": ["scraping", "data", "extraction", "automation"],
+      "features": ["HTML analysis", "Element selection", "Pattern detection", "Data extraction", "Export tools"],
+      "free_features": ["basic_scraping", "simple_export"],
+      "premium_features": ["advanced_scraping", "scheduled_scraping", "javascript_handling", "proxy_rotation", "data_analysis"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "1.0.0",
+        "dependencies": []
+      },
+      "permissions": ["web_access", "file_system", "data_export"],
+      "icon": "scraping_icon.png",
+      "download_url": "https://api.katphi.com/api/plugins/scraping/download",
+      "info_url": "https://api.katphi.com/api/plugins/scraping/info"
+    },
+    "proxy": {
+      "name": "Proxy Management",
+      "version": "1.0.0",
+      "author": "Katphi Team",
+      "description": "Advanced proxy configuration and management. Support for HTTP, HTTPS, and SOCKS proxies with automatic rotation and validation.",
+      "premium": true,
+      "price": 7.99,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "category": "network",
+      "tags": ["proxy", "network", "privacy", "security"],
+      "features": ["Multiple proxy types", "Auto rotation", "Validation", "Bulk import", "Site-specific config"],
+      "free_features": ["basic_proxy"],
+      "premium_features": ["proxy_rotation", "proxy_testing", "multiple_profiles", "geo_location", "speed_testing"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "1.0.0",
+        "dependencies": []
+      },
+      "permissions": ["network_access", "proxy_configuration"],
+      "icon": "proxy_icon.png",
+      "download_url": "https://api.katphi.com/api/plugins/proxy/download",
+      "info_url": "https://api.katphi.com/api/plugins/proxy/info"
+    },
+    "tor": {
+      "name": "Tor Network",
+      "version": "1.0.0",
+      "author": "Katphi Team",
+      "description": "Navegación anónima via red Tor. Conecta a la red Tor para enrutar todo el tráfico de forma segura.",
+      "premium": false,
+      "category": "network",
+      "tags": ["tor", "privacy", "anonymity", "security"],
+      "features": ["Tor integration", "New identity", "Bootstrap progress"],
+      "requirements": {
+        "min_browser_version": "1.0.0",
+        "dependencies": ["stem"]
+      },
+      "permissions": ["network_access"],
+      "icon": "icons/tor_off.png",
+      "type": "native"
+    },
+    "themes": {
+      "name": "Advanced Theme System",
+      "version": "1.0.0",
+      "author": "Katphi Team",
+      "description": "Professional theme management with real-time customization. Create and apply custom themes with advanced color, font, and spacing controls.",
+      "premium": true,
+      "price": 4.99,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "category": "customization",
+      "tags": ["themes", "customization", "ui", "design"],
+      "features": ["Real-time preview", "Custom themes", "Color picker", "Font configuration", "Export/Import"],
+      "free_features": ["basic_themes"],
+      "premium_features": ["custom_themes", "theme_editor", "animated_themes", "import_export"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "1.0.0",
+        "dependencies": []
+      },
+      "permissions": ["ui_customization", "file_system"],
+      "icon": "themes_icon.png",
+      "download_url": "https://api.katphi.com/api/plugins/themes/download",
+      "info_url": "https://api.katphi.com/api/plugins/themes/info"
+    },
+    "ai_live_ide": {
+      "name": "AI Live IDE",
+      "version": "1.1.0",
+      "author": "Katphi Team",
+      "description": "IDE en vivo con chat IA tipo Cursor/Copilot: Monaco Editor + Live Preview + +12 modelos de Hugging Face + generación multi-archivo. Plugin estrella de Katphi.",
+      "premium": true,
+      "price": 14.99,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "category": "developer_tools",
+      "tags": ["ide", "editor", "ai", "huggingface", "qwen", "monaco", "live-preview", "developer", "chat", "copilot", "cursor"],
+      "features": [
+        "Editor Monaco profesional embebido",
+        "Live Preview simultáneo (HTML/CSS/JS)",
+        "Chat IA conversacional tipo Cursor/Copilot con streaming",
+        "Selector de +12 modelos HF (Qwen2.5-Coder, Llama 3.3, Mixtral, DeepSeek, Phi-4, Gemma…)",
+        "Generación multi-archivo: la IA modifica varios ficheros en un prompt",
+        "Sistema de revisión y aplicación de cambios con diff lado a lado",
+        "Auto-reload con QFileSystemWatcher",
+        "Tema oscuro consistente con el navegador"
+      ],
+      "free_features": [],
+      "premium_features": ["ai_code_edit", "ai_chat", "live_preview", "project_open", "save_file"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "1.0.0",
+        "dependencies": ["requests"]
+      },
+      "permissions": ["file_system", "web_access", "subprocess", "ai_inference"],
+      "icon": "",
+      "download_url": "https://api.katphi.com/api/plugins/ai_live_ide/download",
+      "info_url": "https://api.katphi.com/api/plugins/ai_live_ide/info"
+    }
+  },
+  "categories": [
+    {
+      "id": "data_extraction",
+      "name": "Data Extraction",
+      "description": "Tools for extracting and processing data from websites"
+    },
+    {
+      "id": "network",
+      "name": "Network & Privacy",
+      "description": "Network tools and privacy enhancement features"
+    },
+    {
+      "id": "customization",
+      "name": "Customization",
+      "description": "UI customization and theming tools"
+    },
+    {
+      "id": "developer_tools",
+      "name": "Developer Tools",
+      "description": "IDE, editores y herramientas para desarrolladores"
+    }
+  ],
+  "settings": {
+    "auto_load_plugins": true,
+    "plugin_directory": "plugins",
+    "config_file": "plugins/plugin_config.json",
+    "trial_settings_file": "plugins/trial_settings.json"
+  }
+}
