@@ -1,0 +1,71 @@
+{
+  "id": "light",
+  "name": "Light Theme",
+  "description": "Tema claro por defecto con alto contraste",
+  "version": "1.0.0",
+  "colors": {
+    "primary": "#000000",
+    "secondary": "#333333",
+    "background": "#f5f5f5",
+    "surface": "#ffffff",
+    "accent": "#0078d4",
+    "success": "#107c10",
+    "warning": "#ff8c00",
+    "error": "#d13438",
+    "border": "#e0e0e0",
+    "hover": "#e8e8e8",
+    "selected": "#cce8ff",
+    "button_background": "#ffffff",
+    "button_border": "#d0d0d0",
+    "button_hover": "#f5f5f5",
+    "button_pressed": "#e8e8e8",
+    "toolbar_background": "#f5f6f7",
+    "toolbar_border": "#dcdcdc",
+    "input_background": "#ffffff",
+    "input_border": "#d0d0d0",
+    "input_focus": "#0078d4",
+    "tab_background": "#D0D0D0",
+    "tab_selected": "#ffffff",
+    "tab_hover": "#BDBDBD",
+    "login_button": "#3498db",
+    "login_button_hover": "#2980b9",
+    "login_button_pressed": "#21618c",
+    "logout_button": "#e74c3c",
+    "logout_button_hover": "#c0392b",
+    "logout_button_pressed": "#a93226",
+    "status_success": "#27ae60",
+    "icon_color": "#333333",
+    "icon_button_background": "transparent",
+    "icon_button_hover": "#e0e0e0",
+    "glow_accent": "#0078d4",
+    "navbar_button_background": "transparent",
+    "navbar_button_hover": "#e8e8e8",
+    "navbar_button_pressed": "#d0d0d0",
+    "navbar_button_text": "#333333"
+  },
+  "fonts": {
+    "family": "Segoe UI, Arial, sans-serif",
+    "size_small": "9pt",
+    "size_normal": "10pt",
+    "size_large": "12pt",
+    "size_title": "14pt"
+  },
+  "spacing": {
+    "xs": "2px",
+    "sm": "4px",
+    "md": "8px",
+    "lg": "12px",
+    "xl": "16px"
+  },
+  "borders": {
+    "radius": "4px",
+    "width": "1px"
+  },
+  "effects": {
+    "glow": false,
+    "neon": false,
+    "scan_lines": false,
+    "glow_intensity": 0,
+    "hover_brightness": 0
+  }
+}

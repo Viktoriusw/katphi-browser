@@ -1,0 +1,64 @@
+{
+  "id": "deep_dark_theme",
+  "name": "Deep Dark Theme",
+  "description": "Modern Dark Theme (Material Design)",
+  "version": "1.0.0",
+  "colors": {
+    "primary": "#ffffff",
+    "secondary": "#9AA0A6",
+    "background": "#000000",
+    "surface": "#3C3F41",
+    "accent": "#8AB4F8",
+    "success": "#81C995",
+    "warning": "#FDD663",
+    "error": "#F28B82",
+    "tab_background": "#241f31",
+    "tab_selected": "#613583",
+    "tab_hover": "#241f31",
+    "border": "#4E5254",
+    "hover": "#45484A",
+    "selected": "#41331C",
+    "icon_color": "#9AA0A6",
+    "icon_button_background": "#00000000",
+    "icon_button_hover": "#45484A",
+    "glow_accent": "#8AB4F8",
+    "navbar_button_background": "#00000000",
+    "navbar_button_hover": "#45484A",
+    "navbar_button_pressed": "#5F6368",
+    "navbar_button_text": "#E8EAED",
+    "toolbar_background": "#000000",
+    "toolbar_border": "#4E5254",
+    "url_bar_background": "#000000",
+    "url_bar_text": "#000000",
+    "url_bar_border": "#000000",
+    "url_bar_placeholder": "#000000"
+  },
+  "fonts": {
+    "family": "Segoe UI, Arial, sans-serif",
+    "size_small": "9pt",
+    "size_normal": "10pt",
+    "size_large": "12pt",
+    "size_title": "14pt"
+  },
+  "spacing": {
+    "xs": "2px",
+    "sm": "4px",
+    "md": "8px",
+    "lg": "12px",
+    "xl": "16px",
+    "xxl": "24px"
+  },
+  "borders": {
+    "radius": "4px",
+    "width": "1px"
+  },
+  "effects": {
+    "glow": false,
+    "neon": false,
+    "scan_lines": false,
+    "glow_intensity": 0,
+    "hover_brightness": 0
+  },
+  "author": "Custom",
+  "type": "custom"
+}
