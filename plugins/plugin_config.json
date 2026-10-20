@@ -1,0 +1,144 @@
+{
+  "example_plugin": {
+    "enabled": false,
+    "config": {}
+  },
+  "split_view": {
+    "enabled": true,
+    "config": {
+      "default_url": "https://duckduckgo.com"
+    }
+  },
+  "voice_control": {
+    "enabled": true,
+    "config": {}
+  },
+  "themes": {
+    "enabled": true,
+    "config": {
+      "name": "Advanced Theme System",
+      "premium": true,
+      "free_features": [
+        "basic_themes",
+        "theme_switching"
+      ],
+      "premium_features": [
+        "custom_themes",
+        "theme_editor",
+        "theme_marketplace",
+        "advanced_customization"
+      ],
+      "trial_days": 7,
+      "price": 4.99,
+      "currency": "USD",
+      "billing_cycle": "monthly"
+    }
+  },
+  "scraping": {
+    "enabled": true,
+    "dev_mode": false,
+    "config": {
+      "name": "Advanced Scraping",
+      "premium": true,
+      "free_features": [
+        "basic_scraping",
+        "simple_extraction"
+      ],
+      "premium_features": [
+        "advanced_patterns",
+        "bulk_processing",
+        "data_export",
+        "automation"
+      ],
+      "trial_days": 7,
+      "price": 9.99,
+      "currency": "USD",
+      "billing_cycle": "monthly"
+    }
+  },
+  "proxy": {
+    "enabled": true,
+    "dev_mode": false,
+    "config": {
+      "name": "Proxy Management",
+      "premium": true,
+      "free_features": [
+        "basic_proxy",
+        "simple_configuration"
+      ],
+      "premium_features": [
+        "proxy_rotation",
+        "bulk_import",
+        "performance_monitoring",
+        "advanced_configuration"
+      ],
+      "trial_days": 7,
+      "price": 7.99,
+      "currency": "USD",
+      "billing_cycle": "monthly"
+    }
+  },
+  "seo_analyzer": {
+    "enabled": true,
+    "dev_mode": false,
+    "config": {
+      "name": "SEO Analyzer Pro",
+      "premium": true,
+      "free_features": [
+        "basic_seo_check",
+        "simple_analysis"
+      ],
+      "premium_features": [
+        "advanced_seo_metrics",
+        "competitor_analysis",
+        "keyword_research",
+        "site_audit"
+      ],
+      "trial_days": 7,
+      "price": 12.99,
+      "currency": "USD",
+      "billing_cycle": "monthly"
+    }
+  },
+  "pentesting_tool": {
+    "enabled": false,
+    "config": {
+      "name": "Pentesting Suite",
+      "premium": true,
+      "free_features": [
+        "basic_payloads",
+        "form_detection"
+      ],
+      "premium_features": [
+        "sql_injection",
+        "xss_testing",
+        "header_manipulation",
+        "security_scanner",
+        "js_console"
+      ],
+      "trial_days": 7,
+      "price": 29.99,
+      "currency": "USD",
+      "billing_cycle": "monthly"
+    }
+  },
+  "ai_live_ide": {
+    "enabled": true,
+    "dev_mode": false,
+    "config": {
+      "name": "AI Live IDE",
+      "premium": true,
+      "free_features": [],
+      "premium_features": [
+        "ai_code_edit",
+        "live_preview",
+        "project_open",
+        "save_file"
+      ],
+      "trial_days": 7,
+      "price": 14.99,
+      "currency": "USD",
+      "billing_cycle": "monthly"
+    }
+  }
+}
