@@ -237,6 +237,20 @@ class PluginDownloader(QThread):
         """Instalar plugin desde archivo ZIP"""
 
         try:
+            # G-007: validar id y contenido del ZIP antes de rmtree/extractall
+            from backend_integration import is_valid_plugin_id, check_plugin_zip_members
+
+            if not is_valid_plugin_id(plugin_id):
+                print(f"[UnifiedPluginManager] plugin_id no válido, instalación rechazada: {plugin_id!r}")
+
+                return False
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_problem = check_plugin_zip_members(zip_ref)
+
+            if zip_problem:
+                print(f"[UnifiedPluginManager] ZIP rechazado para '{plugin_id}': {zip_problem}")
+
+                return False
             plugin_dir = install_target_dir(plugin_id)
 
             if plugin_dir.exists():
@@ -350,6 +364,16 @@ class UnifiedPluginManager(QObject):
             self.auth_manager.auth_state_changed.connect(self.on_auth_state_changed)
 
             self.auth_manager.plugin_license_changed.connect(self.on_plugin_license_changed)
+
+            # C-004: arrancar/parar la validación periódica también tras un
+            # login interactivo o un logout (antes solo se arrancaba aquí con
+            # sesión guardada).
+            try:
+                self.auth_manager.login_successful.connect(self._on_login_successful)
+
+                self.auth_manager.logout_successful.connect(self._stop_validation_timer)
+            except Exception as e:
+                logger.warning(f"No se pudieron conectar login/logout para la validación: {e}")
         # Iniciar validación si está autenticado
 
         if self.auth_manager and self.auth_manager.auth_state.is_authenticated:
@@ -821,6 +845,13 @@ class UnifiedPluginManager(QObject):
         los preinstalados en el bundle no se pueden borrar)."""
 
         try:
+            # G-007: el id se usa para construir la ruta que se borra
+            from backend_integration import is_valid_plugin_id
+
+            if not is_valid_plugin_id(plugin_id):
+                print(f"[UnifiedPluginManager] plugin_id no válido, no se desinstala: {plugin_id!r}")
+
+                return False
             if is_bundled_only(plugin_id):
                 print(
                     f"[UnifiedPluginManager] Plugin '{plugin_id}' es preinstalado "
@@ -831,6 +862,10 @@ class UnifiedPluginManager(QObject):
             plugin_dir = USER_PLUGINS_DIR / plugin_id
 
             if plugin_dir.exists():
+                # P-SHUTDOWN: parar el plugin (atajos globales, vistas, señales)
+                # antes de borrar sus archivos
+                if plugin_id in self.plugins:
+                    self.unload_plugin(plugin_id)
                 shutil.rmtree(plugin_dir)
 
                 self.plugin_uninstalled.emit(plugin_id)
@@ -874,9 +909,27 @@ class UnifiedPluginManager(QObject):
                 "is_installed": self.is_plugin_installed(plugin_id)
             }
         return summary
+    def _on_login_successful(self, *args):
+        """Login (interactivo o auto-login): arrancar la validación periódica"""
+
+        if not self.validation_timer.isActive():
+            self.validation_timer.start()
+
+            logger.info("Plugin validation timer started after login")
+    def _stop_validation_timer(self, *args):
+        """Logout o sesión rechazada: parar la validación periódica"""
+
+        if self.validation_timer.isActive():
+            self.validation_timer.stop()
+
+            logger.info("Plugin validation timer stopped")
     def on_auth_state_changed(self, is_authenticated: bool):
         """Manejar cambio de estado de autenticación"""
 
+        if is_authenticated:
+            self._on_login_successful()
+        else:
+            self._stop_validation_timer()
         if is_authenticated:
             for plugin_id in self.plugin_configs_data.keys():
                 self.access_granted.emit(plugin_id)
@@ -1084,27 +1137,24 @@ class UnifiedPluginManager(QObject):
 
         try:
             if plugin_id in self.plugins:
-                plugin_instance = self.plugins[plugin_id]
+                plugin_module = self.plugins[plugin_id]
 
-                # Llamar al método shutdown() del plugin si existe
-                if hasattr(plugin_instance, 'shutdown'):
-                    try:
-                        logger.info(f"Calling shutdown() on plugin {plugin_id}")
-                        plugin_instance.shutdown()
-                    except Exception as e:
-                        logger.error(f"Error calling shutdown() on plugin {plugin_id}: {e}")
+                # P-SHUTDOWN: self.plugins guarda el MÓDULO plugin.py, no la
+                # instancia. Los plugins exponen get_plugin_instance() y/o
+                # shutdown_plugin() a nivel de módulo, con .shutdown() en la
+                # instancia; antes se buscaba shutdown en el módulo y no se
+                # llamaba nunca (quedaban atajos globales, vistas y señales).
+                self._shutdown_plugin_module(plugin_id, plugin_module)
+
                 # Remover del diccionario
 
                 del self.plugins[plugin_id]
 
-                # Remover del sys.modules
+                # Remover del sys.modules el plugin.py y los módulos que el
+                # plugin importó desde su carpeta (voice_audio, voice_panel...)
 
-                import sys
+                self._purge_plugin_modules(plugin_id, plugin_module)
 
-                module_name = f"plugins.{plugin_id}.plugin"
-
-                if module_name in sys.modules:
-                    del sys.modules[module_name]
                 self.plugin_unloaded.emit(plugin_id)
 
                 logger.info(f"Plugin {plugin_id} unloaded successfully")
@@ -1115,6 +1165,109 @@ class UnifiedPluginManager(QObject):
             logger.error(f"Error unloading plugin {plugin_id}: {e}")
 
             return False
+    def _shutdown_plugin_module(self, plugin_id: str, plugin_module) -> None:
+        """Parar un plugin: la primera vía disponible que funcione, sin
+        llamar dos veces. Orden: instancia.shutdown() -> módulo.shutdown_plugin()
+        -> módulo.shutdown()."""
+
+        # 1. Instancia con .shutdown()
+        instance = None
+
+        get_instance = getattr(plugin_module, "get_plugin_instance", None)
+
+        if callable(get_instance):
+            try:
+                instance = get_instance()
+            except Exception as e:
+                logger.error(f"Error calling get_plugin_instance() on plugin {plugin_id}: {e}")
+        if instance is not None and instance is not plugin_module and callable(getattr(instance, "shutdown", None)):
+            try:
+                logger.info(f"Calling instance.shutdown() on plugin {plugin_id}")
+
+                instance.shutdown()
+
+                # Soltar la referencia global del módulo sin volver a llamar
+                # a shutdown() (shutdown_plugin() lo haría otra vez)
+                if getattr(plugin_module, "_plugin_instance", None) is instance:
+                    try:
+                        plugin_module._plugin_instance = None
+                    except Exception:
+                        pass
+                return
+            except Exception as e:
+                logger.error(f"Error calling instance.shutdown() on plugin {plugin_id}: {e}")
+        # 2. shutdown_plugin() a nivel de módulo
+        # (solo si la instancia no tenía shutdown() o falló)
+        shutdown_plugin = getattr(plugin_module, "shutdown_plugin", None)
+
+        if callable(shutdown_plugin):
+            try:
+                logger.info(f"Calling shutdown_plugin() on plugin {plugin_id}")
+
+                shutdown_plugin()
+
+                return
+            except Exception as e:
+                logger.error(f"Error calling shutdown_plugin() on plugin {plugin_id}: {e}")
+        # 3. shutdown() a nivel de módulo (interfaz antigua)
+        module_shutdown = getattr(plugin_module, "shutdown", None)
+
+        if callable(module_shutdown):
+            try:
+                logger.info(f"Calling shutdown() on plugin module {plugin_id}")
+
+                module_shutdown()
+            except Exception as e:
+                logger.error(f"Error calling shutdown() on plugin {plugin_id}: {e}")
+    def _purge_plugin_modules(self, plugin_id: str, plugin_module) -> None:
+        """Quitar de sys.modules el plugin y todo módulo cuyo __file__ esté
+        dentro de la carpeta del plugin, y la carpeta de sys.path."""
+
+        roots = []
+
+        try:
+            module_file = getattr(plugin_module, "__file__", None)
+
+            if module_file:
+                roots.append(Path(module_file).resolve().parent)
+        except Exception:
+            pass
+        try:
+            found = find_plugin_dir(plugin_id)
+
+            if found is not None:
+                roots.append(found.resolve())
+        except Exception:
+            pass
+        # Nombres directos registrados por load_plugin
+        for name in (f"plugins.{plugin_id}.plugin", f"plugins.{plugin_id}.{plugin_id}.plugin"):
+            sys.modules.pop(name, None)
+        if not roots:
+            return
+        purged = []
+
+        for name, mod in list(sys.modules.items()):
+            mod_file = getattr(mod, "__file__", None) if mod is not None else None
+
+            if not mod_file:
+                continue
+            try:
+                mod_path = Path(mod_file).resolve()
+            except Exception:
+                continue
+            if any(root == mod_path.parent or root in mod_path.parents for root in roots):
+                sys.modules.pop(name, None)
+
+                purged.append(name)
+        if purged:
+            logger.info(f"Purged {len(purged)} modules of plugin {plugin_id} from sys.modules: {purged}")
+        # La carpeta del plugin la añadió load_plugin (y el propio plugin.py)
+        for entry in list(sys.path):
+            try:
+                if entry and Path(entry).resolve() in roots:
+                    sys.path.remove(entry)
+            except Exception:
+                continue
     def get_loaded_plugins(self) -> List[str]:
         """Obtener lista de plugins cargados en memoria"""
 

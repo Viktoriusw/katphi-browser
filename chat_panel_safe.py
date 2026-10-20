@@ -23,6 +23,7 @@ from PySide6.QtCore import Qt, QTimer, QEventLoop, Signal, QThread
 from PySide6.QtGui import QFont, QColor, QTextCursor
 
 from base_panel import BasePanel
+from net_proxy import is_tor_active
 from llm_client import (
     LLMClient, LLMConfig, LLMError,
     PROVIDER_LOCAL, PROVIDER_LLMAPI, PROVIDER_ANTHROPIC, PROVIDER_HUGGINGFACE,
@@ -92,22 +93,34 @@ class ChatWorker(QThread):
     """Ejecuta la llamada al LLM en un hilo separado para no bloquear el UI."""
 
     chunk_received = Signal(str)   # fragmento de texto (streaming)
-    finished = Signal(str)         # respuesta completa
+    # Respuesta completa. No se llama "finished" para no tapar QThread.finished,
+    # que es la señal que se usa para liberar el worker (C-007).
+    result_ready = Signal(str)
     error = Signal(str)            # mensaje de error
 
     def __init__(self, llm_config: "LLMConfig", messages: list,
-                 max_tokens: int = 4096, temperature: float = 0.7):
-        super().__init__()
+                 max_tokens: int = 4096, temperature: float = 0.7, parent=None):
+        super().__init__(parent)
         self._llm_config = llm_config
         self._messages = messages
         self._max_tokens = max_tokens
         self._temperature = temperature
         self._cancelled = False
+        self._client: "LLMClient | None" = None
+
     def cancel(self):
+        """Marca la cancelación y cierra la respuesta HTTP en curso (corta iter_lines)."""
         self._cancelled = True
+        client = self._client
+        if client is not None:
+            client.abort()
+
     def run(self):
         try:
             client = LLMClient(self._llm_config)
+            self._client = client
+            if self._cancelled:
+                return
             full_text = ""
 
             # Intentar streaming primero
@@ -121,8 +134,13 @@ class ChatWorker(QThread):
                         return
                     full_text += chunk
                     self.chunk_received.emit(chunk)
-                self.finished.emit(full_text)
+                if not self._cancelled:
+                    self.result_ready.emit(full_text)
             except AttributeError:
+                # Al cerrar la respuesta desde cancel() urllib3 puede lanzar AttributeError:
+                # en ese caso no se reintenta sin streaming.
+                if self._cancelled:
+                    return
                 # Fallback sin streaming si el método no existe
                 content = client.chat(
                     self._messages,
@@ -130,15 +148,20 @@ class ChatWorker(QThread):
                     temperature=self._temperature,
                 )
                 if not self._cancelled:
-                    self.finished.emit(content)
+                    self.result_ready.emit(content)
         except LLMError as e:
-            _chat_log.error("ChatWorker LLMError: %s", e, exc_info=True)
             if not self._cancelled:
+                _chat_log.error("ChatWorker LLMError: %s", e, exc_info=True)
                 self.error.emit(str(e))
         except Exception as e:
-            _chat_log.error("ChatWorker error: %s", e, exc_info=True)
             if not self._cancelled:
-                self.error.emit(f"Error inesperado: {e}")
+                _chat_log.error("ChatWorker error: %s", e, exc_info=True)
+                import requests as _rq
+                if isinstance(e, _rq.exceptions.ConnectionError) and is_tor_active():
+                    self.error.emit("No se pudo conectar con el proveedor de IA a través de Tor. "
+                                    "Comprueba que Tor está conectado.")
+                else:
+                    self.error.emit(f"Error inesperado: {e}")
 
 
 class ChatPanelSafe(BasePanel):
@@ -166,6 +189,9 @@ class ChatPanelSafe(BasePanel):
         self._activity_idx = 0
         self._last_session_analysis = {}
         self._chat_worker: "ChatWorker | None" = None
+        # Todos los ChatWorker vivos (también los cancelados que aún no han salido de run()).
+        # Se liberan en QThread.finished; así nunca se destruye un QThread en marcha (C-007).
+        self._chat_workers: list = []
         self._streaming_placeholder_added = False
 
         # ── Scrapelio: búsquedas y acciones del asistente ──
@@ -179,6 +205,10 @@ class ChatPanelSafe(BasePanel):
         # ── Helio: estado interno ──
         self._helio_last_url: str = ""
         self._helio_last_time: float = 0.0
+        # URL y momento de la última extracción de contexto mostrada en context_display (E-008)
+        self._ctx_url: str = ""
+        self._ctx_time: float = 0.0
+        self._ctx_send_retry = False      # evita bucles al encadenar la extracción con el envío
         self._helio_suggestions_container = None
         self._helio_suggestion_frames: list = []
         self._helio_refresh_timer: "QTimer | None" = None
@@ -497,6 +527,10 @@ class ChatPanelSafe(BasePanel):
             url = browser.url().toString()
             if not url or url.startswith("about:"):
                 return
+            # E-008: con el panel oculto no se extrae nada; se hará al mostrarlo
+            # (showEvent) o al enviar un mensaje con el contexto activado.
+            if not self.isVisible():
+                return
             # Throttle: no re-extraer si misma URL en últimos 5 segundos
             now = time.time()
             if url == self._helio_last_url and (now - self._helio_last_time) < 5.0:
@@ -504,19 +538,11 @@ class ChatPanelSafe(BasePanel):
             self._helio_last_url = url
             self._helio_last_time = now
 
-            title = ""
-            if hasattr(browser, "page") and browser.page():
-                title = browser.page().title() or ""
-            def _on_html(html):
-                try:
-                    extracted = self._simple_extract_text(html, url, title)
-                    if hasattr(self, "context_display"):
-                        self.context_display.setPlainText(extracted)
-                    _chat_log.debug("Helio: auto-extracted %d chars from %s", len(extracted), url[:60])
-                except Exception as e:
-                    _chat_log.debug("Helio: extraction callback error: %s", e)
-            if hasattr(browser, "page") and browser.page():
-                browser.page().toHtml(_on_html)
+            def _on_text(extracted):
+                if hasattr(self, "context_display"):
+                    self.context_display.setPlainText(extracted)
+                _chat_log.debug("Helio: auto-extracted %d chars from %s", len(extracted), url[:60])
+            self._extract_page_context_async(browser, _on_text)
         except Exception as e:
             _chat_log.debug("Helio: extract_and_update error: %s", e)
     # ── Helio: Guard con fallback de 3 niveles (Mejora 2) ─────────────────
@@ -936,6 +962,20 @@ class ChatPanelSafe(BasePanel):
             f"color: {c['text_secondary']}; font-size: 11px; background: transparent;"
         )
         mode_row.addWidget(self.context_checkbox)
+
+        # Aviso discreto (B-002): con Tor activo el texto de la página sale hacia el
+        # proveedor de IA (por Tor si es remoto). Solo visible con Tor y Contexto marcados.
+        self.tor_context_label = QLabel("Tor: la página se envía a la IA")
+        self.tor_context_label.setToolTip(
+            "Tor está activo y el contexto de la página está marcado: el texto de la página "
+            "se envía al proveedor de IA. Las peticiones a proveedores remotos salen por Tor; "
+            "los locales (Ollama, LM Studio) no salen del equipo.")
+        self.tor_context_label.setStyleSheet(
+            f"color: {c.get('warning', '#D29922')}; font-size: 10px; background: transparent;"
+        )
+        self.tor_context_label.setVisible(False)
+        self.context_checkbox.toggled.connect(self._update_tor_context_warning)
+        mode_row.addWidget(self.tor_context_label)
         mode_row.addStretch()
 
         self.clear_btn = QPushButton("Limpiar")
@@ -2015,6 +2055,36 @@ class ChatPanelSafe(BasePanel):
         if not message:
             QMessageBox.warning(self, "Error", "Please write a message")
             return
+        # E-008: si el contexto está activado y no hay una extracción reciente de la
+        # pestaña actual, se extrae ahora (asíncrono) y se reenvía el mismo mensaje.
+        if (self.context_checkbox.isChecked() and not self._ctx_send_retry
+                and not self._current_context_is_fresh()):
+            try:
+                browser = self.window().tab_manager.tabs.currentWidget()
+            except Exception:
+                browser = None
+            if browser is not None:
+                state = {"sent": False}
+
+                def _resend(extracted=None):
+                    if state["sent"]:
+                        return
+                    state["sent"] = True
+                    if extracted is not None:
+                        self.context_display.setPlainText(extracted)
+                    elif not self._current_context_is_fresh():
+                        # Tiempo agotado: no enviar el contexto de otra página
+                        self.context_display.clear()
+                    self._ctx_send_retry = True
+                    try:
+                        self.send_message_safe()
+                    finally:
+                        self._ctx_send_retry = False
+                if self._extract_page_context_async(browser, _resend):
+                    # Si la página no responde (renderer colgado), se envía sin esperar más
+                    QTimer.singleShot(2000, _resend)
+                    return
+        self._update_tor_context_warning()
         # Get context from the visible display (what user extracted)
         context = ""
         if self.context_checkbox.isChecked():
@@ -2069,6 +2139,7 @@ class ChatPanelSafe(BasePanel):
             # Construir prompt según modo
             if mode == "summary":  # resumen pestaña actual
                 if not context:
+                    # La extracción es asíncrona: el contexto llega en el siguiente envío
                     self.extract_page_content_now()
                     context = self.context_display.toPlainText()
                 user_content = (
@@ -2155,19 +2226,18 @@ class ChatPanelSafe(BasePanel):
     def _launch_chat_worker(self, messages: list, original_message: str,
                             max_tokens: int, temperature: float):
         """Lanza ChatWorker en segundo plano. NO bloquea el hilo principal."""
-        # Cancelar worker anterior si sigue activo
-        if self._chat_worker and self._chat_worker.isRunning():
-            self._chat_worker.cancel()
-            self._chat_worker.wait(2000)
+        # Cancelar worker anterior si sigue activo (sigue en _chat_workers hasta que acabe)
+        self._stop_chat_worker()
         self._streaming_placeholder_added = False
         self._streaming_original_message = original_message
 
-        self._chat_worker = ChatWorker(
-            self.llm_config, messages, max_tokens, temperature
-        )
-        self._chat_worker.chunk_received.connect(self._on_chat_chunk)
-        self._chat_worker.finished.connect(self._on_chat_finished)
-        self._chat_worker.error.connect(self._on_chat_error)
+        worker = ChatWorker(self.llm_config, messages, max_tokens, temperature)
+        self._chat_worker = worker
+        self._chat_workers.append(worker)
+        worker.chunk_received.connect(self._on_chat_chunk)
+        worker.result_ready.connect(self._on_chat_finished)
+        worker.error.connect(self._on_chat_error)
+        worker.finished.connect(lambda w=worker: self._release_chat_worker(w))
 
         # Botón cambia a "Cancelar"
         self.send_btn.setEnabled(True)
@@ -2178,13 +2248,50 @@ class ChatPanelSafe(BasePanel):
             pass
         self.send_btn.clicked.connect(self._cancel_chat_worker)
 
-        self._chat_worker.start()
+        worker.start()
+
+    def _stop_chat_worker(self):
+        """
+        Cancela el worker actual sin bloquear la UI: cierra su respuesta HTTP y
+        desconecta sus señales para que no llegue nada más de ese turno.
+        El objeto sigue vivo en _chat_workers hasta QThread.finished.
+        """
+        worker = self._chat_worker
+        self._chat_worker = None
+        if worker is None:
+            return
+        for sig in (worker.chunk_received, worker.result_ready, worker.error):
+            try:
+                sig.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+        if worker.isRunning():
+            worker.cancel()
+
+    def _release_chat_worker(self, worker):
+        """Slot de QThread.finished: suelta la referencia y libera el objeto Qt."""
+        if worker in self._chat_workers:
+            self._chat_workers.remove(worker)
+        if self._chat_worker is worker:
+            self._chat_worker = None
+        worker.deleteLater()
+
+    def shutdown_workers(self, timeout_ms: int = 3000):
+        """Cancela y espera todos los hilos del panel (llamar desde closeEvent de la ventana)."""
+        self._agent_cancelled = True
+        self._stop_chat_worker()
+        for w in list(self._chat_workers) + list(self._scrapelio_workers):
+            try:
+                if hasattr(w, "cancel"):
+                    w.cancel()
+                w.wait(timeout_ms)
+            except RuntimeError:
+                pass
+
     def _cancel_chat_worker(self):
         """Cancela el worker en curso y restaura el botón de envío."""
         self._agent_cancelled = True
-        if self._chat_worker and self._chat_worker.isRunning():
-            self._chat_worker.cancel()
-            self._chat_worker.wait(2000)
+        self._stop_chat_worker()
         self.add_message_to_chat("System", "Generación cancelada.", "assistant")
         self._restore_send_button()
         self._stop_activity()
@@ -2560,9 +2667,11 @@ class ChatPanelSafe(BasePanel):
         self._scrapelio_workers.append(worker)
 
         def _finish():
+            # Sale de la lista de búsquedas pendientes (is_busy), pero el objeto se libera
+            # en QThread.finished: aquí run() aún no ha terminado (C-007). Lo mantiene vivo
+            # el parent=self.
             if worker in self._scrapelio_workers:
                 self._scrapelio_workers.remove(worker)
-            worker.deleteLater()
 
         def _ok(q, data):
             _finish()
@@ -2594,6 +2703,7 @@ class ChatPanelSafe(BasePanel):
 
         worker.results_ready.connect(_ok)
         worker.failed.connect(_fail)
+        worker.finished.connect(worker.deleteLater)
         if on_done is None:
             self._start_activity("Buscando en Scrapelio...")
         worker.start()
@@ -2724,8 +2834,8 @@ class ChatPanelSafe(BasePanel):
         title = browser.page().title()
         self._start_activity("Leyendo la página...")
 
-        def on_html(html):
-            text = self._simple_extract_text(html or "", url, title)
+        def on_text(raw):
+            text = self._format_page_text(raw or "", url, title) if (raw or "").strip() else ""
             if not text.strip():
                 self._stop_activity()
                 self._notify("No he podido leer el contenido de esta página.", False)
@@ -2746,7 +2856,8 @@ class ChatPanelSafe(BasePanel):
             max_tokens = max(1024, min(8192, getattr(self.llm_config, "max_tokens", 4096)))
             self._launch_chat_worker(messages, user_text, max_tokens, temperature)
 
-        browser.page().toHtml(on_html)
+        if not self._run_page_text_js(browser, on_text):
+            on_text("")
 
     def _create_gentab_from_chat(self, prompt: str) -> None:
         """Abre el panel GenTab con el prompt enriquecido con historial del chat."""
@@ -2795,28 +2906,31 @@ class ChatPanelSafe(BasePanel):
                 continue
             if not url or url.startswith("about:"):
                 continue
-            holder = {"html": None}
+            holder = {"text": None}
             loop = QEventLoop()
 
-            def on_html(html_content, l=loop, h=holder):
-                h["html"] = html_content
+            def on_text(text, l=loop, h=holder):
+                h["text"] = text
                 if l.isRunning():
                     l.quit()
-            _log.debug("Pestaña %d (%s): solicitando HTML…", i, url[:60])
+            _log.debug("Pestaña %d (%s): solicitando texto…", i, url[:60])
             QTimer.singleShot(3000, loop.quit)
             try:
-                browser.page().toHtml(on_html)
-                loop.exec()
+                # innerText en vez de toHtml + BeautifulSoup (E-008)
+                if not self._run_page_text_js(browser, on_text):
+                    continue
+                if holder["text"] is None:
+                    loop.exec()
             except Exception as e:
-                _log.error("Pestaña %d: error en toHtml/loop.exec: %s", i, e, exc_info=True)
+                _log.error("Pestaña %d: error en runJavaScript/loop.exec: %s", i, e, exc_info=True)
                 continue
-            html_content = holder.get("html") or ""
-            if not html_content:
-                _log.warning("Pestaña %d (%s): HTML vacío tras timeout", i, url[:60])
+            page_text = holder.get("text") or ""
+            if not page_text.strip():
+                _log.warning("Pestaña %d (%s): texto vacío tras timeout", i, url[:60])
                 continue
             try:
                 title = browser.page().title() or f"Tab {i+1}"
-                extracted = self._simple_extract_text(html_content, url, title)
+                extracted = self._format_page_text(page_text, url, title)
                 contexts.append(f"=== TAB {i+1} ===\n{extracted[:2500]}")
                 _log.debug("Pestaña %d: extraídos %d chars", i, len(extracted))
             except Exception as e:
@@ -3220,16 +3334,9 @@ class ChatPanelSafe(BasePanel):
                 self.context_display.setPlainText("Error: No active tab")
                 self.extract_context_btn.setEnabled(True)
                 return
-            # Get URL and title
-            current_url = current_tab.url().toString()
-            current_title = current_tab.page().title()
-
-            # Request HTML
-            def on_html_received(html):
+            # Texto de la página con innerText (E-008: sin toHtml + BeautifulSoup)
+            def on_html_received(extracted_text):
                 try:
-                    # Extract text content
-                    extracted_text = self._simple_extract_text(html, current_url, current_title)
-
                     # Display in text edit
                     self.context_display.setPlainText(extracted_text)
 
@@ -3243,8 +3350,10 @@ class ChatPanelSafe(BasePanel):
                     traceback.print_exc()
                 finally:
                     self.extract_context_btn.setEnabled(True)
-            # Request HTML asynchronously
-            current_tab.page().toHtml(on_html_received)
+            # Petición asíncrona
+            if not self._extract_page_context_async(current_tab, on_html_received):
+                self.context_display.setPlainText("Error: Cannot read the page")
+                self.extract_context_btn.setEnabled(True)
         except Exception as e:
             error_msg = f"Error: {str(e)}"
             self.context_display.setPlainText(error_msg)
@@ -3252,6 +3361,103 @@ class ChatPanelSafe(BasePanel):
             import traceback
             traceback.print_exc()
             self.extract_context_btn.setEnabled(True)
+    # ── Extracción de contexto ligera (E-008) ─────────────────────────────────
+    # document.body.innerText en el navegador en vez de toHtml + BeautifulSoup en el
+    # hilo GUI. Se ejecuta en ApplicationWorld para que la página no pueda alterar
+    # el resultado redefiniendo funciones de su propio mundo JS.
+    _PAGE_TEXT_LIMIT = 20000
+    _PAGE_TEXT_JS = ("(document.body ? document.body.innerText : '').slice(0, %d)"
+                     % _PAGE_TEXT_LIMIT)
+    # Segundos durante los que una extracción de la misma URL se considera reciente
+    _CTX_FRESH_SECONDS = 30.0
+
+    def _run_page_text_js(self, browser, callback) -> bool:
+        """Pide el innerText de la página; callback(texto) en el hilo GUI. False si no se pudo."""
+        try:
+            page = browser.page() if hasattr(browser, "page") else None
+            if page is None:
+                return False
+            from PySide6.QtWebEngineCore import QWebEngineScript
+            page.runJavaScript(self._PAGE_TEXT_JS, QWebEngineScript.ApplicationWorld,
+                               lambda r: callback(r if isinstance(r, str) else ""))
+            return True
+        except Exception as e:
+            _chat_log.debug("runJavaScript innerText: %s", e)
+            return False
+
+    def _extract_page_context_async(self, browser, on_done) -> bool:
+        """
+        Extrae el contexto (título, URL y texto) de `browser` y llama on_done(contexto).
+        Actualiza _ctx_url/_ctx_time para saber si la extracción es reciente.
+        """
+        try:
+            url = browser.url().toString()
+            title = browser.page().title() or ""
+        except Exception:
+            return False
+
+        def _cb(text):
+            try:
+                extracted = self._format_page_text(text, url, title)
+                self._ctx_url = url
+                self._ctx_time = time.time()
+                on_done(extracted)
+            except Exception as e:
+                _chat_log.debug("Contexto: error en callback: %s", e)
+        return self._run_page_text_js(browser, _cb)
+
+    def _current_context_is_fresh(self) -> bool:
+        """True si context_display tiene una extracción reciente de la pestaña actual."""
+        try:
+            browser = self.window().tab_manager.tabs.currentWidget()
+            url = browser.url().toString()
+        except Exception:
+            return True  # sin pestaña que leer: no hay nada que refrescar
+        text = self.context_display.toPlainText() if hasattr(self, "context_display") else ""
+        if not text or text.startswith(("Error", "Extracting page content")):
+            return False
+        return url == self._ctx_url and (time.time() - self._ctx_time) < self._CTX_FRESH_SECONDS
+
+    @staticmethod
+    def _format_page_text(text, url, title):
+        """Mismo formato que _simple_extract_text, a partir de texto plano (innerText)."""
+        lines = []
+        for line in (text or "").split('\n'):
+            line = line.strip()
+            if line and len(line) > 2:  # Skip very short lines
+                lines.append(line)
+        clean_text = '\n'.join(lines)
+        return f"""PAGE: {title}
+URL: {url}
+
+CONTENT:
+{clean_text[:3000]}
+
+{'[Content truncated - showing first 3000 characters]' if len(clean_text) > 3000 else '[End of content]'}"""
+
+    def showEvent(self, event):
+        """Al mostrar el panel se extrae el contexto de la pestaña actual si no es reciente."""
+        super().showEvent(event)
+        self._update_tor_context_warning()
+        try:
+            if self.context_checkbox.isChecked() and not self._current_context_is_fresh():
+                browser = self.window().tab_manager.tabs.currentWidget()
+                if browser is not None:
+                    QTimer.singleShot(0, lambda b=browser: self._helio_extract_and_update(b))
+        except Exception:
+            pass
+
+    def _update_tor_context_warning(self, *_):
+        """Aviso discreto: con Tor activo el contexto de la página sale hacia el proveedor IA."""
+        label = getattr(self, "tor_context_label", None)
+        if label is None:
+            return
+        try:
+            show = is_tor_active() and self.context_checkbox.isChecked()
+        except Exception:
+            show = False
+        label.setVisible(bool(show))
+
     def _simple_extract_text(self, html, url, title):
         """Simple and effective text extraction"""
         try:

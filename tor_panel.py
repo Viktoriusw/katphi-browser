@@ -30,6 +30,12 @@ except ImportError:
     config = None
 
 
+# Referencias a los workers vivos: un QThread sin parent cuyo último
+# objeto Python desaparece mientras corre aborta el proceso ("QThread:
+# Destroyed while thread is still running"). Se sueltan en QThread.finished.
+_live_workers: set = set()
+
+
 class TorBootstrapWorker(QThread):
     """Worker que arranca Tor en background y emite progreso."""
 
@@ -49,7 +55,9 @@ class TorBootstrapWorker(QThread):
                 self.progress.emit(pct)
         success = self.tor_manager.start(progress_callback=on_progress)
         if self._cancelled:
-            self.tor_manager.stop()
+            # stop() ya lo llamó el panel; repetirlo es inocuo
+            if success:
+                self.tor_manager.stop()
             return
         if success:
             self.finished_success.emit()
@@ -137,12 +145,14 @@ class TorPanel(QWidget):
         if err:
             self._show_unavailable(err)
             return
-        # Tor ya activo (p. ej. tras reinicio): SOCKS5 listo y config habilitada
-        if (
-            config
-            and config.is_tor_enabled()
-            and self.tor_manager.is_socks5_ready()
-        ):
+        # Tor ya activo (p. ej. tras reinicio): SOCKS5 listo y Tor en uso en esta
+        # sesión (net_proxy respeta "continuar sin Tor" y la ventana privada)
+        try:
+            import net_proxy
+            tor_in_use = net_proxy.is_tor_active()
+        except Exception:
+            tor_in_use = bool(config and config.is_tor_enabled())
+        if tor_in_use and self.tor_manager.is_socks5_ready():
             self.tor_manager._status = TorStatus.CONNECTED
             self._show_connected()
             return
@@ -216,11 +226,15 @@ class TorPanel(QWidget):
         """Usuario pulsa Conectar a Tor."""
         if self._bootstrap_worker and self._bootstrap_worker.isRunning():
             return
-        self._bootstrap_worker = TorBootstrapWorker(self.tor_manager)
-        self._bootstrap_worker.progress.connect(self._on_bootstrap_progress)
-        self._bootstrap_worker.finished_success.connect(self._on_bootstrap_success)
-        self._bootstrap_worker.finished_error.connect(self._on_bootstrap_error)
-        self._bootstrap_worker.start()
+        worker = TorBootstrapWorker(self.tor_manager)
+        worker.progress.connect(self._on_bootstrap_progress)
+        worker.finished_success.connect(self._on_bootstrap_success)
+        worker.finished_error.connect(self._on_bootstrap_error)
+        _live_workers.add(worker)
+        worker.finished.connect(lambda w=worker: _live_workers.discard(w))
+        worker.finished.connect(worker.deleteLater)
+        self._bootstrap_worker = worker
+        worker.start()
 
         self._update_ui_state()
     def _on_bootstrap_progress(self, pct: int) -> None:
@@ -252,10 +266,15 @@ class TorPanel(QWidget):
         self._show_error(message)
     def _on_cancel_clicked(self) -> None:
         """Usuario cancela el bootstrap."""
-        if self._bootstrap_worker and self._bootstrap_worker.isRunning():
-            self._bootstrap_worker.cancel()
-            self._bootstrap_worker.wait(3000)
+        worker = self._bootstrap_worker
+        if worker and worker.isRunning():
+            worker.cancel()
+        # stop() termina el proceso Tor: el start() del worker deja de leer su
+        # salida y el hilo acaba. La referencia queda en _live_workers hasta
+        # QThread.finished, así que no se destruye un hilo vivo.
         self.tor_manager.stop()
+        if worker and worker.isRunning():
+            worker.wait(3000)
         self._bootstrap_worker = None
         self._update_ui_state()
     def _on_disconnect_clicked(self) -> None:

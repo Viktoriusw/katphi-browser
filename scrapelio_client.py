@@ -26,6 +26,8 @@ import requests
 
 from PySide6.QtCore import QLocale, QThread, Signal
 
+from net_proxy import requests_proxies
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCRAPELIO_URL = "https://scrapelio.com"
@@ -71,8 +73,10 @@ def _headers() -> dict:
 
 def _get(path: str, params: dict, timeout: float) -> requests.Response:
     try:
-        return requests.get(f"{get_scrapelio_url()}{path}", params=params,
-                            headers=_headers(), timeout=timeout)
+        url = f"{get_scrapelio_url()}{path}"
+        # Con Tor activo la búsqueda sale por SOCKS (B-002)
+        return requests.get(url, params=params, headers=_headers(), timeout=timeout,
+                            proxies=requests_proxies(url))
     except requests.RequestException as e:
         logger.warning("Scrapelio no accesible: %s", e)
         raise ScrapelioError(f"No se pudo conectar con el buscador Scrapelio ({get_scrapelio_url()}). "
@@ -116,8 +120,9 @@ def _post(path: str, payload: dict) -> None:
     """Envía un aviso al buscador en segundo plano; si falla no pasa nada."""
     def send():
         try:
-            requests.post(f"{get_scrapelio_url()}{path}", json=payload,
-                          headers=_headers(), timeout=REPORT_TIMEOUT)
+            url = f"{get_scrapelio_url()}{path}"
+            requests.post(url, json=payload, headers=_headers(), timeout=REPORT_TIMEOUT,
+                          proxies=requests_proxies(url))
         except requests.RequestException as e:
             logger.debug("Scrapelio %s: %s", path, e)
     threading.Thread(target=send, daemon=True).start()

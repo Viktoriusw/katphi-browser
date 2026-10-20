@@ -46,10 +46,15 @@ from enum import Enum
 from pathlib import Path
 
 
-from PySide6.QtCore import QObject, Signal, QTimer, QSettings
+from PySide6.QtCore import QObject, Signal, QTimer, QSettings, QThread, QCoreApplication, Qt
 
 
 from PySide6.QtWidgets import QMessageBox
+
+import re
+
+# Proxy SOCKS de Tor para las peticiones hechas desde Python (B-002)
+from net_proxy import requests_proxies
 
 
 # Importar ConfigManager centralizado
@@ -75,6 +80,65 @@ from backend_schemas import (
 from plugin_paths import install_target_dir, backups_dir
 # Logging configurado en main.py
 logger = logging.getLogger(__name__)
+
+
+# ============================================
+# VALIDACIÓN DE PLUGINS (G-007)
+# ============================================
+
+# plugin_id permitido: se usa para construir rutas (rmtree/extractall)
+_PLUGIN_ID_RE = re.compile(r"^[a-z0-9_\-]{1,64}$")
+
+# Límites para los ZIP de plugins (descarga y descompresión)
+MAX_PLUGIN_DOWNLOAD_BYTES = 200 * 1024 * 1024
+MAX_PLUGIN_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
+MAX_PLUGIN_ZIP_ENTRIES = 5000
+
+# Timeout máximo (s) de una petición hecha desde el hilo de la GUI (C-003)
+GUI_THREAD_MAX_TIMEOUT = 5
+
+
+def is_valid_plugin_id(plugin_id: Any) -> bool:
+    """True si plugin_id es seguro para usarlo como nombre de carpeta."""
+    return isinstance(plugin_id, str) and bool(_PLUGIN_ID_RE.match(plugin_id))
+
+
+def check_plugin_zip_members(zip_ref, max_total: int = MAX_PLUGIN_UNCOMPRESSED_BYTES) -> Optional[str]:
+    """
+    Revisa las entradas de un ZipFile antes de extraerlo.
+
+    Rechaza rutas absolutas, unidades de Windows, componentes '..' (zip slip),
+    demasiadas entradas y un tamaño descomprimido total por encima de max_total.
+    Devuelve None si el ZIP es aceptable o un mensaje con el motivo del rechazo.
+    """
+    infos = zip_ref.infolist()
+    if len(infos) > MAX_PLUGIN_ZIP_ENTRIES:
+        return f"demasiadas entradas en el ZIP ({len(infos)})"
+    total = 0
+    for info in infos:
+        name = info.filename
+        normalized = name.replace("\\", "/")
+        if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
+            return f"ruta absoluta en el ZIP: {name}"
+        if any(part == ".." for part in normalized.split("/")):
+            return f"ruta con '..' en el ZIP: {name}"
+        if info.file_size < 0:
+            return f"tamaño inválido en el ZIP: {name}"
+        total += info.file_size
+        if total > max_total:
+            return f"tamaño descomprimido por encima del límite ({max_total // (1024 * 1024)} MB)"
+    return None
+
+
+def _in_gui_thread() -> bool:
+    """True si el código se ejecuta en el hilo principal de Qt (hilo de la GUI)."""
+    try:
+        app = QCoreApplication.instance()
+        if app is not None:
+            return QThread.currentThread() == app.thread()
+    except Exception:
+        pass
+    return threading.current_thread() is threading.main_thread()
 
 
 class BackendError(Enum):
@@ -216,6 +280,14 @@ class BackendIntegration(QObject):
 
     license_renewed = Signal(str)  # plugin_id
 
+    # La restauración de sesión al arrancar falló. True = el backend rechazó
+    # los tokens (401/403: se borraron); False = fallo de red/timeout/5xx
+    # (los tokens se conservan y se reintenta al recuperar la conexión).
+    session_restore_failed = Signal(bool)
+
+    # Interna: resultado del /health hecho en un hilo (bool conectado, str error)
+    _connection_checked = Signal(bool, str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -293,6 +365,16 @@ class BackendIntegration(QObject):
 
         self.connection_check_interval = 30.0  # 30 segundos
 
+        # Comprobación de conectividad en curso (se hace en un hilo, C-003)
+        self._connection_check_running = False
+
+        # Restauración de sesión pendiente por fallo de red (D-005): se
+        # reintenta una vez cuando la conexión vuelve.
+        self._restore_pending = False
+
+        # El resultado del /health llega desde el hilo por señal encolada
+        self._connection_checked.connect(self._apply_connection_result, Qt.QueuedConnection)
+
         # Timer para verificación periódica de conectividad
 
         self.connection_timer = QTimer()
@@ -302,38 +384,78 @@ class BackendIntegration(QObject):
         self.connection_timer.start(30000)  # 30 segundos
 
         # Verificar conectividad inicial y auto-login: se difieren al siguiente
-        # ciclo del event loop (en vez de ejecutarse aquí de forma síncrona)
-        # para no bloquear el arranque del navegador — este constructor corre
-        # durante MainWindow.__init__, ANTES de que se muestre la ventana, y
-        # estas llamadas hacen peticiones HTTP con reintentos/backoff que
-        # pueden tardar decenas de segundos si el backend no responde.
+        # ciclo del event loop. La comprobación de conectividad va en un hilo;
+        # _restore_session sigue en el hilo de la GUI, pero allí _make_request
+        # hace un solo intento con timeout corto y sin sleep.
+        # Es la ÚNICA llamada a _restore_session al arrancar (AuthManager ya no
+        # la llama de forma síncrona).
         QTimer.singleShot(0, self._check_connection)
 
         QTimer.singleShot(0, self._restore_session)
     def _check_connection(self):
-        """Verificar conectividad con el backend"""
+        """Verificar conectividad con el backend (GET /health en un hilo aparte).
+
+        No bloquea la GUI: el resultado vuelve por _connection_checked
+        (conexión encolada) y se aplica en _apply_connection_result. Si la
+        comprobación anterior sigue en curso, no se lanza otra.
+        """
+
+        if self._connection_check_running:
+            logger.debug("Connection check already running, skipping")
+
+            return
+        self._connection_check_running = True
+
+        url = f"{self.api_base_url}/health"
+
+        def _worker():
+            try:
+                response = requests.get(url, timeout=5, proxies=requests_proxies(url))
+
+                self._connection_checked.emit(response.status_code == 200, "")
+            except Exception as e:
+                self._connection_checked.emit(False, str(e))
 
         try:
-            response = requests.get(f"{self.api_base_url}/health", timeout=5)
-
-            was_connected = self.is_connected
-
-            self.is_connected = response.status_code == 200
-
-            if was_connected != self.is_connected:
-                self.connection_status_changed.emit(self.is_connected)
-
-                logger.info(f"Connection status changed: {self.is_connected}")
-            self.last_connection_check = time.time()
+            threading.Thread(target=_worker, name="katphi-health-check", daemon=True).start()
         except Exception as e:
-            was_connected = self.is_connected
+            self._connection_check_running = False
 
-            self.is_connected = False
+            logger.warning(f"Could not start connection check thread: {e}")
+    def _apply_connection_result(self, connected: bool, error: str = ""):
+        """Aplicar en el hilo de la GUI el resultado de la comprobación de conectividad"""
 
-            if was_connected != self.is_connected:
-                self.connection_status_changed.emit(self.is_connected)
+        self._connection_check_running = False
 
-                logger.warning(f"Connection lost: {e}")
+        self.last_connection_check = time.time()
+
+        self._set_connected(connected, error)
+    def _set_connected(self, connected: bool, error: str = ""):
+        """Actualizar is_connected y emitir connection_status_changed si cambia"""
+
+        was_connected = self.is_connected
+
+        self.is_connected = connected
+
+        if was_connected != connected:
+            self.connection_status_changed.emit(connected)
+
+            if connected:
+                logger.info(f"Connection status changed: {connected}")
+            else:
+                logger.warning(f"Connection lost: {error}")
+            # D-005: la restauración de sesión falló por red; reintentar una
+            # vez ahora que hay conexión.
+            if connected and self._restore_pending:
+                self._restore_pending = False
+
+                logger.info("Connection restored, retrying saved session restore")
+
+                QTimer.singleShot(0, self._restore_session)
+    def is_restore_pending(self) -> bool:
+        """True si hay una sesión guardada pendiente de restaurar por fallo de red"""
+
+        return self._restore_pending
     def _make_request(self, method: str, endpoint: str, **kwargs) -> BackendResponse:
         """Realizar petición HTTP con manejo robusto de errores"""
 
@@ -357,7 +479,22 @@ class BackendIntegration(QObject):
 
         if 'timeout' in kwargs:
             del kwargs['timeout']
-        for attempt in range(self.max_retries):
+        # C-003: en el hilo de la GUI no se duerme entre reintentos: un solo
+        # intento con timeout corto. En hilos worker se mantiene el
+        # comportamiento completo (reintentos con backoff exponencial).
+        max_attempts = self.max_retries
+
+        if _in_gui_thread():
+            max_attempts = 1
+
+            try:
+                timeout_value = min(float(timeout_value), GUI_THREAD_MAX_TIMEOUT)
+            except (TypeError, ValueError):
+                timeout_value = GUI_THREAD_MAX_TIMEOUT
+        # B-002: con Tor activo, también estas peticiones van por el SOCKS
+        kwargs['proxies'] = requests_proxies(url)
+
+        for attempt in range(max_attempts):
             try:
                 logger.info(f"Making {method} request to {url} (attempt {attempt + 1})")
 
@@ -408,9 +545,9 @@ class BackendIntegration(QObject):
 
                                         status_code=response.status_code, message=f"Unexpected status: {response.status_code}")
             except requests.exceptions.Timeout:
-                logger.warning(f"Timeout on attempt {attempt + 1}/{self.max_retries}")
+                logger.warning(f"Timeout on attempt {attempt + 1}/{max_attempts}")
 
-                if attempt < self.max_retries - 1:
+                if attempt < max_attempts - 1:
                     # Backoff exponencial: delay = initial * (backoff ^ attempt), limitado a max_delay
 
                     delay = min(self.initial_retry_delay * (self.retry_backoff ** attempt), 
@@ -425,9 +562,9 @@ class BackendIntegration(QObject):
 
                                      message="Request timeout after all retries")
             except requests.exceptions.ConnectionError as e:
-                logger.warning(f"Connection error on attempt {attempt + 1}/{self.max_retries}: {e}")
+                logger.warning(f"Connection error on attempt {attempt + 1}/{max_attempts}: {e}")
 
-                if attempt < self.max_retries - 1:
+                if attempt < max_attempts - 1:
                     # Backoff exponencial para errores de conexión
 
                     delay = min(self.initial_retry_delay * (self.retry_backoff ** attempt), 
@@ -442,9 +579,9 @@ class BackendIntegration(QObject):
 
                                      message="Connection failed after all retries")
             except Exception as e:
-                logger.error(f"Unexpected error on attempt {attempt + 1}/{self.max_retries}: {e}")
+                logger.error(f"Unexpected error on attempt {attempt + 1}/{max_attempts}: {e}")
 
-                if attempt < self.max_retries - 1:
+                if attempt < max_attempts - 1:
                     # Backoff exponencial para errores inesperados
 
                     delay = min(self.initial_retry_delay * (self.retry_backoff ** attempt), 
@@ -540,6 +677,14 @@ class BackendIntegration(QObject):
 
         """
 
+        self._restore_pending = False
+
+        # Si ya hay sesión activa (p. ej. login interactivo antes de que
+        # llegara el reintento), no hay nada que restaurar.
+        if self.current_user and self.access_token:
+            logger.info("Session already active, skipping restore")
+
+            return
         try:
             # Verificar si hay tokens guardados (cifrados)
             encryption = get_token_encryption()
@@ -551,6 +696,10 @@ class BackendIntegration(QObject):
             if not encrypted_access or not encrypted_refresh:
                 logger.info("No saved session found")
 
+                # Sin tokens no hay sesión que restaurar: AuthManager descarta
+                # el estado optimista que cargó de sus credenciales guardadas.
+                self.session_restore_failed.emit(True)
+
                 return
             # Restaurar tokens (descifrados)
 
@@ -561,6 +710,13 @@ class BackendIntegration(QObject):
             # Verificar que el descifrado fue exitoso
             if not self.access_token or not self.refresh_token:
                 logger.warning("Failed to decrypt tokens")
+
+                self.access_token = None
+
+                self.refresh_token = None
+
+                self.session_restore_failed.emit(True)
+
                 return
             # Restaurar expiración
 
@@ -579,60 +735,123 @@ class BackendIntegration(QObject):
             logger.info(f"Session data found for user: {user_email}")
 
             # Verificar si el token todavía es válido
+            # D-005: los tokens guardados solo se borran si el backend los
+            # rechaza (401/403 o refresh rechazado). Ante red caída, timeout o
+            # 5xx se conservan y se reintenta al recuperar la conexión.
 
             if self.token_expires_at and datetime.now() >= self.token_expires_at:
                 logger.info("Saved token expired, attempting refresh...")
 
                 if self._refresh_token():
                     logger.info("Token refreshed successfully, session restored")
-                else:
-                    logger.warning("Token refresh failed, clearing saved session")
+                elif self.refresh_token is None:
+                    # _refresh_token llamó a logout(): el backend rechazó el
+                    # refresh token (y ya se borraron los tokens guardados)
+                    logger.warning("Refresh token rejected by backend, saved session cleared")
 
-                    self._clear_saved_tokens()
+                    self._on_restore_auth_rejected()
+
+                    return
+                else:
+                    logger.warning("Token refresh failed (network/server), keeping saved session")
+
+                    self._on_restore_network_failure()
 
                     return
             # Validar token con el backend
 
-            try:
-                user_response = self._make_request("GET", "/auth/me", timeout=self.config.get_timeout('quick_check'))
+            user_response = self._make_request("GET", "/auth/me", timeout=self.config.get_timeout('quick_check'))
 
-                if user_response.success:
-                    user_data = user_response.data
+            if (not user_response.success
+                    and user_response.error == BackendError.AUTHENTICATION_ERROR
+                    and self.refresh_token):
+                # Access token rechazado aunque el reloj diga que sigue vigente:
+                # un intento de refresco antes de dar la sesión por perdida.
+                logger.info("Saved access token rejected, trying refresh once")
 
-                    self.current_user = BackendUser(
+                self.token_expires_at = datetime.now()
 
-                        id=user_data["id"],
+                if self._refresh_token():
+                    user_response = self._make_request("GET", "/auth/me",
+                                                       timeout=self.config.get_timeout('quick_check'))
+                elif self.refresh_token is not None:
+                    self._on_restore_network_failure()
 
-                        email=user_data["email"],
+                    return
+            if user_response.success:
+                user_data = user_response.data
 
-                        full_name=user_data["full_name"],
+                self.current_user = BackendUser(
 
-                        is_verified=user_data["is_verified"],
+                    id=user_data["id"],
 
-                        created_at=user_data["created_at"]
-                    )
+                    email=user_data["email"],
 
-                    # Cargar datos del usuario
+                    full_name=user_data["full_name"],
 
-                    self._load_user_data()
+                    is_verified=user_data["is_verified"],
 
-                    # Emitir señal de login exitoso
+                    created_at=user_data["created_at"]
+                )
 
-                    self.login_successful.emit(self.current_user)
+                self._restore_pending = False
 
-                    logger.info(f"AUTO-LOGIN successful for: {user_email}")
-                else:
-                    logger.warning(f"Token validation failed: {user_response.message}")
+                # El backend acaba de responder: hay conexión. Se marca ya para
+                # que los listeners de login_successful (resync de plugins,
+                # is_plugin_licensed) no vean is_connected=False mientras llega
+                # el resultado del /health que corre en su hilo.
+                self._set_connected(True)
 
-                    self._clear_saved_tokens()
-            except Exception as e:
-                logger.error(f"Error validating saved token: {e}")
+                # Cargar datos del usuario
 
-                self._clear_saved_tokens()
+                self._load_user_data()
+
+                # Emitir señal de login exitoso
+
+                self.login_successful.emit(self.current_user)
+
+                logger.info(f"AUTO-LOGIN successful for: {user_email}")
+            elif user_response.error in (BackendError.AUTHENTICATION_ERROR, BackendError.AUTHORIZATION_ERROR):
+                logger.warning(f"Saved session rejected by backend: {user_response.message}")
+
+                self._on_restore_auth_rejected()
+            else:
+                logger.warning(f"Token validation failed (network/server), keeping saved session: {user_response.message}")
+
+                self._on_restore_network_failure()
         except Exception as e:
+            # Error inesperado (datos corruptos, respuesta sin campos...): no
+            # es un rechazo de credenciales, así que no se borra la sesión.
             logger.error(f"Error restoring session: {e}")
 
-            self._clear_saved_tokens()
+            self.current_user = None
+
+            self.session_restore_failed.emit(False)
+    def _on_restore_auth_rejected(self):
+        """El backend rechazó la sesión guardada: borrar tokens y avisar"""
+
+        self._restore_pending = False
+
+        self.current_user = None
+
+        self.access_token = None
+
+        self.refresh_token = None
+
+        self.token_expires_at = None
+
+        self._clear_saved_tokens()
+
+        self.session_restore_failed.emit(True)
+    def _on_restore_network_failure(self):
+        """No se pudo validar la sesión por red/servidor: conservar tokens y
+        reintentar una vez cuando connection_status_changed(True)"""
+
+        self.current_user = None
+
+        self._restore_pending = True
+
+        self.session_restore_failed.emit(False)
     def _clear_saved_tokens(self):
         """Limpiar tokens guardados"""
 
@@ -1109,6 +1328,13 @@ class BackendIntegration(QObject):
 
         """
 
+        # G-007: el id se usa para construir rutas (rmtree/extractall)
+        if not is_valid_plugin_id(plugin_id):
+            logger.error(f"Invalid plugin id rejected: {plugin_id!r}")
+
+            return BackendResponse(False, error=BackendError.INVALID_RESPONSE,
+
+                                message="Invalid plugin id")
         if not self.is_authenticated():
             return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
@@ -1128,9 +1354,31 @@ class BackendIntegration(QObject):
 
             # Descargar archivo ZIP con timeout extendido
 
-            http_response = requests.get(url, headers=headers, timeout=60)
+            http_response = requests.get(url, headers=headers, timeout=60, stream=True,
+                                         proxies=requests_proxies(url))
 
             if http_response.status_code == 200:
+                # Leer el ZIP con un tope de tamaño (G-007)
+                chunks = []
+
+                received = 0
+
+                for chunk in http_response.iter_content(chunk_size=64 * 1024):
+                    if not chunk:
+                        continue
+                    received += len(chunk)
+
+                    if received > MAX_PLUGIN_DOWNLOAD_BYTES:
+                        http_response.close()
+
+                        logger.error(f"Plugin {plugin_id} download exceeds size limit")
+
+                        return BackendResponse(False, error=BackendError.SERVER_ERROR,
+
+                                            message="Downloaded plugin exceeds the maximum allowed size")
+                    chunks.append(chunk)
+                downloaded_content = b"".join(chunks)
+
                 try:
                     # Importar módulos necesarios
 
@@ -1166,14 +1414,26 @@ class BackendIntegration(QObject):
 
                     expected_checksum = None
 
-                    if self.config.get('plugins.validate_checksum', True):
+                    validate_checksum = self.config.get('plugins.validate_checksum', True)
+
+                    if validate_checksum:
                         expected_checksum = self._get_plugin_checksum(plugin_id)
 
                         if expected_checksum:
                             logger.info(f"Expected checksum for {plugin_id}: {expected_checksum[:16]}...")
+                        else:
+                            # G-001: fail closed. Sin checksum del servidor no se
+                            # instala nada (antes se instalaba sin validar).
+                            logger.error(f"No checksum available for {plugin_id}, installation rejected")
+
+                            return BackendResponse(False, error=BackendError.SERVER_ERROR,
+
+                                                message="No se pudo verificar la integridad del plugin "
+                                                        "(el servidor no devolvió su checksum). "
+                                                        "Instalación cancelada; inténtalo de nuevo más tarde.")
                     # PASO 3: CALCULAR CHECKSUM DEL ARCHIVO DESCARGADO
 
-                    zip_content = http_response.content
+                    zip_content = downloaded_content
 
                     actual_checksum = hashlib.sha256(zip_content).hexdigest()
 
@@ -1181,7 +1441,7 @@ class BackendIntegration(QObject):
 
                     # PASO 4: VALIDAR CHECKSUM
 
-                    if expected_checksum and self.config.get('plugins.validate_checksum', True):
+                    if validate_checksum:
                         if actual_checksum != expected_checksum:
                             logger.error(f"Checksum mismatch for {plugin_id}!")
 
@@ -1221,6 +1481,15 @@ class BackendIntegration(QObject):
                                 logger.warning(f"Plugin {plugin_id} may not have plugin.py or __init__.py")
                             # Testear integridad del ZIP
 
+                            # G-007: rutas absolutas, '..' y tamaño descomprimido
+                            zip_problem = check_plugin_zip_members(test_zip)
+
+                            if zip_problem:
+                                logger.error(f"Unsafe ZIP for {plugin_id}: {zip_problem}")
+
+                                return BackendResponse(False, error=BackendError.SERVER_ERROR,
+
+                                                    message=f"Plugin ZIP rejected: {zip_problem}")
                             bad_file = test_zip.testzip()
 
                             if bad_file:
@@ -1445,10 +1714,15 @@ class BackendIntegration(QObject):
         try:
             response = self._make_request("GET", f"/api/plugins/{plugin_id}/checksum")
 
-            if response.success and response.data:
+            if response.success and isinstance(response.data, dict):
                 checksum = response.data.get("checksum") or response.data.get("sha256")
 
-                return checksum
+                # Solo se acepta un SHA-256 hexadecimal bien formado
+                if isinstance(checksum, str) and re.fullmatch(r"[0-9a-fA-F]{64}", checksum.strip()):
+                    return checksum.strip().lower()
+                logger.warning(f"Malformed checksum for plugin {plugin_id}")
+
+                return None
             else:
                 logger.warning(f"No checksum available for plugin {plugin_id}")
 
@@ -1557,6 +1831,8 @@ class BackendIntegration(QObject):
 
         logger.info("Forcing reconnection to backend")
 
+        # La comprobación es asíncrona: el resultado llega por
+        # connection_status_changed
         self._check_connection()
 
         if self.is_authenticated():
@@ -1612,13 +1888,17 @@ class BackendIntegration(QObject):
         if not self.refresh_token:
             return False
         try:
+            refresh_url = f"{self.api_base_url}/auth/refresh"
+
             response = requests.post(
 
-                f"{self.api_base_url}/auth/refresh",
+                refresh_url,
 
                 headers={"Authorization": f"Bearer {self.refresh_token}"},
 
-                timeout=10
+                timeout=10,
+
+                proxies=requests_proxies(refresh_url)
             )
 
             if response.status_code == 200:

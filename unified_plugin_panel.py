@@ -7,6 +7,7 @@ Versión rediseñada: Solo Tienda y Gestión
 from typing import Optional
 import html
 import logging
+import threading
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, 
     QPushButton, QLabel, QHeaderView, QMessageBox, QFrame,
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 class UnifiedPluginPanel(BasePanel):
     """Panel unificado SIMPLIFICADO para gestión de plugins"""
+
+    # Resultado del refresco de licencias hecho en un hilo (C-003):
+    # (éxito, nº de licencias, mensaje de error)
+    _licenses_refresh_done = Signal(bool, int, str)
 
     def __init__(self, plugin_manager: UnifiedPluginManager, parent=None):
         # Inicializar elementos UI antes de super().__init__
@@ -44,6 +49,10 @@ class UnifiedPluginPanel(BasePanel):
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self.refresh_all_after_login)
+
+        # Refresco de licencias en segundo plano (no bloquea la GUI)
+        self._licenses_refresh_running = False
+        self._licenses_refresh_done.connect(self._on_licenses_refreshed, Qt.QueuedConnection)
 
         # Conectar señales del plugin manager
         self.plugin_manager.plugin_installed.connect(self.on_plugin_installed)
@@ -679,9 +688,17 @@ class UnifiedPluginPanel(BasePanel):
         layout.addWidget(container)
         return widget
     def refresh_licenses_from_backend(self):
-        """Refrescar licencias del usuario desde el backend"""
+        """Refrescar licencias del usuario desde el backend.
+
+        Las peticiones (/licenses/me/entitlements y /api/plugins/available) se
+        hacen en un hilo; el resultado vuelve por _licenses_refresh_done
+        (conexión encolada) y la UI se toca solo en el hilo de la GUI.
+        """
         print("[UnifiedPluginPanel] Refrescando licencias desde el backend...")
 
+        if self._licenses_refresh_running:
+            print("[UnifiedPluginPanel] Refresco de licencias ya en curso")
+            return
         try:
             from backend_integration import backend_integration
 
@@ -689,20 +706,53 @@ class UnifiedPluginPanel(BasePanel):
                 QMessageBox.warning(self, "No Autenticado", 
                                   "Debes iniciar sesión para refrescar las licencias.")
                 return
-            success = backend_integration.refresh_licenses()
-
-            if success:
-                self.refresh_all_after_login()
-                QMessageBox.information(self, "Licencias Actualizadas",
-                                      f"Las licencias se han actualizado correctamente.\n\n"
-                                      f"Licencias activas: {len(backend_integration.user_licenses)}")
-                print(f"[UnifiedPluginPanel] Licencias refrescadas: {len(backend_integration.user_licenses)} activas")
-            else:
-                QMessageBox.warning(self, "Error",
-                                  "No se pudieron refrescar las licencias. Verifica tu conexión.")
         except Exception as e:
             print(f"[UnifiedPluginPanel] Error al refrescar licencias: {e}")
             QMessageBox.critical(self, "Error", f"Error al refrescar licencias:\n{str(e)}")
+            return
+        self._licenses_refresh_running = True
+        if self.status_label:
+            self.status_label.setText("Refrescando licencias...")
+
+        def _worker():
+            try:
+                ok = bool(backend_integration.refresh_licenses())
+                self._licenses_refresh_done.emit(ok, len(backend_integration.user_licenses), "")
+            except Exception as e:
+                self._licenses_refresh_done.emit(False, 0, str(e))
+
+        try:
+            threading.Thread(target=_worker, name="katphi-refresh-licenses", daemon=True).start()
+        except Exception as e:
+            self._licenses_refresh_running = False
+            QMessageBox.critical(self, "Error", f"Error al refrescar licencias:\n{str(e)}")
+    def _on_licenses_refreshed(self, success: bool, count: int, error: str):
+        """Resultado del refresco de licencias (hilo de la GUI)"""
+        self._licenses_refresh_running = False
+
+        if error:
+            print(f"[UnifiedPluginPanel] Error al refrescar licencias: {error}")
+            QMessageBox.critical(self, "Error", f"Error al refrescar licencias:\n{error}")
+            return
+        if success:
+            # Las licencias de AuthManager (las que usa el panel) se
+            # recalculan con lo que acaba de cargar el backend
+            try:
+                am = self.plugin_manager.auth_manager
+                if am:
+                    am._load_user_entitlements()
+            except Exception as e:
+                print(f"[UnifiedPluginPanel] No se pudieron recargar las licencias locales: {e}")
+            self.refresh_all_after_login()
+            QMessageBox.information(self, "Licencias Actualizadas",
+                                  f"Las licencias se han actualizado correctamente.\n\n"
+                                  f"Licencias activas: {count}")
+            print(f"[UnifiedPluginPanel] Licencias refrescadas: {count} activas")
+        else:
+            if self.status_label:
+                self.status_label.setText("No se pudieron refrescar las licencias")
+            QMessageBox.warning(self, "Error",
+                              "No se pudieron refrescar las licencias. Verifica tu conexión.")
     # ==================== MANEJADORES DE SEÑALES ====================
 
     def on_plugin_installed(self, plugin_id: str):

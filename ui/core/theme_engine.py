@@ -15,6 +15,8 @@ Fecha: 2025-01-27
 
 import json
 
+import re
+
 import os
 
 from pathlib import Path
@@ -97,7 +99,10 @@ class ThemeEngine(QObject):
 
         saved_theme = self.settings.value("theme", ThemeDefaults.DEFAULT_THEME)
 
-        self.apply_theme(saved_theme)
+        # Un tema guardado que ya no existe (o la vista previa de una versión
+        # anterior) no debe dejar la aplicación sin estilo
+        if not self.apply_theme(str(saved_theme)):
+            self.apply_theme(ThemeDefaults.DEFAULT_THEME)
     def _load_theme_files(self):
         """Carga todos los archivos de tema disponibles desde múltiples ubicaciones"""
 
@@ -213,7 +218,9 @@ class ThemeEngine(QObject):
 
             self.current_theme = key
 
-            self.settings.setValue("theme", key)
+            # Los temas temporales ("__preview__") no se persisten
+            if not key.startswith("__"):
+                self.settings.setValue("theme", key)
 
             # Emitir señales
 
@@ -1006,7 +1013,7 @@ class ThemeEngine(QObject):
 
         for theme_id, theme_data in self.themes.items():
             # Evitar duplicados (temas guardados por ID y por nombre)
-            if " " in theme_id or theme_id in seen_ids:
+            if " " in theme_id or theme_id in seen_ids or theme_id.startswith("__"):
                 continue
             seen_ids.add(theme_id)
             try:
@@ -1033,18 +1040,38 @@ class ThemeEngine(QObject):
             if not self._validate_theme_data(theme_data):
                 print(f"[ThemeEngine] Invalid theme data for {theme_id}")
                 return False
+            # El id llega de JSON importados: normalizarlo para que no pueda
+            # salir de custom_theme_dir (../, rutas absolutas) ni tener espacios
+            theme_id = self._safe_theme_id(theme_id)
+            if not theme_id:
+                print("[ThemeEngine] Invalid theme id")
+                return False
+            try:
+                from ui.core.constants import ThemeDefaults
+                base_themes = ThemeDefaults.BASE_THEMES
+            except Exception:
+                base_themes = ["light", "dark"]
+            if save_to_file and theme_id in base_themes:
+                print(f"[ThemeEngine] Cannot overwrite base theme: {theme_id}")
+                return False
+
             # Agregar metadatos
             theme_data["id"] = theme_id
             theme_data["version"] = theme_data.get("version", "1.0.0")
             theme_data["type"] = "custom"
 
-            # Guardar en memoria
+            # Guardar en memoria (la vista previa no registra alias por nombre
+            # para no tapar un tema real con el mismo nombre)
             self.themes[theme_id.lower()] = theme_data
-            self.themes[theme_data.get("name", theme_id).lower()] = theme_data
+            if not theme_id.startswith("__"):
+                self.themes[theme_data.get("name", theme_id).lower()] = theme_data
 
             # Guardar en archivo si se solicita
             if save_to_file:
                 theme_file = self.custom_theme_dir / f"{theme_id}.json"
+                if theme_file.resolve().parent != self.custom_theme_dir.resolve():
+                    print(f"[ThemeEngine] Theme path outside custom dir: {theme_id}")
+                    return False
                 with open(theme_file, 'w', encoding='utf-8') as f:
                     json.dump(theme_data, f, indent=2, ensure_ascii=False)
                 print(f"[ThemeEngine] Custom theme created: {theme_id}")
@@ -1071,14 +1098,22 @@ class ThemeEngine(QObject):
             if theme_id.lower() in self.themes:
                 del self.themes[theme_id.lower()]
             # Eliminar archivo
-            theme_file = self.custom_theme_dir / f"{theme_id}.json"
-            if theme_file.exists():
+            safe_id = self._safe_theme_id(theme_id)
+            theme_file = self.custom_theme_dir / f"{safe_id}.json"
+            if safe_id and theme_file.resolve().parent == self.custom_theme_dir.resolve() and theme_file.exists():
                 theme_file.unlink()
             print(f"[ThemeEngine] Custom theme deleted: {theme_id}")
             return True
         except Exception as e:
             print(f"[ThemeEngine] Failed to delete custom theme {theme_id}: {e}")
             return False
+    @staticmethod
+    def _safe_theme_id(theme_id) -> str:
+        """Id de tema apto como nombre de archivo: letras, dígitos, _ y -."""
+        tid = re.sub(r"\s+", "_", str(theme_id or "").strip().lower())
+        tid = re.sub(r"[^\w\-]", "", tid)[:64]
+        return tid
+
     def _validate_theme_data(self, theme_data: Dict) -> bool:
         """
         Valida que los datos del tema sean correctos

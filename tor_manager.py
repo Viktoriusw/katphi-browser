@@ -5,7 +5,7 @@ Gestión del proceso Tor para Katphi Browser.
 Ciclo de vida del proceso Tor usando stem, con estados:
 STOPPED, STARTING, BOOTSTRAPPING(0-100%), CONNECTED, ERROR.
 
-El proceso Tor muere automáticamente si el proceso Python termina (take_ownership=True).
+El proceso Tor muere automáticamente si el proceso Python termina (__OwningControllerProcess).
 """
 
 import logging
@@ -60,6 +60,11 @@ def _hash_control_password(password: str, tor_binary: str = "tor") -> str:
     return ""
 
 
+# Variable de entorno con la contraseña del ControlPort del Tor que lanzamos.
+# Sobrevive a os.execv (reinicio con/sin Tor) para poder pararlo después.
+_CONTROL_PW_ENV = "KATPHI_TOR_CONTROL_PW"
+
+
 class TorStatus(Enum):
     """Estados del proceso Tor."""
     STOPPED = "stopped"
@@ -92,7 +97,8 @@ class TorManager:
         if not hasattr(self, "_initialized"):
             self._process = None
             self._status = TorStatus.STOPPED
-            self._control_password: Optional[str] = None
+            self._control_password: Optional[str] = os.environ.get(_CONTROL_PW_ENV) or None
+            self._cancel_requested = False
             self._bootstrap_percent = 0
             self._error_message: Optional[str] = None
             self._initialized = True
@@ -238,17 +244,44 @@ class TorManager:
                 self._status = TorStatus.BOOTSTRAPPING
                 if progress_callback:
                     progress_callback(pct)
+        # C-007: se lanza Tor con Popen propio (en lugar de
+        # stem.process.launch_tor_with_config, que no devuelve el Popen hasta
+        # terminar el bootstrap). Así self._process existe desde el primer
+        # momento y stop() puede terminarlo si el usuario cancela.
+        # __OwningControllerProcess equivale a take_ownership=True de stem:
+        # Tor se cierra solo si muere este proceso.
+        torrc_path = data_dir.parent / "torrc"
         try:
-            logger.debug("[TOR] Llamando stem.process.launch_tor_with_config (timeout=None, take_ownership=True)")
-            # timeout=None: stem solo permite timeout en el hilo principal.
-            # Llamamos desde QThread, así que sin timeout. El usuario puede cancelar.
-            self._process = stem.process.launch_tor_with_config(
-                config=config,
-                init_msg_handler=init_msg_handler,
-                timeout=None,
-                take_ownership=True,
-                close_output=False,
+            lines = []
+            for key, value in config.items():
+                for v in (value if isinstance(value, list) else [value]):
+                    lines.append(f"{key} {v}")
+            fd = os.open(str(torrc_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            cmd = [
+                tor_bin, "-f", str(torrc_path),
+                "__OwningControllerProcess", str(os.getpid()),
+            ]
+            logger.debug("[TOR] Lanzando Tor: %s", cmd[0])
+            popen_kwargs = {}
+            if platform.system() == "Windows":
+                popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            self._cancel_requested = False
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                **popen_kwargs,
             )
+            self._process = proc
+            # Disponible tras un execv (el entorno se conserva) para poder
+            # pararlo por ControlPort aunque se haya perdido el Popen.
+            os.environ[_CONTROL_PW_ENV] = self._control_password
         except OSError as e:
             self._status = TorStatus.ERROR
             self._error_message = str(e)
@@ -263,11 +296,55 @@ class TorManager:
             self._error_message = str(e)
             logger.exception("[TOR] Error inesperado: %s", e)
             return False
+
+        # Leer la salida hasta "Bootstrapped 100%". Si stop() termina el
+        # proceso, readline() devuelve "" y se sale del bucle.
+        problem_pattern = re.compile(r"\[(warn|err)\] (.*)$")
+        last_problem = None
+        bootstrapped = False
+        try:
+            for line in iter(proc.stdout.readline, ""):
+                init_msg_handler(line)
+                m = problem_pattern.search(line.strip())
+                if m:
+                    last_problem = m.group(2)
+                if "Bootstrapped 100%" in line:
+                    bootstrapped = True
+                    break
+        except Exception as e:
+            logger.debug("[TOR] Lectura de la salida de Tor interrumpida: %s", e)
+
+        if self._cancel_requested or self._process is not proc:
+            logger.info("[TOR] Bootstrap cancelado por el usuario")
+            self._status = TorStatus.STOPPED
+            return False
+        if not bootstrapped:
+            self._status = TorStatus.ERROR
+            self._error_message = last_problem or "Tor terminó inesperadamente"
+            logger.error("[TOR] Tor no completó el bootstrap: %s", self._error_message)
+            self.stop()
+            return False
+
+        # Seguir vaciando stdout en segundo plano: si nadie lo lee, la tubería
+        # se llena y Tor se bloquea al escribir su log.
+        def _drain(stream) -> None:
+            try:
+                for _ in iter(stream.readline, ""):
+                    pass
+            except Exception:
+                pass
+        import threading
+        threading.Thread(target=_drain, args=(proc.stdout,), daemon=True,
+                         name="tor-stdout").start()
+
         # Esperar a que SOCKS5 esté listo
         import time
         start = time.time()
         while time.time() - start < 10:
-            if self._process.poll() is not None:
+            if self._cancel_requested or self._process is not proc:
+                self._status = TorStatus.STOPPED
+                return False
+            if proc.poll() is not None:
                 self._status = TorStatus.ERROR
                 self._error_message = "Tor terminó inesperadamente"
                 return False
@@ -285,17 +362,36 @@ class TorManager:
         self.stop()
         return False
     def stop(self) -> None:
-        """Termina el proceso Tor limpiamente."""
-        if self._process is not None:
+        """Termina el proceso Tor limpiamente.
+
+        Puede llamarse desde el hilo de la GUI mientras start() espera el
+        bootstrap en un QThread: al terminar el proceso, start() sale.
+        Si no tenemos el Popen (p. ej. tras un reinicio con execv) pero sí la
+        contraseña del ControlPort, se pide a Tor que se cierre (SIGNAL HALT).
+        """
+        self._cancel_requested = True
+        proc = self._process
+        if proc is not None:
             try:
-                self._process.terminate()
-                self._process.wait(timeout=5)
+                proc.terminate()
+                proc.wait(timeout=5)
             except Exception:
                 try:
-                    self._process.kill()
+                    proc.kill()
                 except Exception:
                     pass
             self._process = None
+        elif TOR_AVAILABLE and self._control_password and self.is_socks5_ready(timeout=0.5):
+            try:
+                from stem.control import Controller
+                from stem import Signal
+                with Controller.from_port(port=self.TOR_CONTROL_PORT) as ctrl:
+                    ctrl.authenticate(password=self._control_password)
+                    ctrl.signal(Signal.HALT)
+                logger.info("[TOR] Tor detenido vía ControlPort (HALT)")
+            except Exception as e:
+                logger.debug("[TOR] No se pudo detener Tor vía ControlPort: %s", e)
+        os.environ.pop(_CONTROL_PW_ENV, None)
         self._status = TorStatus.STOPPED
         self._bootstrap_percent = 0
     def request_new_identity(self) -> bool:

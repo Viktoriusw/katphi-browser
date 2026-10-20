@@ -22,7 +22,77 @@ from typing import Iterator, List, Dict, Optional
 
 from PySide6.QtCore import QSettings
 
+from net_proxy import requests_proxies
+
 logger = logging.getLogger(__name__)
+
+
+class _ProxySession(requests.Session):
+    """
+    Session que aplica el proxy de Tor (B-002) a cada petición y guarda las
+    respuestas en streaming abiertas para poder cortarlas desde otro hilo (C-007).
+
+    requests_proxies() devuelve None para URLs locales (Ollama, LM Studio), así que
+    los proveedores locales siguen funcionando con Tor activo.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._open_streams: set = set()
+        self._aborted = False
+
+    def request(self, method, url, **kwargs):
+        if self._aborted:
+            raise LLMError("Petición cancelada")
+        if kwargs.get("proxies") is None:
+            proxies = requests_proxies(str(url))
+            if proxies:
+                kwargs["proxies"] = proxies
+        resp = super().request(method, url, **kwargs)
+        if kwargs.get("stream"):
+            self._open_streams.add(resp)
+        return resp
+
+    def reset_abort(self):
+        """Permite nuevas peticiones tras una cancelación (se llama al empezar cada petición)."""
+        self._aborted = False
+
+    def abort(self):
+        """
+        Cierra las respuestas en streaming abiertas (desbloquea iter_lines) y rechaza
+        el resto de peticiones de la petición en curso, hasta el próximo reset_abort().
+        """
+        self._aborted = True
+        for resp in list(self._open_streams):
+            # close() no despierta un recv() bloqueado en otro hilo: antes se hace
+            # shutdown() del socket, que sí lo desbloquea (iter_lines lanza y termina).
+            _shutdown_response_socket(resp)
+            try:
+                resp.close()
+            except Exception:
+                pass
+        self._open_streams.clear()
+
+
+def _shutdown_response_socket(resp) -> None:
+    """Cierra en ambos sentidos el socket de una respuesta de requests (urllib3 2.x / 1.x)."""
+    import socket as _socket
+    raw = getattr(resp, "raw", None)
+    candidates = []
+    conn = getattr(raw, "_connection", None)          # urllib3 2.x
+    candidates.append(getattr(conn, "sock", None))
+    fp = getattr(raw, "_fp", None)                    # http.client.HTTPResponse
+    sock_io = getattr(getattr(fp, "fp", None), "raw", None)
+    candidates.append(getattr(sock_io, "_sock", None))
+    for sock in candidates:
+        if sock is None:
+            continue
+        try:
+            sock.shutdown(_socket.SHUT_RDWR)
+            return
+        except Exception:
+            continue
+
 
 # ─── Constantes ────────────────────────────────────────────────────────────────
 
@@ -324,11 +394,23 @@ class LLMClient:
     def __init__(self, config: Optional[LLMConfig] = None):
         self.config = config or LLMConfig()
         # Session reutilizable para connection pooling (reduce latencia TCP)
-        self._session = requests.Session()
+        # Con Tor activo enruta por SOCKS (socks5h) todo lo que no sea local.
+        self._session = _ProxySession()
         # Caché del modelo local detectado (evita llamadas GET repetidas)
         self._cached_model_id: Optional[str] = None
         # Caché de num_ctx de Ollama (evita /api/show en cada petición)
         self._ollama_num_ctx: Optional[int] = None
+
+    def abort(self):
+        """
+        Corta la petición en curso cerrando la respuesta HTTP en streaming.
+        Se puede llamar desde el hilo GUI mientras otro hilo itera chat_stream().
+        """
+        try:
+            self._session.abort()
+        except Exception as e:
+            logger.debug("abort LLMClient: %s", e)
+
     # ── API pública ───────────────────────────────────────────────────────────
 
     def chat(
@@ -342,6 +424,8 @@ class LLMClient:
         Si max_tokens es None el servidor decide el límite (sin restricción desde el cliente).
         Lanza LLMError si algo falla.
         """
+        # Cada petición nueva empieza sin la cancelación de la anterior
+        self._session.reset_abort()
         temp = temperature if temperature is not None else self.config.temperature
 
         if self.config.provider == PROVIDER_ANTHROPIC:
@@ -365,6 +449,7 @@ class LLMClient:
         Genera la respuesta del LLM como un iterador de fragmentos de texto (SSE).
         Compatible con el formato OpenAI Server-Sent Events.
         """
+        self._session.reset_abort()
         temp = temperature if temperature is not None else self.config.temperature
 
         if self.config.provider == PROVIDER_ANTHROPIC:

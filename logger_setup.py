@@ -124,7 +124,81 @@ class _ColorFormatter(logging.Formatter):
 
 # ── Función principal de configuración ───────────────────────────────────────
 
-def setup_logging(level: str = "DEBUG") -> None:
+# Handler de fichero activo (None si no hay fichero, p. ej. ventana privada)
+_file_handler: Optional[logging.handlers.RotatingFileHandler] = None
+_file_lock = threading.Lock()
+
+
+def _file_log_level() -> int:
+    """Nivel del fichero: INFO por defecto; DEBUG solo si se pide por entorno.
+
+    KATPHI_LOG_LEVEL=DEBUG o KATPHI_DEBUG=1 activan DEBUG en el fichero (el
+    nivel DEBUG registra URLs visitadas y datos de cuenta, ver B-006).
+    """
+    env_level = os.environ.get("KATPHI_LOG_LEVEL", "").strip().upper()
+    if os.environ.get("KATPHI_DEBUG", "").strip() in ("1", "true", "yes"):
+        return logging.DEBUG
+    if env_level:
+        return getattr(logging, env_level, logging.INFO)
+    return logging.INFO
+
+
+def _make_file_handler() -> logging.handlers.RotatingFileHandler:
+    file_h = logging.handlers.RotatingFileHandler(
+        LOG_FILE_PATH,
+        maxBytes=5 * 1024 * 1024,   # 5 MB por fichero
+        backupCount=3,
+        encoding="utf-8",
+    )
+    file_h.setLevel(_file_log_level())
+    file_h.setFormatter(
+        logging.Formatter(fmt=_LOG_FORMAT, datefmt=_DATE_FORMAT)
+    )
+    return file_h
+
+
+def clear_log_files() -> None:
+    """Borra katphi_browser.log y sus rotados (.1, .2, ...).
+
+    Cierra el handler de fichero antes de borrar (en Windows un fichero
+    abierto no se puede eliminar) y, si existía, lo vuelve a abrir vacío para
+    que el logging siga funcionando. Seguro de llamar desde "Limpiar datos".
+    """
+    global _file_handler
+    root = logging.getLogger()
+    with _file_lock:
+        old = _file_handler
+        if old is not None:
+            root.removeHandler(old)
+            try:
+                old.close()
+            except Exception:
+                pass
+            _file_handler = None
+        log_dir = os.path.dirname(LOG_FILE_PATH)
+        base = os.path.basename(LOG_FILE_PATH)
+        try:
+            names = os.listdir(log_dir)
+        except OSError:
+            names = []
+        for name in names:
+            if name == base or (name.startswith(base + ".") and name[len(base) + 1:].isdigit()):
+                try:
+                    os.remove(os.path.join(log_dir, name))
+                except OSError as exc:
+                    print(f"[logger_setup] No se pudo borrar {name}: {exc}", file=sys.stderr)
+        if old is not None:
+            try:
+                _file_handler = _make_file_handler()
+                root.addHandler(_file_handler)
+            except Exception as exc:
+                print(f"[logger_setup] No se pudo reabrir el fichero de log: {exc}", file=sys.stderr)
+    # El buffer en memoria también contiene los mismos registros
+    if memory_handler is not None:
+        memory_handler.clear()
+
+
+def setup_logging(level: str = "DEBUG", file_enabled: bool = True) -> None:
     """
     Configura el sistema de logging de Katphi Browser.
 
@@ -133,9 +207,12 @@ def setup_logging(level: str = "DEBUG") -> None:
         import logging
         _log = logging.getLogger(__name__)
     Args:
-        level: Nivel mínimo de logging (``"DEBUG"``, ``"INFO"``, etc.).
+        level: Nivel mínimo de logging de la consola (``"DEBUG"``, ``"INFO"``...).
+            El fichero usa INFO salvo KATPHI_LOG_LEVEL / KATPHI_DEBUG.
+        file_enabled: False para no escribir nada a disco (ventana privada):
+            solo consola y memoria.
     """
-    global memory_handler
+    global memory_handler, _file_handler
 
     numeric_level = getattr(logging, level.upper(), logging.DEBUG)
 
@@ -154,20 +231,13 @@ def setup_logging(level: str = "DEBUG") -> None:
     root.addHandler(console_h)
 
     # ── Handler de fichero rotante ────────────────────────────────────────────
-    try:
-        file_h = logging.handlers.RotatingFileHandler(
-            LOG_FILE_PATH,
-            maxBytes=5 * 1024 * 1024,   # 5 MB por fichero
-            backupCount=3,
-            encoding="utf-8",
-        )
-        file_h.setLevel(logging.DEBUG)   # guardar todo en fichero
-        file_h.setFormatter(
-            logging.Formatter(fmt=_LOG_FORMAT, datefmt=_DATE_FORMAT)
-        )
-        root.addHandler(file_h)
-    except Exception as exc:
-        print(f"[logger_setup] No se pudo abrir el fichero de log: {exc}", file=sys.stderr)
+    _file_handler = None
+    if file_enabled:
+        try:
+            _file_handler = _make_file_handler()
+            root.addHandler(_file_handler)
+        except Exception as exc:
+            print(f"[logger_setup] No se pudo abrir el fichero de log: {exc}", file=sys.stderr)
     # ── Handler en memoria ────────────────────────────────────────────────────
     memory_handler = MemoryLogHandler()
     memory_handler.setLevel(logging.DEBUG)
@@ -207,7 +277,7 @@ def setup_logging(level: str = "DEBUG") -> None:
     _log.info(
         "Sistema de logging iniciado — nivel=%s, fichero=%s",
         level.upper(),
-        LOG_FILE_PATH,
+        LOG_FILE_PATH if _file_handler is not None else "(desactivado)",
     )
 
 

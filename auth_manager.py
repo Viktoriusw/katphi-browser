@@ -188,6 +188,9 @@ class AuthManager(QObject):
             self.backend.login_failed.connect(self._on_backend_login_failed)
 
             self.backend.connection_status_changed.connect(self._on_connection_status_changed)
+
+            # Resultado negativo de la restauración de sesión al arrancar (D-005)
+            self.backend.session_restore_failed.connect(self._on_backend_session_restore_failed)
         except ImportError:
             logger.error("Backend integration not available")
 
@@ -247,19 +250,70 @@ class AuthManager(QObject):
 
             logger.info("Auth manager initialized with existing authentication")
     def _on_backend_login_success(self, user):
-        """Manejador de login exitoso del backend"""
+        """Manejador de login exitoso del backend (login interactivo y auto-login).
+
+        Se ejecuta SIEMPRE en el hilo de la GUI: el LoginWorker solo hace la
+        petición y backend.login_successful llega aquí por conexión encolada.
+        Todas las mutaciones de auth_state se hacen aquí (C-004).
+        """
 
         logger.info(f"Backend login successful for user: {user.email}")
 
-        self._update_auth_state(True, user)
+        was_authenticated = self.auth_state.is_authenticated
 
+        # Estado + credenciales sin emitir todavía: los listeners de
+        # auth_state_changed (resync de plugins) deben ver ya las licencias.
+        self._update_auth_state(True, user, emit_signal=False)
+
+        # Licencias del usuario (el backend ya las cargó en _load_user_data)
+        self._load_user_entitlements()
+
+        if not was_authenticated:
+            self.auth_state_changed.emit(True)
+
+            logger.info("Authentication state changed: True")
         # CRÍTICO: Guardar credenciales para auto-login
 
         self._save_credentials()
 
         logger.info("User credentials saved for auto-login")
 
+        # Validación periódica de licencias también tras un login interactivo
+        # (antes solo se arrancaba en __init__ con sesión guardada).
+        self._validation_failure_count = 0
+
+        if not self.validation_timer.isActive():
+            self.validation_timer.start()
+
+        if not self.connection_timer.isActive():
+            self.connection_timer.start()
+
         self.login_successful.emit(self.auth_state.user_credentials)
+    def _on_backend_session_restore_failed(self, auth_rejected: bool):
+        """La restauración de sesión del backend al arrancar no se completó.
+
+        auth_rejected=True: el backend rechazó los tokens (o no hay sesión
+        guardada): se descarta el estado optimista cargado de las credenciales
+        guardadas. auth_rejected=False: fallo de red/servidor; se mantiene el
+        estado local y el backend reintenta al volver la conexión (D-005).
+        """
+
+        if not auth_rejected:
+            logger.warning("Backend session restore pending (network/server error), keeping local session")
+
+            return
+        if not self.auth_state.is_authenticated and not self.settings.value("user_credentials"):
+            return
+        logger.warning("Saved session rejected by backend, clearing local authentication state")
+
+        self.validation_timer.stop()
+
+        # Igual que en logout(): vaciar antes de emitir auth_state_changed
+        self.auth_state.plugin_licenses = {}
+
+        self._clear_saved_credentials()
+
+        self._update_auth_state(False)
     def _on_backend_login_failed(self, error_message):
         """Manejador de login fallido del backend"""
 
@@ -284,8 +338,8 @@ class AuthManager(QObject):
             pass
         else:
             logger.warning("Backend integration not available")
-    def _update_auth_state(self, is_authenticated: bool, user=None):
-        """Actualizar estado de autenticación"""
+    def _update_auth_state(self, is_authenticated: bool, user=None, emit_signal: bool = True):
+        """Actualizar estado de autenticación (solo desde el hilo de la GUI)"""
 
         was_authenticated = self.auth_state.is_authenticated
 
@@ -317,7 +371,7 @@ class AuthManager(QObject):
             self.auth_state.user_credentials = None
         # Emitir señal si cambió el estado
 
-        if was_authenticated != is_authenticated:
+        if emit_signal and was_authenticated != is_authenticated:
             self.auth_state_changed.emit(is_authenticated)
 
             logger.info(f"Authentication state changed: {is_authenticated}")
@@ -375,36 +429,20 @@ class AuthManager(QObject):
                 if cred_dict.get('expires_at', 0) > time.time():
                     self.auth_state.user_credentials = UserCredentials(**cred_dict)
 
+                    # Estado optimista mientras el backend valida la sesión.
                     self.auth_state.is_authenticated = True
 
-                    # CRÍTICO: Restaurar sesión en el backend también
+                    # C-003: la sesión del backend NO se restaura aquí de forma
+                    # síncrona. La restaura una sola vez el singleShot de
+                    # BackendIntegration.__init__, que emite login_successful
+                    # (-> _on_backend_login_success: licencias, timers y
+                    # login_successful hacia la UI) o session_restore_failed.
 
-                    if self.backend:
-                        try:
-                            logger.info("Attempting to restore backend session...")
-
-                            self.backend._restore_session()
-
-                            logger.info("Backend session restored successfully")
-                        except Exception as e:
-                            logger.error(f"Failed to restore backend session: {e}")
-
-                            # Si falla la restauración del backend, limpiar todo
-
-                            self._clear_saved_credentials()
-
-                            self.auth_state.is_authenticated = False
-
-                            return
-                    # Load plugin licenses
+                    # Load plugin licenses (caché local hasta que llegue el backend)
 
                     self._load_plugin_licenses()
 
-                    # Cargar entitlements frescos desde el backend
-
-                    QTimer.singleShot(1000, self._load_user_entitlements)
-
-                    logger.info("[AUTH] Loaded saved credentials and restored session")
+                    logger.info("[AUTH] Loaded saved credentials, backend session restore scheduled")
                 else:
                     # expires_at es la caducidad del access token (30 min), no la
                     # de la sesión: backend_integration._restore_session la renueva
@@ -516,13 +554,10 @@ class AuthManager(QObject):
             if response.success:
                 logger.info(f"Login successful for user: {email}")
 
-                # CRÍTICO: Establecer estado de autenticación ANTES de cargar licencias
-
-                self.auth_state.is_authenticated = True
-
-                # Cargar licencias del backend después del login
-
-                self._load_user_entitlements()
+                # C-004: este método corre en el LoginWorker. El estado de
+                # autenticación y las licencias se actualizan en el hilo de la
+                # GUI, en _on_backend_login_success (backend.login_successful
+                # llega encolada ANTES que login_completed del worker).
 
                 return AuthResult(True)
             else:
@@ -591,6 +626,12 @@ class AuthManager(QObject):
 
             user_licenses = self.backend.get_user_licenses()
 
+            # Estado anterior, para emitir solo los cambios (D-003)
+            previous_state = {
+                pid: bool(getattr(lic, "is_active", False))
+                for pid, lic in self.auth_state.plugin_licenses.items()
+            }
+
             # Limpiar licencias existentes
 
             self.auth_state.plugin_licenses = {}
@@ -624,10 +665,25 @@ class AuthManager(QObject):
 
             self._save_plugin_licenses()
 
-            # Emitir señales para cada plugin
+            # Emitir señales SOLO para los plugins cuyo estado cambió (D-003):
+            # antes se emitía una por licencia en cada validación periódica y
+            # cada una disparaba un resync completo de plugins en main_window.
+            # Un plugin que desaparece de la lista cuenta como revocado.
 
-            for plugin_id, license_info in self.auth_state.plugin_licenses.items():
-                self.plugin_license_changed.emit(plugin_id, license_info.is_active)
+            current_state = {
+                pid: bool(lic.is_active)
+                for pid, lic in self.auth_state.plugin_licenses.items()
+            }
+
+            for plugin_id in sorted(set(previous_state) | set(current_state)):
+                was_active = previous_state.get(plugin_id, False)
+
+                is_active = current_state.get(plugin_id, False)
+
+                if was_active != is_active:
+                    if not is_active:
+                        logger.warning(f"Licencia revocada o inactiva: {plugin_id}")
+                    self.plugin_license_changed.emit(plugin_id, is_active)
             logger.info(f"Loaded {len(self.auth_state.plugin_licenses)} plugin licenses from backend")
         except Exception as e:
             logger.error(f"Error loading entitlements: {e}")
@@ -647,6 +703,13 @@ class AuthManager(QObject):
                 logger.warning("Backend not connected during license validation, omitiendo este ciclo")
 
                 return
+            # D-005: sesión guardada pendiente de restaurar por un fallo de
+            # red; no cuenta como fallo de autenticación (el backend reintenta
+            # al recuperar la conexión).
+            if getattr(self.backend, "is_restore_pending", None) and self.backend.is_restore_pending():
+                logger.warning("Backend session restore pending, omitiendo este ciclo de validación")
+
+                return
             # Verificar autenticación del backend
 
             if not self.backend.is_authenticated():
@@ -664,24 +727,11 @@ class AuthManager(QObject):
                 return
             self._validation_failure_count = 0
 
-            # Cargar permisos frescos, detectando revocaciones respecto al
-            # estado anterior para poder descargar plugins en caliente.
-
-            prev_licensed = {
-                pid for pid, lic in self.auth_state.plugin_licenses.items()
-                if getattr(lic, "is_active", False)
-            }
+            # Cargar permisos frescos. _load_user_entitlements ya emite
+            # plugin_license_changed solo para lo que cambió, revocaciones
+            # incluidas (para descargar plugins en caliente).
 
             self._load_user_entitlements()
-
-            now_licensed = {
-                pid for pid, lic in self.auth_state.plugin_licenses.items()
-                if getattr(lic, "is_active", False)
-            }
-
-            for revoked in prev_licensed - now_licensed:
-                logger.warning(f"Licencia revocada detectada en validación: {revoked}")
-                self.plugin_license_changed.emit(revoked, False)
 
             self.auth_state.last_validation = time.time()
 

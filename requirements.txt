@@ -1,12 +1,12 @@
 # Katphi Browser — dependencias de Python
 #
 # PySide6 (con Qt WebEngine) es OBLIGATORIO: instálalo primero y por separado
-#   pip install --upgrade "PySide6>=6.5.0"
+#   pip install --upgrade "PySide6>=6.8.0"
 #   python3 -c "from PySide6.QtWebEngineWidgets import QWebEngineView"
 # Katphi usa PySide6 exclusivamente (PyQt5/PyQt6 no son compatibles).
 
 # ── Núcleo del navegador ──────────────────────────────────────────────────────
-PySide6>=6.5.0
+PySide6>=6.8.0
 requests>=2.28.0
 PySocks>=1.7.1            # proxys SOCKS (Tor) para requests
 beautifulsoup4>=4.11.0

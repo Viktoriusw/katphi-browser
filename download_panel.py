@@ -18,6 +18,15 @@ from PySide6.QtGui import QFont, QIcon, QDesktopServices
 from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
 
 
+def _is_private_mode() -> bool:
+    """True en una ventana privada: no se escribe historial de descargas en disco."""
+    try:
+        from constants import is_private_mode
+        return is_private_mode()
+    except Exception:
+        return "--private" in sys.argv
+
+
 def _themed_icon(name: str, size: int = 16) -> QIcon:
     """Icono SVG de icons/ teñido con el color del tema activo."""
     try:
@@ -27,6 +36,7 @@ def _themed_icon(name: str, size: int = 16) -> QIcon:
         return QIcon()
 import sqlite3
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -45,9 +55,14 @@ class DownloadPanel(QWidget):
         # Diccionario para trackear conexiones de señales y prevenir memory leaks
         self._signal_connections = {}
 
-        self.setup_database()
+        # Ventana privada: el historial de descargas no toca el disco
+        self._private = _is_private_mode()
+
+        if not self._private:
+            self.setup_database()
         self.setup_ui()
-        self.load_history()
+        if not self._private:
+            self.load_history()
     def setup_database(self):
         """Crear base de datos para historial de descargas"""
         try:
@@ -209,6 +224,8 @@ class DownloadPanel(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(download_dir))
     def save_to_history(self, filename, url, path, size, status):
         """Guardar descarga en historial"""
+        if getattr(self, "_private", False):
+            return
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()

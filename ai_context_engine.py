@@ -290,8 +290,11 @@ class IndexWorker(QThread):
             clean_text = ContentExtractor.extract_from_html(
                 self._html, self._url, self._title,
             )
+            # Al cerrar el navegador se pide la interrupción: no seguir indexando
+            if self.isInterruptionRequested():
+                return
             chunks = ContentChunker.chunk_html(clean_text)
-            if chunks:
+            if chunks and not self.isInterruptionRequested():
                 self._store.add_tab_context(
                     self._tab_id, self._url, self._title, chunks,
                 )

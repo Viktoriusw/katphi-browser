@@ -131,7 +131,18 @@ class ConfigManager:
             else:
                 source = self.config_file
             with open(source, 'r', encoding='utf-8') as f:
-                self._config = yaml.safe_load(f)
+                loaded = yaml.safe_load(f)
+            # Un YAML vacío devuelve None y uno mal formado puede devolver una
+            # lista o un escalar: se ignora y se parte de los valores por defecto.
+            if not isinstance(loaded, dict):
+                logger.warning(f"{source} vacío o sin formato de diccionario, usando valores por defecto")
+                loaded = {}
+            # El secret_key por defecto sale de JWT_SECRET: no debe acabar escrito
+            # en config.yaml por persist_config si el fichero no lo traía.
+            _sec = loaded.get('security')
+            self._secret_from_file = isinstance(_sec, dict) and 'secret_key' in _sec
+            # Merge profundo: las secciones/claves que falten salen de los defaults
+            self._config = self._deep_merge(self._get_default_config(), loaded)
             # Override con variables de entorno
             self._apply_env_overrides()
 
@@ -139,20 +150,37 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Error loading config: {e}")
             self._config = self._get_default_config()
+    @staticmethod
+    def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        """Mezcla override sobre base de forma recursiva (base no se modifica)."""
+        result = dict(base)
+        for key, value in override.items():
+            if isinstance(value, dict) and isinstance(result.get(key), dict):
+                result[key] = ConfigManager._deep_merge(result[key], value)
+            elif value is None and isinstance(result.get(key), dict):
+                # "backend:" sin contenido en el YAML: conservar los defaults
+                continue
+            else:
+                result[key] = value
+        return result
+    def _section(self, name: str) -> Dict[str, Any]:
+        """Devuelve una sección como dict (vacío si falta o no es un dict)."""
+        value = self._config.get(name) if isinstance(self._config, dict) else None
+        return value if isinstance(value, dict) else {}
     def _apply_env_overrides(self):
         """Aplicar overrides desde variables de entorno"""
         # Backend URL
         if os.getenv("KATPHI_BACKEND_URL"):
-            self._config['backend']['primary_url'] = os.getenv("KATPHI_BACKEND_URL")
+            self._config.setdefault('backend', {})['primary_url'] = os.getenv("KATPHI_BACKEND_URL")
         # Frontend URL
         if os.getenv("KATPHI_FRONTEND_URL"):
-            self._config['frontend']['url'] = os.getenv("KATPHI_FRONTEND_URL")
+            self._config.setdefault('frontend', {})['url'] = os.getenv("KATPHI_FRONTEND_URL")
         # Network mode
         if os.getenv("KATPHI_NETWORK_MODE"):
-            self._config['network']['mode'] = os.getenv("KATPHI_NETWORK_MODE")
+            self._config.setdefault('network', {})['mode'] = os.getenv("KATPHI_NETWORK_MODE")
         # Log level
         if os.getenv("KATPHI_LOG_LEVEL"):
-            self._config['logging']['level'] = os.getenv("KATPHI_LOG_LEVEL")
+            self._config.setdefault('logging', {})['level'] = os.getenv("KATPHI_LOG_LEVEL")
     def _get_default_config(self) -> Dict[str, Any]:
         """
         Obtener configuración por defecto si no se puede cargar el archivo
@@ -228,31 +256,32 @@ class ConfigManager:
         Returns:
             str: URL del backend
         """
-        if use_fallback and self._config['backend'].get('fallback_urls'):
-            return self._config['backend']['fallback_urls'][0]
-        return self._config['backend']['primary_url']
+        backend = self._section('backend')
+        if use_fallback and backend.get('fallback_urls'):
+            return backend['fallback_urls'][0]
+        return backend.get('primary_url', 'https://api.katphi.com')
     def get_backend_fallback_urls(self) -> List[str]:
         """Obtener lista de URLs de fallback"""
-        return self._config['backend'].get('fallback_urls', [])
+        return self._section('backend').get('fallback_urls', []) or []
     def get_all_backend_urls(self) -> List[str]:
         """Obtener todas las URLs del backend (primaria + fallbacks)"""
-        urls = [self._config['backend']['primary_url']]
-        urls.extend(self._config['backend'].get('fallback_urls', []))
+        urls = [self.get_backend_url()]
+        urls.extend(self.get_backend_fallback_urls())
         return urls
     def get_frontend_url(self) -> str:
         """Obtener URL del frontend/sitio web"""
-        return self._config['frontend']['url']
+        return self._section('frontend').get('url', 'https://katphi.com')
     def get_registration_url(self) -> str:
         """Obtener URL de registro"""
-        return self._config['frontend'].get('registration_url', 
+        return self._section('frontend').get('registration_url', 
                                            f"{self.get_frontend_url()}/auth/registro.html")
     def get_login_url(self) -> str:
         """Obtener URL de login"""
-        return self._config['frontend'].get('login_url',
+        return self._section('frontend').get('login_url',
                                            f"{self.get_frontend_url()}/auth/login.html")
     def get_dashboard_url(self) -> str:
         """Obtener URL del dashboard web"""
-        return self._config['frontend'].get('dashboard_url',
+        return self._section('frontend').get('dashboard_url',
                                            f"{self.get_frontend_url()}/app/dashboard.html")
     def get_timeout(self, operation: str = 'api') -> int:
         """
@@ -263,28 +292,31 @@ class ConfigManager:
         Returns:
             int: Timeout en segundos
         """
-        return self._config['backend']['timeouts'].get(operation, 10)
+        timeouts = self._section('backend').get('timeouts')
+        return timeouts.get(operation, 10) if isinstance(timeouts, dict) else 10
     def get_max_retries(self) -> int:
         """Obtener número máximo de reintentos"""
-        return self._config['backend'].get('max_retries', 5)
+        return self._section('backend').get('max_retries', 5)
     def get_retry_backoff(self) -> float:
         """Obtener multiplicador de backoff exponencial"""
-        return self._config['backend'].get('retry_backoff', 2.0)
+        return self._section('backend').get('retry_backoff', 2.0)
     def get_initial_retry_delay(self) -> float:
         """Obtener delay inicial antes del primer reintento (segundos)"""
-        return self._config['backend'].get('initial_retry_delay', 1.0)
+        return self._section('backend').get('initial_retry_delay', 1.0)
     def get_max_retry_delay(self) -> float:
         """Obtener delay máximo entre reintentos (segundos)"""
-        return self._config['backend'].get('max_retry_delay', 30.0)
+        return self._section('backend').get('max_retry_delay', 30.0)
     def get_license_validation_interval(self) -> int:
         """Obtener intervalo de validación de licencias (en segundos)"""
-        return self._config['backend']['license_validation'].get('interval', 300)
+        lv = self._section('backend').get('license_validation')
+        return lv.get('interval', 300) if isinstance(lv, dict) else 300
     def get_license_cache_duration(self) -> int:
         """Obtener duración del caché de licencias (en segundos)"""
-        return self._config['backend']['license_validation'].get('cache_duration', 300)
+        lv = self._section('backend').get('license_validation')
+        return lv.get('cache_duration', 300) if isinstance(lv, dict) else 300
     def get_smtp_config(self) -> SMTPConfig:
         """Obtener configuración de SMTP"""
-        smtp = self._config.get('smtp', {})
+        smtp = self._section('smtp')
         return SMTPConfig(
             host=smtp.get('host', 'localhost'),
             port=smtp.get('port', 1025),
@@ -293,19 +325,19 @@ class ConfigManager:
         )
     def get_plugins_directory(self) -> str:
         """Obtener directorio de plugins"""
-        return self._config['plugins'].get('directory', '../products')
+        return self._section('plugins').get('directory', '../products')
     def use_keyring_for_tokens(self) -> bool:
         """Verificar si se debe usar keyring para tokens"""
-        return self._config['security'].get('use_keyring', False)
+        return self._section('security').get('use_keyring', False)
     def use_qsettings_for_tokens(self) -> bool:
         """Verificar si se debe usar QSettings para tokens"""
-        return self._config['security'].get('use_qsettings', True)
+        return self._section('security').get('use_qsettings', True)
     def get_log_level(self) -> str:
         """Obtener nivel de logging"""
-        return self._config['logging'].get('level', 'INFO')
+        return self._section('logging').get('level', 'INFO')
     def get_log_file(self) -> str:
         """Obtener archivo de log"""
-        return self._config['logging'].get('file', 'katphi_browser.log')
+        return self._section('logging').get('file', 'katphi_browser.log')
     def get(self, key: str, default: Any = None) -> Any:
         """
         Obtener valor de configuración usando dot notation
@@ -347,7 +379,9 @@ class ConfigManager:
 
     def _ensure_tor_section(self) -> None:
         """Asegura que la sección tor existe en la configuración."""
-        if 'tor' not in self._config:
+        if not isinstance(self._config, dict):
+            self._config = self._get_default_config()
+        if not isinstance(self._config.get('tor'), dict):
             self._config['tor'] = {}
         tor = self._config['tor']
         tor.setdefault('enabled', False)
@@ -384,8 +418,28 @@ class ConfigManager:
         try:
             self._ensure_tor_section()
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                yaml.dump(self._config, f, default_flow_style=False, allow_unicode=True)
+            # Escritura atómica: fichero temporal en el mismo directorio y
+            # os.replace, para no dejar un config.yaml truncado si se corta.
+            import tempfile
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=".config.", suffix=".yaml.tmp", dir=str(self.config_file.parent)
+            )
+            try:
+                data = self._config
+                if not getattr(self, '_secret_from_file', False) and isinstance(data.get('security'), dict):
+                    data = dict(data)
+                    data['security'] = {k: v for k, v in data['security'].items() if k != 'secret_key'}
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, self.config_file)
+            except BaseException:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+                raise
             logger.info("Configuration persisted to %s", self.config_file)
         except Exception as e:
             logger.error("Error persisting config: %s", e)
@@ -396,7 +450,7 @@ class ConfigManager:
         print("=" * 60)
         print(f"Backend URL: {self.get_backend_url()}")
         print(f"Frontend URL: {self.get_frontend_url()}")
-        print(f"Timeouts: {self._config['backend']['timeouts']}")
+        print(f"Timeouts: {self._section('backend').get('timeouts')}")
         print(f"Max Retries: {self.get_max_retries()}")
         print(f"Log Level: {self.get_log_level()}")
         print("=" * 60)

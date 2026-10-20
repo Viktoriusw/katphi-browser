@@ -70,7 +70,7 @@ pip install --upgrade pip
 ### 3. Instalar PySide6 (obligatorio, antes que el resto)
 
 ```bash
-pip install --upgrade "PySide6>=6.5.0"
+pip install --upgrade "PySide6>=6.8.0"
 python3 -c "from PySide6.QtWebEngineWidgets import QWebEngineView; print('PySide6 OK')"
 ```
 
@@ -185,7 +185,7 @@ PySide6 no está instalado en el entorno con el que ejecutas el navegador.
 ```bash
 source venv/bin/activate          # Linux / macOS
 venv\Scripts\activate.bat         # Windows
-pip install --upgrade "PySide6>=6.5.0"
+pip install --upgrade "PySide6>=6.8.0"
 python3 -m pip show PySide6       # debe estar dentro de venv/
 ```
 
@@ -201,7 +201,7 @@ PySide6 está instalado sin el componente WebEngine:
 
 ```bash
 pip uninstall -y PySide6 PySide6-Essentials PySide6-Addons
-pip install --no-cache-dir --force-reinstall "PySide6>=6.5.0"
+pip install --no-cache-dir --force-reinstall "PySide6>=6.8.0"
 ```
 
 En Linux, si persiste, instala las librerías del sistema de la sección de requisitos.

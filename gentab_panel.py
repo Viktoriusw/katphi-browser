@@ -29,7 +29,7 @@ from llm_provider_widgets import (
     ANTHROPIC_MODEL_DESCRIPTIONS, fill_anthropic_model_combo, select_anthropic_model,
     refresh_anthropic_models,
 )
-from gentab_engine import GenTabEngine, TabContext, GenTabResult, GenTabStatus
+from gentab_engine import GenTabEngine, TabContext, GenTabResult, GenTabStatus, apply_gentab_csp
 
 
 class TabContextCard(QFrame):
@@ -913,7 +913,8 @@ class GenTabPanel(BasePanel):
             result
         )
         self._refresh_history()
-        self.gentab_created.emit(result.title, result.html)
+        # La CSP ya viene del worker; se reaplica (idempotente) por si el HTML llega por otra ruta
+        self.gentab_created.emit(result.title, apply_gentab_csp(result.html))
     def _on_generation_error(self, error: str):
         self.generate_btn.setEnabled(True)
         self.generate_btn.setText("Generar GenTab")
@@ -1047,7 +1048,8 @@ class GenTabPanel(BasePanel):
         open_btn = QPushButton("Abrir GenTab en nueva pestaña")
         open_btn.setObjectName("openGenTabBtn")
         open_btn.setCursor(Qt.PointingHandCursor)
-        open_btn.clicked.connect(lambda: self.gentab_created.emit(result.title, result.html))
+        open_btn.clicked.connect(
+            lambda: self.gentab_created.emit(result.title, apply_gentab_csp(result.html)))
         open_btn.setStyleSheet("""
             QPushButton#openGenTabBtn {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,

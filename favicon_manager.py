@@ -24,11 +24,21 @@ from PySide6.QtCore import QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtNetwork import (
     QNetworkAccessManager,
+    QNetworkProxy,
     QNetworkReply,
     QNetworkRequest,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _private_mode() -> bool:
+    """Ventana privada: los favicons solo se guardan en memoria."""
+    try:
+        from constants import is_private_mode
+        return bool(is_private_mode())
+    except Exception:
+        return False
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
 
@@ -62,7 +72,9 @@ class FaviconManager(QObject):
         super().__init__()
         self._mem: dict[str, QIcon] = {}
         self._pending: set[str] = set()
-        self._CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self._private = _private_mode()
+        if not self._private:
+            self._CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self._nam = QNetworkAccessManager(self)
         self._nam.setRedirectPolicy(
             QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy
@@ -105,8 +117,22 @@ class FaviconManager(QObject):
         if pix.isNull():
             return
         self._mem[domain] = icon
-        pix.save(str(self._disk_path(domain)), "PNG")
+        self._save_to_disk(pix, domain)
         self.favicon_ready.emit(domain, icon)
+
+    def clear_cache(self) -> None:
+        """Vacía la caché en memoria y en disco (lo usa "Limpiar datos")."""
+        self._mem.clear()
+        try:
+            if self._CACHE_DIR.is_dir():
+                for entry in self._CACHE_DIR.iterdir():
+                    try:
+                        if entry.is_file() or entry.is_symlink():
+                            entry.unlink()
+                    except OSError as exc:
+                        logger.debug("No se pudo borrar %s: %s", entry, exc)
+        except OSError as exc:
+            logger.debug("Error vaciando la caché de favicons: %s", exc)
 
     def prefetch(self, url: str) -> None:
         """Inicia la descarga en background sin retornar resultado."""
@@ -120,7 +146,18 @@ class FaviconManager(QObject):
         safe = hashlib.md5(domain.encode()).hexdigest()
         return self._CACHE_DIR / f"{safe}.png"
 
+    def _save_to_disk(self, pix: QPixmap, domain: str) -> None:
+        if self._private:
+            return
+        try:
+            self._CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            pix.save(str(self._disk_path(domain)), "PNG")
+        except Exception as exc:
+            logger.debug("No se pudo guardar el favicon de %s: %s", domain, exc)
+
     def _from_disk(self, domain: str) -> QIcon | None:
+        if self._private:
+            return None
         path = self._disk_path(domain)
         if path.exists():
             pix = QPixmap()
@@ -138,10 +175,29 @@ class FaviconManager(QObject):
     def _request(self, favicon_url: str, domain: str, *, https: bool) -> None:
         req = QNetworkRequest(QUrl(favicon_url))
         req.setRawHeader(b"User-Agent", b"Mozilla/5.0 (compatible; Katphi)")
+        self._apply_proxy()
         reply = self._nam.get(req)
         reply.finished.connect(
             lambda: self._on_reply(reply, domain, https_attempt=https)
         )
+
+    def _apply_proxy(self) -> None:
+        """Con Tor activo, la descarga va por el SOCKS de Tor (B-002).
+
+        No depende de que main.py haya fijado el proxy de aplicación: se
+        decide en cada petición, por si Tor se activa o desactiva en caliente.
+        Sin Tor se usa el proxy de aplicación/sistema (DefaultProxy).
+        """
+        try:
+            from net_proxy import is_tor_active, tor_socks_port
+            if is_tor_active():
+                self._nam.setProxy(QNetworkProxy(
+                    QNetworkProxy.ProxyType.Socks5Proxy, "127.0.0.1", tor_socks_port()
+                ))
+            else:
+                self._nam.setProxy(QNetworkProxy(QNetworkProxy.ProxyType.DefaultProxy))
+        except Exception as exc:
+            logger.debug("Favicons: no se pudo configurar el proxy: %s", exc)
 
     def _on_reply(self, reply: QNetworkReply, domain: str, *, https_attempt: bool) -> None:
         try:
@@ -157,7 +213,7 @@ class FaviconManager(QObject):
                     )
                     icon = QIcon(pix)
                     self._mem[domain] = icon
-                    pix.save(str(self._disk_path(domain)), "PNG")
+                    self._save_to_disk(pix, domain)
                     self._pending.discard(domain)
                     self.favicon_ready.emit(domain, icon)
                     return

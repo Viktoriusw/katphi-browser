@@ -99,6 +99,178 @@ class ABPRule:
             self.exclude_domains = set()
 
 
+# ---------------------------------------------------------------------------
+# Rutas de las listas de filtros (easylist.txt / easyprivacy.txt)
+# ---------------------------------------------------------------------------
+
+_FILTER_LIST_URLS = {
+    "easylist.txt": "https://easylist.to/easylist/easylist.txt",
+    "easyprivacy.txt": "https://easylist.to/easylist/easyprivacy.txt",
+}
+
+# Timeout (conexión, lectura) para descargar las listas
+_FILTER_DOWNLOAD_TIMEOUT = (10, 60)
+
+
+def _user_filter_dir() -> str:
+    """Directorio de datos del usuario para listas actualizadas.
+
+    Solo se usa como alternativa cuando el directorio de trabajo (donde el
+    instalador deja easylist.txt) no admite escritura.
+    """
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.join(
+            os.path.expanduser("~"), ".local", "share"
+        )
+    return os.path.join(base, "Katphi", "filters")
+
+
+def _filter_list_path(name: str) -> str:
+    """Ruta desde la que leer una lista: la copia del usuario si existe, si no la del CWD."""
+    user_copy = os.path.join(_user_filter_dir(), name)
+    if os.path.exists(user_copy):
+        return user_copy
+    return name
+
+
+def _write_filter_list(name: str, text: str) -> str:
+    """Escribe una lista de forma atómica (tmp + os.replace).
+
+    Primero en el directorio de trabajo (de donde se leen las listas); si no
+    hay permiso, en el directorio de datos del usuario. Devuelve la ruta usada.
+    """
+    targets = [name, os.path.join(_user_filter_dir(), name)]
+    last_exc = None
+    for target in targets:
+        tmp = f"{target}.tmp"
+        try:
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(tmp, target)
+            if target == name:
+                # La copia del usuario tiene prioridad al leer: si ahora el CWD
+                # está al día, se elimina para no leer una versión antigua.
+                stale = targets[1]
+                if os.path.exists(stale):
+                    try:
+                        os.remove(stale)
+                    except OSError:
+                        pass
+            return target
+        except OSError as exc:
+            last_exc = exc
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
+    raise last_exc if last_exc else OSError(f"No se pudo escribir {name}")
+
+
+# ---------------------------------------------------------------------------
+# Índices del adblock (E-001)
+# ---------------------------------------------------------------------------
+
+try:  # Python 3.11+
+    import re._parser as _sre_parse  # type: ignore
+except ImportError:  # pragma: no cover
+    import sre_parse as _sre_parse  # type: ignore
+
+_SRE_LITERAL = getattr(_sre_parse, "LITERAL", None)
+
+
+def _required_literal(regex) -> Optional[str]:
+    """Literal ASCII (en minúsculas) que toda coincidencia de la regex contiene.
+
+    Se toma la secuencia más larga de literales consecutivos del nivel superior
+    del patrón: si la regex coincide con una URL ASCII, esa secuencia aparece en
+    la URL (sin distinguir mayúsculas). None si no se puede garantizar.
+    """
+    try:
+        parsed = _sre_parse.parse(regex.pattern, regex.flags)
+    except Exception:
+        return None
+    best = ""
+    run = []
+    for op, av in list(parsed) + [(None, None)]:
+        if op is _SRE_LITERAL or (op is not None and op == _SRE_LITERAL):
+            ch = chr(av)
+            if ch.isascii():
+                run.append(ch)
+                continue
+        if len(run) > len(best):
+            best = "".join(run)
+        run = []
+    return best.lower() if best else None
+
+
+def _build_regex_buckets(rules):
+    """Agrupa reglas regex por literal obligatorio.
+
+    Devuelve (índice, cortos, sin_literal):
+    - índice: dict trigrama -> tuple[(literal, tuple[reglas])], clave = los 3
+      primeros caracteres del literal (si el literal está en la URL, su primer
+      trigrama también, así que basta mirar los trigramas de la URL)
+    - cortos: tuple[(literal, tuple[reglas])] con literales de menos de 3
+    - sin_literal: tuple[reglas] que se evalúan siempre
+    """
+    by_token = {}
+    untokenized = []
+    for rule in rules:
+        token = _required_literal(rule.regex)
+        if token:
+            by_token.setdefault(token, []).append(rule)
+        else:
+            untokenized.append(rule)
+    gram_index = {}
+    short = []
+    for tok, lst in by_token.items():
+        entry = (tok, tuple(lst))
+        if len(tok) >= 3:
+            gram_index.setdefault(tok[:3], []).append(entry)
+        else:
+            short.append(entry)
+    gram_index = {g: tuple(v) for g, v in gram_index.items()}
+    return gram_index, tuple(short), tuple(untokenized)
+
+
+def _build_rule_snapshot(block_rules, exception_rules, host_index):
+    """Construye la tupla inmutable que lee _evaluate_ad_block sin lock.
+
+    (exception_rules, block_rules, host_index, regex_rules) donde:
+    - exception_rules: (índice sufijo->excepciones de host, buckets de
+      excepciones regex, todas las excepciones regex en orden)
+    - block_rules: tupla con todas las reglas de bloqueo
+    - host_index: dict sufijo->reglas (el mismo contenido que _host_index)
+    - regex_rules: (buckets de reglas de bloqueo regex sin host, todas en orden)
+    """
+    exc_host_index = {}
+    exc_regex = []
+    for rule in exception_rules:
+        if rule.host_suffixes:
+            for suffix in rule.host_suffixes:
+                exc_host_index.setdefault(suffix, []).append(rule)
+        elif rule.regex:
+            exc_regex.append(rule)
+    block_regex = [r for r in block_rules if r.regex and not r.host_suffixes]
+    return (
+        (exc_host_index, _build_regex_buckets(exc_regex), tuple(exc_regex)),
+        tuple(block_rules),
+        dict(host_index),
+        (_build_regex_buckets(block_regex), tuple(block_regex)),
+    )
+
+
+def _host_suffixes(host: str):
+    """Todos los sufijos de texto del host (equivale a host.endswith(clave))."""
+    return [host[i:] for i in range(len(host) + 1)]
+
+
 class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -112,6 +284,13 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
         self._host_index = {}  # dict suffix->list[rule] para optimización
 
         self._lock = threading.Lock()
+
+        # Tupla inmutable que lee cada petición sin lock ni copias (E-001).
+        # Se sustituye entera en _publish_rules (asignación atómica en CPython).
+        self._snapshot = _build_rule_snapshot([], [], {})
+
+        # Evita dos actualizaciones de listas simultáneas (C-006)
+        self._update_running = threading.Event()
 
         self._lru = OrderedDict()  # Cache LRU para decisiones
 
@@ -365,12 +544,7 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
 
             # Swap atómico bajo lock
 
-            with self._lock:
-                self.block_rules = block_rules
-
-                self.exception_rules = exception_rules
-
-                self._host_index = host_index
+            self._publish_rules(block_rules, exception_rules, host_index)
             print(f"Filtros básicos cargados: {len(block_rules)} bloqueos, {len(exception_rules)} excepciones")
 
             # Cargar filtros pesados en segundo plano si no están deshabilitados
@@ -398,8 +572,9 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
         try:
             # Cargar EasyList
 
-            if os.path.exists("easylist.txt"):
-                with open("easylist.txt", "r", encoding="utf-8") as f:
+            easylist_path = _filter_list_path("easylist.txt")
+            if os.path.exists(easylist_path):
+                with open(easylist_path, "r", encoding="utf-8") as f:
                     easylist_lines = f.read().splitlines()
             else:
                 print("easylist.txt file not found")
@@ -407,8 +582,9 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
                 easylist_lines = []
             # Cargar EasyPrivacy
 
-            if os.path.exists("easyprivacy.txt"):
-                with open("easyprivacy.txt", "r", encoding="utf-8") as f:
+            easyprivacy_path = _filter_list_path("easyprivacy.txt")
+            if os.path.exists(easyprivacy_path):
+                with open(easyprivacy_path, "r", encoding="utf-8") as f:
                     easyprivacy_lines = f.read().splitlines()
             else:
                 print("easyprivacy.txt file not found")
@@ -428,14 +604,18 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
 
             block_rules, exception_rules, host_index = self.compile_filters(all_lines)
 
-            # Actualizar reglas existentes
+            # Actualizar reglas existentes (listas nuevas: la instantánea
+            # publicada antes no se modifica mientras otro hilo la lee)
 
             with self._lock:
-                self.block_rules.extend(block_rules)
+                merged_block = self.block_rules + block_rules
 
-                self.exception_rules.extend(exception_rules)
+                merged_exc = self.exception_rules + exception_rules
 
-                self._host_index.update(host_index)
+                merged_index = dict(self._host_index)
+
+                merged_index.update(host_index)
+            self._publish_rules(merged_block, merged_exc, merged_index)
             print(f"Filtros pesados cargados: {len(block_rules)} bloqueos adicionales")
             logger.info(
                 "Adblock: filtros pesados compilados (%s reglas de bloqueo nuevas)",
@@ -450,8 +630,9 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
         try:
             # Cargar EasyList
 
-            if os.path.exists("easylist.txt"):
-                with open("easylist.txt", "r", encoding="utf-8") as f:
+            easylist_path = _filter_list_path("easylist.txt")
+            if os.path.exists(easylist_path):
+                with open(easylist_path, "r", encoding="utf-8") as f:
                     self.easylist = f.read().splitlines()
             else:
                 print("easylist.txt file not found")
@@ -459,8 +640,9 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
                 self.easylist = []
             # Cargar EasyPrivacy
 
-            if os.path.exists("easyprivacy.txt"):
-                with open("easyprivacy.txt", "r", encoding="utf-8") as f:
+            easyprivacy_path = _filter_list_path("easyprivacy.txt")
+            if os.path.exists(easyprivacy_path):
+                with open(easyprivacy_path, "r", encoding="utf-8") as f:
                     self.easyprivacy = f.read().splitlines()
             else:
                 print("easyprivacy.txt file not found")
@@ -478,12 +660,7 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
 
             # Swap atómico bajo lock
 
-            with self._lock:
-                self.block_rules = block_rules
-
-                self.exception_rules = exception_rules
-
-                self._host_index = host_index
+            self._publish_rules(block_rules, exception_rules, host_index)
             print(f"Listas de filtros cargadas: {len(block_rules)} bloqueos, {len(exception_rules)} excepciones")
         except Exception as e:
             print(f"Error al cargar las listas de filtros: {str(e)}")
@@ -587,40 +764,96 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
             # Devolver reglas por defecto en caso de error
 
             return default_custom_rules
+    def _publish_rules(self, block_rules, exception_rules, host_index):
+        """Publica un juego de reglas nuevo: atributos + instantánea inmutable.
+
+        La instantánea se construye fuera del lock y se asigna de una vez;
+        _evaluate_ad_block la lee sin lock y sin copiar listas.
+        """
+        snapshot = _build_rule_snapshot(block_rules, exception_rules, host_index)
+        with self._lock:
+            self.block_rules = block_rules
+
+            self.exception_rules = exception_rules
+
+            self._host_index = host_index
+
+            self._snapshot = snapshot
+        # Las decisiones cacheadas se tomaron con las reglas anteriores
+        self._lru = OrderedDict()
+
     def update_filter_lists(self):
-        """Actualiza las listas de filtros desde las fuentes en línea"""
+        """Actualiza las listas de filtros desde las fuentes en línea.
 
+        No bloquea: la descarga y la compilación se hacen en un hilo de fondo
+        (igual que load_heavy_filters). Si ya hay una actualización en curso,
+        no se lanza otra.
+        """
+        if self._update_running.is_set():
+            logger.info("Adblock: actualización de listas ya en curso")
+            return
+        self._update_running.set()
+        threading.Thread(
+            target=self._update_filter_lists_worker, daemon=True
+        ).start()
+
+    def _update_filter_lists_worker(self):
+        """Descarga EasyList/EasyPrivacy y recompila (hilo de fondo)."""
         try:
-            # URLs de las listas de filtros
-
-            easylist_url = "https://easylist.to/easylist/easylist.txt"
-
-            easyprivacy_url = "https://easylist.to/easylist/easyprivacy.txt"
-
-            # Descargar EasyList
-
             try:
-                response = requests.get(easylist_url)
+                from net_proxy import requests_proxies
+            except ImportError:  # pragma: no cover
+                def requests_proxies(_url=""):
+                    return None
 
-                response.raise_for_status()
+            max_rules = PERFORMANCE_CONFIG.get("max_filter_rules", 1000)
 
-                with open("easylist.txt", "w", encoding="utf-8") as f:
-                    f.write(response.text)
-                self.easylist = response.text.splitlines()
-            except Exception as e:
-                print(f"Error al actualizar EasyList: {str(e)}")
-            # Descargar EasyPrivacy
+            downloaded = {}
 
-            try:
-                response = requests.get(easyprivacy_url)
+            for name, list_url in _FILTER_LIST_URLS.items():
+                try:
+                    # Con Tor activo, requests_proxies devuelve el SOCKS (socks5h)
+                    response = requests.get(
+                        list_url,
+                        timeout=_FILTER_DOWNLOAD_TIMEOUT,
+                        proxies=requests_proxies(list_url),
+                    )
 
-                response.raise_for_status()
+                    response.raise_for_status()
 
-                with open("easyprivacy.txt", "w", encoding="utf-8") as f:
-                    f.write(response.text)
-                self.easyprivacy = response.text.splitlines()
-            except Exception as e:
-                print(f"Error al actualizar EasyPrivacy: {str(e)}")
+                    text = response.text
+
+                    if not text.strip():
+                        raise ValueError("lista vacía")
+                    path = _write_filter_list(name, text)
+                    downloaded[name] = text.splitlines()
+                    logger.info("Adblock: %s actualizada en %s", name, path)
+                except Exception as e:
+                    print(f"Error al actualizar {name}: {str(e)}")
+                    logger.warning("Adblock: error al actualizar %s: %s", name, e)
+            if not downloaded:
+                return
+            # Las listas que no se pudieron descargar se recargan del disco
+
+            lists = {}
+
+            for name in _FILTER_LIST_URLS:
+                if name in downloaded:
+                    lines = downloaded[name]
+                else:
+                    path = _filter_list_path(name)
+                    lines = []
+                    if os.path.exists(path):
+                        with open(path, "r", encoding="utf-8") as f:
+                            lines = f.read().splitlines()
+                # Respetar MAX_FILTER_RULES igual que load_heavy_filters
+                if len(lines) > max_rules:
+                    lines = lines[:max_rules]
+                lists[name] = lines
+            self.easylist = lists["easylist.txt"]
+
+            self.easyprivacy = lists["easyprivacy.txt"]
+
             # Cargar filtros personalizados actualizados
 
             self.custom_filters = self.load_or_create_custom_filters()
@@ -631,17 +864,15 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
 
             block_rules, exception_rules, host_index = self.compile_filters(all_lines)
 
-            # Swap atómico bajo lock
+            # Swap atómico
 
-            with self._lock:
-                self.block_rules = block_rules
-
-                self.exception_rules = exception_rules
-
-                self._host_index = host_index
+            self._publish_rules(block_rules, exception_rules, host_index)
             print(f"Listas de filtros actualizadas: {len(block_rules)} bloqueos, {len(exception_rules)} excepciones")
         except Exception as e:
             print(f"Error al actualizar las listas de filtros: {str(e)}")
+            logger.error("Adblock: error en update_filter_lists: %s", e)
+        finally:
+            self._update_running.clear()
     def _manage_lru_cache(self, key, value):
         """Gestiona el cache LRU"""
 
@@ -724,31 +955,64 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
         if cache_key in self._lru:
             return bool(self._lru[cache_key])
         is_tp = self.is_third_party(info)
-        with self._lock:
-            exception_rules = self.exception_rules[:]
-            block_rules = self.block_rules[:]
-            host_index = self._host_index.copy()
-        for rule in exception_rules:
+        # Instantánea inmutable: se lee sin lock y sin copiar (E-001)
+        exc_part, _block_rules, host_index, regex_part = self._snapshot
+        exc_host_index, exc_buckets, exc_regex_all = exc_part
+        block_buckets, block_regex_all = regex_part
+        # Sufijos de texto del host: equivale a recorrer todas las claves con
+        # host.endswith(clave), pero con len(host)+1 consultas O(1)
+        suffixes = _host_suffixes(host)
+        # Prefiltro por literal obligatorio: solo es exacto con URLs ASCII
+        # (con IGNORECASE, algunos caracteres no ASCII equivalen a letras ASCII)
+        url_lower = url.lower() if url.isascii() else None
+        url_grams = (
+            {url_lower[i:i + 3] for i in range(len(url_lower) - 2)}
+            if url_lower is not None else None
+        )
+
+        def _regex_candidates(buckets, all_rules):
+            if url_lower is None:
+                return all_rules
+            gram_index, short, untokenized = buckets
+            out = list(untokenized)
+            for token, rules in short:
+                if token in url_lower:
+                    out.extend(rules)
+            for gram in url_grams:
+                entries = gram_index.get(gram)
+                if entries:
+                    for token, rules in entries:
+                        if token in url_lower:
+                            out.extend(rules)
+            return out
+
+        exc_candidates = []
+        for suffix in suffixes:
+            lst = exc_host_index.get(suffix)
+            if lst:
+                exc_candidates.extend(lst)
+        exc_candidates.extend(_regex_candidates(exc_buckets, exc_regex_all))
+        for rule in exc_candidates:
             if self._rule_matches(rule, url, host, is_tp, info):
                 self._manage_lru_cache(cache_key, False)
                 return False
         matched_rules = []
-        for suffix in host_index:
-            if host.endswith(suffix):
-                matched_rules.extend(host_index[suffix])
+        for suffix in suffixes:
+            lst = host_index.get(suffix)
+            if lst:
+                matched_rules.extend(lst)
         for rule in matched_rules:
             if rule.block and self._rule_matches(rule, url, host, is_tp, info):
                 self._manage_lru_cache(cache_key, True)
                 print(f"Blocked by ABP rule: {host}")
                 logger.debug("Adblock: bloqueado por sufijo host=%s", host)
                 return True
-        for rule in block_rules:
-            if rule.regex and not rule.host_suffixes:
-                if self._rule_matches(rule, url, host, is_tp, info):
-                    self._manage_lru_cache(cache_key, True)
-                    print(f"Blocked by regex rule: {url}")
-                    logger.debug("Adblock: bloqueado por regex url=%s", url[:120])
-                    return True
+        for rule in _regex_candidates(block_buckets, block_regex_all):
+            if self._rule_matches(rule, url, host, is_tp, info):
+                self._manage_lru_cache(cache_key, True)
+                print(f"Blocked by regex rule: {url}")
+                logger.debug("Adblock: bloqueado por regex url=%s", url[:120])
+                return True
         self._manage_lru_cache(cache_key, False)
         return False
 
@@ -855,9 +1119,145 @@ class PrivacySettings:
         self.settings.sync()
 
 
+# ---------------------------------------------------------------------------
+# Almacenes locales reales de Katphi (B-007)
+# Las rutas se resuelven igual que el código que crea cada fichero.
+# ---------------------------------------------------------------------------
+
+def _clear_katphi_passwords(main_window=None) -> bool:
+    """Borra las contraseñas guardadas por el gestor de Katphi (passwords.db).
+
+    QtWebEngine no guarda contraseñas propias: el único almacén es el de
+    password_manager. Se usa la instancia de la ventana principal si existe.
+    """
+    pm = getattr(main_window, "password_manager", None) if main_window else None
+    if pm is not None and hasattr(pm, "clear_all_passwords"):
+        return bool(pm.clear_all_passwords())
+    try:
+        from password_manager import _resolve_db_path
+        db_path = _resolve_db_path()
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute("DELETE FROM passwords")
+                conn.commit()
+            finally:
+                conn.close()
+        return True
+    except Exception as e:
+        logger.warning("Privacidad: no se pudieron borrar las contraseñas: %s", e)
+        return False
+
+
+def _clear_downloads_history(main_window=None) -> None:
+    """Vacía downloads_history.db (download_panel.DownloadPanel.db_path)."""
+    panel = getattr(main_window, "download_panel", None) if main_window else None
+    db_path = getattr(panel, "db_path", None) or "downloads_history.db"
+    try:
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute("DELETE FROM downloads")
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        logger.warning("Privacidad: error borrando el historial de descargas: %s", e)
+    # Quitar también de la lista del panel las descargas terminadas
+    if panel is not None and hasattr(panel, "clear_completed"):
+        try:
+            panel.clear_completed()
+        except Exception:
+            pass
+
+
+def _remove_path(path: str) -> None:
+    """Borra un fichero si existe, sin lanzar excepciones."""
+    try:
+        if os.path.isfile(path) or os.path.islink(path):
+            os.remove(path)
+    except OSError as e:
+        logger.warning("Privacidad: no se pudo borrar %s: %s", path, e)
+
+
+def _clear_session_files() -> None:
+    """Borra sesiones de pestañas, recuperación tras cierre y sesiones guardadas."""
+    try:
+        from tabs import TabManager
+        tab_session = TabManager.SESSION_FILE
+    except Exception:
+        tab_session = "tab_session.json"
+    try:
+        from session_manager import SessionManager as _SM
+        sessions_dir = _SM.SESSIONS_DIR
+        session_files = [_SM.LAST_SESSION_FILE, _SM.CRASH_RECOVERY_FILE,
+                         _SM.CURRENT_SESSION_FILE]
+    except Exception:
+        sessions_dir = "sessions"
+        session_files = ["last_session.json", "crash_recovery.json",
+                         "current_session.json"]
+    for path in [tab_session] + session_files:
+        _remove_path(path)
+    # sessions/: se vacía pero se conserva (SessionManager lo crea solo al iniciar)
+    if os.path.isdir(sessions_dir):
+        for name in os.listdir(sessions_dir):
+            full = os.path.join(sessions_dir, name)
+            try:
+                if os.path.isdir(full) and not os.path.islink(full):
+                    shutil.rmtree(full)
+                else:
+                    os.remove(full)
+            except OSError as e:
+                logger.warning("Privacidad: no se pudo borrar %s: %s", full, e)
+
+
+def _clear_conversation_history(main_window=None) -> None:
+    """Borra ~/.katphi/conversations/session_history.json (conversational_navbar)."""
+    nav = getattr(main_window, "url_bar", None) if main_window else None
+    conv = getattr(nav, "_conversation", None)
+    if conv is not None and hasattr(conv, "clear_history"):
+        try:
+            conv.clear_history()  # vacía la memoria (y reescribe el fichero vacío)
+        except Exception:
+            pass
+    path = getattr(conv, "_file", None) or os.path.join(
+        os.path.expanduser("~"), ".katphi", "conversations", "session_history.json"
+    )
+    _remove_path(path)
+
+
+def _clear_favicon_cache() -> None:
+    """Vacía la caché de favicons (~/.cache/katphi/favicons) y su copia en memoria."""
+    try:
+        from favicon_manager import get_favicon_manager
+        get_favicon_manager().clear_cache()
+        return
+    except Exception as e:
+        logger.debug("Privacidad: FaviconManager no disponible (%s), borrado directo", e)
+    cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "katphi", "favicons")
+    if os.path.isdir(cache_dir):
+        for name in os.listdir(cache_dir):
+            _remove_path(os.path.join(cache_dir, name))
+
+
+def _clear_log_files() -> None:
+    """Borra el fichero de log (logger_setup.clear_log_files)."""
+    try:
+        import logger_setup
+        logger_setup.clear_log_files()
+    except (ImportError, AttributeError) as e:
+        logger.debug("Privacidad: clear_log_files no disponible: %s", e)
+    except Exception as e:
+        logger.warning("Privacidad: error borrando logs: %s", e)
+
+
 class AutoClearSettings:
     def __init__(self):
         self.settings = QSettings("Katphi", "AutoClear")
+
+        # Ventana principal (la fija PrivacyManager) para llegar a los
+        # almacenes reales: password_manager, download_panel...
+        self.main_window = None
 
         self.load_settings()
 
@@ -953,21 +1353,12 @@ class AutoClearSettings:
         except Exception as e:
             print(f"Error clearing history: {str(e)}")
     def clear_saved_passwords(self):
+        """Borra las contraseñas de Katphi (passwords.db del password manager).
+
+        Antes borraba un "Login Data" de Chromium que QtWebEngine no crea.
+        """
         try:
-            profile_path = QWebEngineProfile.defaultProfile().persistentStoragePath()
-
-            login_db = os.path.join(profile_path, "Login Data")
-
-            if os.path.exists(login_db):
-                conn = sqlite3.connect(login_db)
-
-                cursor = conn.cursor()
-
-                cursor.execute("DELETE FROM logins")
-
-                conn.commit()
-
-                conn.close()
+            _clear_katphi_passwords(self.main_window)
         except Exception as e:
             print(f"Error clearing passwords: {str(e)}")
     def clear_form_data(self):
@@ -989,23 +1380,9 @@ class AutoClearSettings:
         except Exception as e:
             print(f"Error clearing form data: {str(e)}")
     def clear_downloads(self):
+        """Vacía el historial de descargas real (downloads_history.db)."""
         try:
-            profile_path = QWebEngineProfile.defaultProfile().persistentStoragePath()
-
-            downloads_db = os.path.join(profile_path, "History")
-
-            if os.path.exists(downloads_db):
-                conn = sqlite3.connect(downloads_db)
-
-                cursor = conn.cursor()
-
-                cursor.execute("DELETE FROM downloads")
-
-                cursor.execute("DELETE FROM downloads_url_chains")
-
-                conn.commit()
-
-                conn.close()
+            _clear_downloads_history(self.main_window)
         except Exception as e:
             print(f"Error clearing downloads: {str(e)}")
 
@@ -1056,6 +1433,15 @@ class SavedDataDialog(QDialog):
         self.setLayout(layout)
 
 
+def _private_mode_active() -> bool:
+    """True en una ventana privada: no se escribe historial en disco."""
+    try:
+        from constants import is_private_mode
+        return bool(is_private_mode())
+    except Exception:
+        return False
+
+
 class HistoryManager:
     def __init__(self):
         self.profile = QWebEngineProfile.defaultProfile()
@@ -1064,10 +1450,15 @@ class HistoryManager:
 
         self.last_visit_time = None
 
+        # Modo privado: ni se crea ni se escribe la base de datos del historial
+        self.private = _private_mode_active()
+
         self.init_history_db()
     def init_history_db(self):
         """Inicializa la base de datos del historial si no existe"""
 
+        if self.private:
+            return
         try:
             if not os.path.exists(self.history_db):
                 os.makedirs(os.path.dirname(self.history_db), exist_ok=True)
@@ -1115,6 +1506,8 @@ class HistoryManager:
     def add_url(self, url, title=""):
         """Añade una URL al historial"""
 
+        if self.private:
+            return
         try:
             conn = sqlite3.connect(self.history_db)
 
@@ -1167,6 +1560,9 @@ class HistoryManager:
     def get_history(self, time_range=None):
         """Obtiene el historial organizado por tiempo"""
 
+        # sqlite3.connect crearía el fichero: en modo privado no se toca el disco
+        if self.private or not os.path.exists(self.history_db):
+            return []
         try:
             conn = sqlite3.connect(self.history_db)
 
@@ -1234,6 +1630,8 @@ class HistoryManager:
     def clear_history(self, time_range=None):
         """Limpia el historial según el rango de tiempo especificado"""
 
+        if self.private or not os.path.exists(self.history_db):
+            return
         try:
             conn = sqlite3.connect(self.history_db)
 
@@ -1500,6 +1898,8 @@ class PrivacyManager(QWidget):
         self.history_manager = HistoryManager()
 
         self.auto_clear = AutoClearSettings()
+
+        self.auto_clear.main_window = parent
 
         self.ad_blocker = AdBlockerInterceptor()
 
@@ -2279,6 +2679,10 @@ class PrivacyManager(QWidget):
 
                 f"This includes history, cookies, cache, and other stored data.\n"
 
+                f"'All time' also deletes saved passwords, downloads history,\n"
+
+                f"sessions, assistant conversations, favicons and logs.\n"
+
                 f"This action cannot be undone.",
 
                 QMessageBox.Yes | QMessageBox.No
@@ -2289,22 +2693,19 @@ class PrivacyManager(QWidget):
 
                 self.clear_history_with_time_internal()
 
-                # Borrar cookies (siempre todas debido a limitaciones de Qt)
+                # Borrar cookies y caché (siempre todas debido a limitaciones de Qt)
 
-                profile = QWebEngineProfile.defaultProfile()
+                self._clear_cookies()
 
-                profile.cookieStore().deleteAllCookies()
+                self._clear_cache()
 
-                # Borrar caché (siempre toda debido a limitaciones de Qt)
-
-                profile.clearHttpCache()
-
-                # Borrar datos adicionales si es "All time"
+                # "All time": borrado completo de los almacenes reales, con las
+                # mismas funciones que el menú y el borrado automático
 
                 hours = self.get_time_range_in_hours(time_range_text)
 
                 if hours is None:
-                    self.clear_additional_data()
+                    self.clear_all_local_data(include_passwords=True)
                 self.data_cleared.emit("all")
 
                 QMessageBox.information(self, "Success", f"All browsing data from {time_range_text.lower()} cleared successfully")
@@ -2325,58 +2726,117 @@ class PrivacyManager(QWidget):
         except Exception as e:
             print(f"Error in clear_history_with_time_internal: {str(e)}")
     def clear_additional_data(self):
-        """Borra datos adicionales cuando se selecciona 'All time'"""
+        """Borra datos adicionales cuando se selecciona 'All time'.
+
+        Usa los almacenes reales de Katphi (antes intentaba borrar ficheros
+        "Login Data" / tablas de Chromium que no existen en QtWebEngine).
+        """
 
         try:
-            profile_path = QWebEngineProfile.defaultProfile().persistentStoragePath()
+            self.clear_all_local_data(include_passwords=True)
 
-            # Borrar contraseñas guardadas
-
-            login_db = os.path.join(profile_path, "Login Data")
-
-            if os.path.exists(login_db):
-                conn = sqlite3.connect(login_db)
-
-                cursor = conn.cursor()
-
-                cursor.execute("DELETE FROM logins")
-
-                conn.commit()
-
-                conn.close()
-            # Borrar datos de formularios
-
-            form_data_db = os.path.join(profile_path, "Web Data")
-
-            if os.path.exists(form_data_db):
-                conn = sqlite3.connect(form_data_db)
-
-                cursor = conn.cursor()
-
-                cursor.execute("DELETE FROM autofill")
-
-                conn.commit()
-
-                conn.close()
-            # Borrar historial de descargas
-
-            downloads_db = os.path.join(profile_path, "History")
-
-            if os.path.exists(downloads_db):
-                conn = sqlite3.connect(downloads_db)
-
-                cursor = conn.cursor()
-
-                cursor.execute("DELETE FROM downloads")
-
-                cursor.execute("DELETE FROM downloads_url_chains")
-
-                conn.commit()
-
-                conn.close()
             print("Additional data cleared successfully")
         except Exception as e:
             print(f"Error clearing additional data: {str(e)}")
+
+    # ------------------------------------------------------------------
+    # Borrado centralizado (B-007)
+    # ------------------------------------------------------------------
+
+    def _webengine_profiles(self):
+        """Perfiles de WebEngine en uso: el por defecto, el privado y los de las pestañas."""
+        profiles = [QWebEngineProfile.defaultProfile()]
+        try:
+            import tabs as _tabs_mod
+            private_prof = getattr(_tabs_mod, "_private_profile", None)
+            if private_prof is not None and private_prof not in profiles:
+                profiles.append(private_prof)
+        except Exception:
+            pass
+        try:
+            tab_widget = self.parent.tab_manager.tabs
+            for i in range(tab_widget.count()):
+                view = tab_widget.widget(i)
+                if view is not None and hasattr(view, "page"):
+                    prof = view.page().profile()
+                    if prof not in profiles:
+                        profiles.append(prof)
+        except Exception:
+            pass
+        return profiles
+
+    def _clear_history_silent(self):
+        """Borra el historial sin diálogos (History del perfil + historial en memoria)."""
+        try:
+            self.history_manager.clear_history()
+        except Exception as e:
+            logger.warning("Privacidad: error borrando History: %s", e)
+        main_history = getattr(self.parent, "history_manager", None)
+        if main_history is not None and main_history is not self.history_manager:
+            try:
+                main_history.clear_history()
+            except Exception as e:
+                logger.warning("Privacidad: error borrando historial en memoria: %s", e)
+        for profile in self._webengine_profiles():
+            try:
+                profile.clearAllVisitedLinks()
+            except Exception:
+                pass
+
+    def _clear_cookies(self):
+        for profile in self._webengine_profiles():
+            try:
+                profile.cookieStore().deleteAllCookies()
+            except Exception as e:
+                logger.warning("Privacidad: error borrando cookies: %s", e)
+
+    def _clear_cache(self):
+        for profile in self._webengine_profiles():
+            try:
+                profile.clearHttpCache()
+            except Exception as e:
+                logger.warning("Privacidad: error borrando caché: %s", e)
+
+    def clear_all_local_data(self, include_passwords: bool = True) -> None:
+        """Borra todos los datos locales que guarda Katphi.
+
+        - historial (History del perfil, historial en memoria, enlaces visitados)
+        - cookies y caché HTTP de los perfiles de WebEngine en uso
+        - contraseñas de Katphi (password_manager), si include_passwords
+        - historial de descargas (downloads_history.db)
+        - sesiones: tab_session.json, last_session.json, crash_recovery.json,
+          current_session.json y el contenido de sessions/
+        - conversaciones (~/.katphi/conversations/session_history.json)
+        - caché de favicons (~/.cache/katphi/favicons)
+        - ficheros de log (logger_setup.clear_log_files)
+
+        No muestra diálogos: lo usan el menú "Limpiar datos", "All time" y
+        el borrado automático. Cada paso es independiente: un fallo no
+        impide los siguientes.
+        """
+        steps = [
+            ("historial", self._clear_history_silent),
+            ("cookies", self._clear_cookies),
+            ("caché", self._clear_cache),
+            ("descargas", lambda: _clear_downloads_history(self.parent)),
+            ("sesiones", _clear_session_files),
+            ("conversaciones", lambda: _clear_conversation_history(self.parent)),
+            ("favicons", _clear_favicon_cache),
+        ]
+        if include_passwords:
+            steps.append(("contraseñas", lambda: _clear_katphi_passwords(self.parent)))
+        # El log, al final, para no dejar en él las trazas de este borrado
+        steps.append(("logs", _clear_log_files))
+        for name, func in steps:
+            try:
+                func()
+            except Exception as e:
+                logger.warning("Privacidad: error borrando %s: %s", name, e)
+        try:
+            self.data_cleared.emit("all")
+        except Exception:
+            pass
+
     def clear_history(self):
         """Borra el historial de navegación (método legacy)"""
 
@@ -2392,9 +2852,7 @@ class PrivacyManager(QWidget):
         """Borra las cookies (método legacy)"""
 
         try:
-            profile = QWebEngineProfile.defaultProfile()
-
-            profile.cookieStore().deleteAllCookies()
+            self._clear_cookies()
 
             self.data_cleared.emit("cookies")
 
@@ -2405,9 +2863,7 @@ class PrivacyManager(QWidget):
         """Borra la caché del navegador (método legacy)"""
 
         try:
-            profile = QWebEngineProfile.defaultProfile()
-
-            profile.clearHttpCache()
+            self._clear_cache()
 
             self.data_cleared.emit("cache")
 
@@ -2453,11 +2909,11 @@ class PrivacyManager(QWidget):
 
             scripts = profile.scripts()
 
-            # existing_script = scripts.findScript("yt-adblock")  # DESACTIVADO: método no existe en PySide6
-
-            # if not existing_script.isNull():  # DESACTIVADO
-
-                # scripts.remove(existing_script)  # DESACTIVADO
+            # Eliminar copias anteriores: insert() no deduplica y esta función
+            # se llama en cada pestaña y navegación (E-005).
+            # find() devuelve QList[QWebEngineScript] en PySide6 6.11
+            for _existing in scripts.find("yt-adblock"):
+                scripts.remove(_existing)
             # Crear nuevo script
 
             script = QWebEngineScript()
@@ -2983,6 +3439,14 @@ class PrivacyManager(QWidget):
         try:
             prof = QWebEngineProfile.defaultProfile()
             self._apply_url_interceptor_to_profile(prof)
+            # Ventana privada: las pestañas usan un perfil off-the-record propio
+            try:
+                import tabs as _tabs_mod
+                private_prof = getattr(_tabs_mod, "_private_profile", None)
+                if private_prof is not None:
+                    self._apply_url_interceptor_to_profile(private_prof)
+            except Exception:
+                pass
             logger.debug(
                 "Adblock: perfil por defecto de WebEngine actualizado (block_ads=%s)",
                 self.settings.get_setting("block_ads"),
@@ -3010,7 +3474,8 @@ class PrivacyManager(QWidget):
                     # Remover script de YouTube si existe
                     try:
                         _scripts = profile.scripts()
-                        _ = _scripts  # API remove limitada en PySide6
+                        for _existing in _scripts.find("yt-adblock"):
+                            _scripts.remove(_existing)
                     except Exception as e:
                         print(f"Error removiendo script de YouTube: {e}")
                 # Configurar permisos
@@ -3027,7 +3492,10 @@ class PrivacyManager(QWidget):
                 settings.setAttribute(QWebEngineSettings.WebGLEnabled, True)
                 # Política de cookies persistentes (separada de third-party)
 
-                if self.settings.get_setting("no_persistent_cookies"):
+                if profile.isOffTheRecord():
+                    # Perfil privado: Qt ya fuerza cookies en memoria
+                    pass
+                elif self.settings.get_setting("no_persistent_cookies"):
                     profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
                 else:
                     profile.setPersistentCookiesPolicy(QWebEngineProfile.AllowPersistentCookies)
@@ -3180,20 +3648,19 @@ class PrivacyManager(QWidget):
         """Ejecuta el borrado automático de datos"""
 
         try:
-            profile = QWebEngineProfile.defaultProfile()
-
             if self.settings.get_setting("auto_clear_history"):
-                self.clear_history()
+                # Sin QMessageBox: antes llamaba a clear_history(), que abre diálogos
+                self._clear_history_silent()
             if self.settings.get_setting("auto_clear_cookies"):
-                profile.cookieStore().deleteAllCookies()
+                self._clear_cookies()
             if self.settings.get_setting("auto_clear_cache"):
-                profile.clearHttpCache()
+                self._clear_cache()
             if self.settings.get_setting("auto_clear_passwords"):
-                self.auto_clear.clear_saved_passwords()
+                _clear_katphi_passwords(self.parent)
             if self.settings.get_setting("auto_clear_form_data"):
                 self.auto_clear.clear_form_data()
             if self.settings.get_setting("auto_clear_downloads"):
-                self.auto_clear.clear_downloads()
+                _clear_downloads_history(self.parent)
             print("Auto-clear data completed")
         except Exception as e:
             print(f"Error in auto-clear data: {str(e)}")

@@ -6,6 +6,22 @@ Este módulo centraliza todas las constantes utilizadas en el proyecto
 para evitar strings mágicos y valores hardcodeados dispersos en el código.
 """
 
+import sys
+
+# ============================================================================
+# MODO PRIVADO (ventana privada como proceso independiente)
+# ============================================================================
+
+# main.py lo fija a True al detectar --private (y quita el argumento de argv
+# antes de crear la QApplication, por eso no basta con mirar sys.argv).
+PRIVATE_MODE = False
+
+
+def is_private_mode() -> bool:
+    """True si este proceso es una ventana privada (lanzado con --private)."""
+    return PRIVATE_MODE or "--private" in sys.argv
+
+
 # ============================================================================
 # INFORMACIÓN DE LA APLICACIÓN
 # ============================================================================

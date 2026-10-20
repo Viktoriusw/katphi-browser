@@ -64,7 +64,7 @@ source venv/bin/activate
 pip install --upgrade pip
 
 # PySide6 primero: sin Qt WebEngine el navegador no arranca
-pip install --upgrade "PySide6>=6.5.0"
+pip install --upgrade "PySide6>=6.8.0"
 pip install -r requirements.txt
 
 python3 check_dependencies.py

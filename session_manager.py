@@ -12,10 +12,20 @@ Características:
 
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
-from PySide6.QtCore import QSettings, QTimer
+from PySide6.QtCore import QSettings, QTimer, Qt
 from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QLineEdit, QLabel
+
+
+def _is_private_mode() -> bool:
+    """True si este proceso es una ventana privada (--private)."""
+    try:
+        from constants import is_private_mode
+        return is_private_mode()
+    except Exception:
+        return "--private" in sys.argv
 
 
 class SessionManager:
@@ -30,16 +40,21 @@ class SessionManager:
         self.parent = parent
         self.settings = QSettings("Katphi", "SessionManager")
 
+        # A-001: en la ventana privada no se escribe nada de sesión en disco
+        self.private_mode = _is_private_mode()
+
         # Crear directorio de sesiones si no existe
-        Path(self.SESSIONS_DIR).mkdir(exist_ok=True)
+        if not self.private_mode:
+            Path(self.SESSIONS_DIR).mkdir(exist_ok=True)
 
         # Verificar si hay sesión de crash al iniciar
-        self.has_crash_session = self.check_crash_recovery()
+        self.has_crash_session = False if self.private_mode else self.check_crash_recovery()
 
-        # Timer para auto-guardado
+        # Timer para auto-guardado (no en modo privado)
         self.autosave_timer = QTimer()
         self.autosave_timer.timeout.connect(self.autosave_current_session)
-        self.autosave_timer.start(30000)  # Auto-guardar cada 30 segundos
+        if not self.private_mode:
+            self.autosave_timer.start(30000)  # Auto-guardar cada 30 segundos
     def check_crash_recovery(self):
         """Verificar si existe sesión de recuperación tras crash"""
         crash_file = Path(self.CRASH_RECOVERY_FILE)
@@ -96,6 +111,8 @@ class SessionManager:
             print(f"[SessionManager] Error clearing crash recovery: {e}")
     def autosave_current_session(self):
         """Auto-guardar sesión actual (para recuperación de crash)"""
+        if self.private_mode:
+            return
         if not self.parent or not hasattr(self.parent, 'tab_manager'):
             return
         try:
@@ -120,23 +137,28 @@ class SessionManager:
 
         for i in range(tabs_widget.count()):
             browser = tabs_widget.widget(i)
-            if not browser:
+            if not browser or not hasattr(browser, 'url'):
                 continue
             url = browser.url().toString()
             title = tabs_widget.tabText(i)
 
-            # Capturar estado de scroll
+            # Capturar estado de scroll (asíncrono: el valor llega en un
+            # guardado posterior; el dict se fija por argumento por defecto
+            # para no capturar la variable del bucle)
             scroll_data = {'x': 0, 'y': 0}
 
-            def capture_scroll(result):
-                if result:
+            def capture_scroll(result, scroll_data=scroll_data):
+                if isinstance(result, dict):
                     scroll_data['x'] = result.get('x', 0)
                     scroll_data['y'] = result.get('y', 0)
             # JavaScript para obtener posición de scroll
-            browser.page().runJavaScript(
-                "({x: window.scrollX, y: window.scrollY})",
-                capture_scroll
-            )
+            try:
+                browser.page().runJavaScript(
+                    "({x: window.scrollX, y: window.scrollY})",
+                    capture_scroll
+                )
+            except Exception:
+                pass
 
             # Capturar estado de formularios (simplificado)
             # En una implementación completa, esto capturaría todos los campos de formulario
@@ -166,6 +188,8 @@ class SessionManager:
 
         if not tabs:
             return
+        # Índice de la primera pestaña restaurada (para la pestaña activa)
+        base_index = None
         # Cerrar pestaña inicial vacía si existe
         if tab_manager.tabs.count() == 1:
             first_tab = tab_manager.tabs.widget(0)
@@ -178,16 +202,27 @@ class SessionManager:
                 continue
             # Crear pestaña
             browser = tab_manager.add_new_tab(url)
+            if browser is None:
+                continue
+            if base_index is None:
+                base_index = tab_manager.tabs.indexOf(browser)
 
             # Restaurar scroll después de que cargue la página
-            scroll_data = tab_data.get('scroll', {})
+            scroll_data = tab_data.get('scroll', {}) or {}
             if scroll_data.get('x') or scroll_data.get('y'):
-                def restore_scroll():
-                    browser.page().runJavaScript(
-                        f"window.scrollTo({scroll_data.get('x', 0)}, {scroll_data.get('y', 0)})"
-                    )
+                try:
+                    sx = int(scroll_data.get('x', 0))
+                    sy = int(scroll_data.get('y', 0))
+                except (TypeError, ValueError):
+                    sx, sy = 0, 0
+
+                # Valores fijados por argumento por defecto: cada pestaña
+                # usa su propio browser y su propio scroll (no los del bucle)
+                def restore_scroll(ok, browser=browser, sx=sx, sy=sy):
+                    if ok:
+                        browser.page().runJavaScript(f"window.scrollTo({sx}, {sy})")
                 # Esperar a que cargue la página
-                browser.loadFinished.connect(lambda ok: restore_scroll() if ok else None)
+                browser.loadFinished.connect(restore_scroll)
             # Restaurar pestaña fijada
             if tab_data.get('pinned', False):
                 index = tab_manager.tabs.count() - 1
@@ -195,16 +230,28 @@ class SessionManager:
                     tab_manager.pin_tab(index)
         # Restaurar pestaña activa
         active_index = session_data.get('active_tab_index', 0)
-        if 0 <= active_index < tab_manager.tabs.count():
-            tab_manager.tabs.setCurrentIndex(active_index)
+        if base_index is not None and isinstance(active_index, int):
+            target = base_index + active_index
+            if 0 <= target < tab_manager.tabs.count():
+                tab_manager.tabs.setCurrentIndex(target)
     def save_named_session(self, session_name):
         """Guardar sesión con nombre específico"""
+        if self.private_mode:
+            QMessageBox.information(
+                self.parent,
+                "Ventana privada",
+                "En una ventana privada no se guardan sesiones en disco."
+            )
+            return False
         try:
             session_data = self.capture_session()
             session_data['name'] = session_name
 
             # Sanitizar nombre de archivo
             safe_name = "".join(c for c in session_name if c.isalnum() or c in (' ', '-', '_')).strip()
+            if not safe_name:
+                safe_name = "sesion"
+            Path(self.SESSIONS_DIR).mkdir(exist_ok=True)
             filename = f"{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             filepath = Path(self.SESSIONS_DIR) / filename
 
@@ -261,12 +308,21 @@ class SessionManager:
                 QMessageBox.Yes
             )
 
+            old_tab = None
             if reply == QMessageBox.Yes and hasattr(self.parent, 'tab_manager'):
-                # Cerrar todas las pestañas
+                # Cerrar todas las pestañas menos una: close_tab() nunca cierra
+                # la última, así que un "while count > 0" no terminaría nunca.
+                # La que queda se cierra después de abrir las restauradas.
                 tab_manager = self.parent.tab_manager
-                while tab_manager.tabs.count() > 0:
-                    tab_manager.close_tab(0)
+                for i in range(tab_manager.tabs.count() - 1, 0, -1):
+                    tab_manager.close_tab(i)
+                old_tab = tab_manager.tabs.widget(0)
             self.restore_session_data(session_data)
+            if old_tab is not None:
+                tab_manager = self.parent.tab_manager
+                idx = tab_manager.tabs.indexOf(old_tab)
+                if idx != -1 and tab_manager.tabs.count() > 1:
+                    tab_manager.close_tab(idx)
             return True
         except Exception as e:
             print(f"[SessionManager] Error restoring named session: {e}")
@@ -290,6 +346,8 @@ class SessionManager:
         dialog.exec()
     def on_browser_close(self):
         """Llamar al cerrar el navegador normalmente"""
+        if self.private_mode:
+            return
         # Guardar sesión actual como última sesión
         self.autosave_current_session()
 

@@ -21,6 +21,9 @@ import socket
 
 import requests
 
+# Proxy SOCKS de Tor para las peticiones hechas desde Python (B-002)
+from net_proxy import requests_proxies
+
 
 import time
 
@@ -207,30 +210,39 @@ class NetworkManager:
         try:
             start_time = time.time()
 
-            # Verificar conectividad TCP primero
+            check_url = f"{endpoint.url}/health" if endpoint_name == "backend" else endpoint.url
 
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            proxies = requests_proxies(check_url)
 
-            sock.settimeout(endpoint.timeout)
+            # Verificar conectividad TCP primero. Con Tor activo se omite: el
+            # socket directo saldría por la IP real (B-002); basta la petición
+            # HTTP, que va por el SOCKS.
 
-            result = sock.connect_ex((endpoint.ip, endpoint.port))
+            if proxies is None:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-            sock.close()
+                sock.settimeout(endpoint.timeout)
 
-            if result != 0:
-                endpoint.status = NetworkStatus.DISCONNECTED
+                result = sock.connect_ex((endpoint.ip, endpoint.port))
 
-                endpoint.last_check = time.time()
+                sock.close()
 
-                return endpoint.status
+                if result != 0:
+                    endpoint.status = NetworkStatus.DISCONNECTED
+
+                    endpoint.last_check = time.time()
+
+                    return endpoint.status
             # Verificar HTTP si es posible
 
             try:
                 response = requests.get(
 
-                    f"{endpoint.url}/health" if endpoint_name == "backend" else endpoint.url,
+                    check_url,
 
-                    timeout=endpoint.timeout
+                    timeout=endpoint.timeout,
+
+                    proxies=proxies
                 )
 
                 if response.status_code == 200:
@@ -263,7 +275,10 @@ class NetworkManager:
 
         for url in fallback_urls:
             try:
-                response = requests.get(f"{url}/health" if endpoint_name == "backend" else url, timeout=5)
+                fallback_check_url = f"{url}/health" if endpoint_name == "backend" else url
+
+                response = requests.get(fallback_check_url, timeout=5,
+                                        proxies=requests_proxies(fallback_check_url))
 
                 if response.status_code == 200:
                     return url

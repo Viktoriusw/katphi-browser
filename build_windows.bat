@@ -39,7 +39,7 @@ pip install "pyinstaller>=6.0.0"
 pip install "pyinstaller-hooks-contrib>=2024.0"
 
 :: Core
-pip install "PySide6>=6.5.0"
+pip install "PySide6>=6.8.0"
 pip install "requests>=2.28.0"
 pip install "beautifulsoup4>=4.11.0"
 pip install "lxml>=4.9.0"

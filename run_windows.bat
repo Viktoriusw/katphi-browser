@@ -32,7 +32,13 @@ if not exist "venv_win\Scripts\activate.bat" (
 call venv_win\Scripts\activate.bat
 
 :: Instalar/actualizar dependencias (solo la primera vez o si falta algo)
-if not exist "venv_win\.deps_installed" (
+:: El marcador guarda la version del navegador: al actualizar Katphi se
+:: reinstalan las dependencias para recoger los nuevos minimos (Qt WebEngine)
+set "APP_VER="
+set /p APP_VER=<VERSION
+set "DEPS_VER="
+if exist "venv_win\.deps_installed" set /p DEPS_VER=<venv_win\.deps_installed
+if not "%DEPS_VER%"=="%APP_VER%" (
     echo.
     echo [INFO] Instalando dependencias ^(primera vez, puede tardar 5-10 minutos^)...
     echo.
@@ -40,7 +46,7 @@ if not exist "venv_win\.deps_installed" (
     pip install --upgrade pip
 
     :: Core - PySide6 WebEngine (lo mas importante)
-    pip install "PySide6>=6.5.0"
+    pip install "PySide6>=6.8.0"
     if errorlevel 1 ( echo [ERROR] Fallo instalando PySide6 & pause & exit /b 1 )
 
     :: Resto de dependencias (incluye las librerias que usan los plugins de la tienda)
@@ -48,7 +54,7 @@ if not exist "venv_win\.deps_installed" (
     if errorlevel 1 ( echo [ERROR] Fallo instalando requirements.txt & pause & exit /b 1 )
 
     :: Marcar como instalado
-    echo 1 > venv_win\.deps_installed
+    >venv_win\.deps_installed echo %APP_VER%
     echo.
     echo [OK] Dependencias instaladas correctamente.
 )

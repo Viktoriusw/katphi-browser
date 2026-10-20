@@ -852,8 +852,16 @@ Patrones de bloqueo activos: {stats['patterns_count']}
                 tab_manager = self.parent().tab_manager
 
                 # Cerrar todas las pestañas actuales
+                # removeTab no destruye la vista (E-007): se libera después
                 while tab_manager.tabs.count() > 0:
+                    widget = tab_manager.tabs.widget(0)
                     tab_manager.tabs.removeTab(0)
+                    if widget is None:
+                        continue
+                    if hasattr(tab_manager, "dispose_tab_widget"):
+                        tab_manager.dispose_tab_widget(widget)
+                    else:
+                        widget.deleteLater()
                 # Abrir una nueva pestaña con el User-Agent actualizado
                 tab_manager.add_new_tab()
 

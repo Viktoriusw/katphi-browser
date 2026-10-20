@@ -106,7 +106,13 @@ class NavigationManager:
                 print("Error: Invalid browser for configuring downloads")
 
                 return
-            browser.page().profile().downloadRequested.connect(self.download_manager.handle_download)
+            profile = browser.page().profile()
+            # connect_profile es idempotente: evita conectar el mismo perfil
+            # una vez por pestaña (descargas duplicadas)
+            if hasattr(self.download_manager, "connect_profile"):
+                self.download_manager.connect_profile(profile)
+            else:
+                profile.downloadRequested.connect(self.download_manager.handle_download)
 
             print("Downloads configured correctly.")
         except Exception as e:

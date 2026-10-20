@@ -43,6 +43,13 @@ class DownloadManager(QObject):
 
         self.downloads = {}
 
+        # A-008: perfiles con downloadRequested ya conectado (una sola vez por perfil)
+        self._connected_profiles = set()
+
+        # Descargas ya atendidas (por id): si alguna conexión duplicada vuelve
+        # a entregar la misma petición, no se abre un segundo diálogo
+        self._handled_download_ids = set()
+
         self.init_ui()
 
         self.init_mime_types()
@@ -179,10 +186,34 @@ class DownloadManager(QObject):
         if not os.access(download_dir, os.W_OK):
             download_dir = os.path.expanduser("~")  # Fallback to user's home
         return download_dir
+    def connect_profile(self, profile):
+        """Conecta downloadRequested del perfil una sola vez (idempotente)."""
+        try:
+            if profile is None:
+                return
+            key = id(profile)
+            if key in self._connected_profiles:
+                return
+            profile.downloadRequested.connect(self.handle_download)
+            self._connected_profiles.add(key)
+        except Exception as e:
+            print(f"Error connecting download profile: {e}")
+
     def handle_download(self, download):
         """Handles a new download"""
 
         try:
+            # A-008: ignorar peticiones ya aceptadas/canceladas (conexiones
+            # duplicadas del mismo perfil) o ya atendidas por otra llamada
+            try:
+                if download.state() != QWebEngineDownloadRequest.DownloadState.DownloadRequested:
+                    return
+                download_id = download.id()
+                if download_id in self._handled_download_ids:
+                    return
+                self._handled_download_ids.add(download_id)
+            except Exception:
+                pass
             # Get the filename from the URL
 
             suggested_name = download.suggestedFileName()

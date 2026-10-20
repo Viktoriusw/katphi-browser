@@ -2,6 +2,8 @@ import json
 
 import os
 
+import sys
+
 from PySide6.QtWidgets import QTabWidget, QTabBar, QMenu, QPushButton, QStackedWidget, QToolButton, QWidget, QHBoxLayout
 
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -13,6 +15,39 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 
 from tab_groups import TabGroupManager
+
+
+def _is_private_mode() -> bool:
+    """True si este proceso es una ventana privada (--private)."""
+    try:
+        from constants import is_private_mode
+        return is_private_mode()
+    except Exception:
+        return "--private" in sys.argv
+
+
+# Perfil off-the-record compartido por todas las pestañas de la ventana privada
+_private_profile = None
+
+
+def get_private_profile():
+    """Devuelve (y crea una sola vez) el perfil sin nombre de la ventana privada.
+
+    Un QWebEngineProfile sin storageName es off-the-record: cookies, caché,
+    localStorage e IndexedDB viven solo en memoria y se pierden al cerrar.
+    """
+    global _private_profile
+    if _private_profile is None:
+        from PySide6.QtWidgets import QApplication
+        # Parent = QApplication: el perfil sobrevive a todas las páginas
+        _private_profile = QWebEngineProfile(QApplication.instance())
+        try:
+            _private_profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
+            _private_profile.setHttpCacheType(QWebEngineProfile.MemoryHttpCache)
+        except Exception as e:
+            print(f"[PRIVATE] Could not configure private profile: {e}")
+        print(f"[PRIVATE] Off-the-record profile created (offTheRecord={_private_profile.isOffTheRecord()})")
+    return _private_profile
 
 
 class _NewTabButton(QPushButton):
@@ -399,6 +434,12 @@ class TabManager:
                         url = "https://duckduckgo.com"
             # Crear el navegador
             browser = BrowserView(self)
+            private = _is_private_mode()
+
+            # A-001: en la ventana privada la página usa el perfil off-the-record
+            # compartido (la página es hija de la vista y se destruye con ella)
+            if private:
+                browser.setPage(QWebEnginePage(get_private_profile(), browser))
 
             # IMPORTANTE: Configurar el perfil ANTES de establecer la URL
             # para que la primera petición HTTP use el User-Agent correcto
@@ -407,7 +448,11 @@ class TabManager:
             profile = browser.page().profile()
 
             # Si hay un profile_manager disponible, usar rutas específicas del perfil
-            if hasattr(self.parent, 'profile_manager') and self.parent.profile_manager:
+            # (no en modo privado: el perfil off-the-record no escribe en disco)
+            if private:
+                profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
+                profile.setHttpCacheType(QWebEngineProfile.MemoryHttpCache)
+            elif hasattr(self.parent, 'profile_manager') and self.parent.profile_manager:
                 profile_path = self.parent.profile_manager.get_profile_path()
 
                 # Configurar rutas de almacenamiento persistente
@@ -420,8 +465,9 @@ class TabManager:
                     print(f"[PROFILE] Using profile-specific paths: {profile_path}")
                 except Exception as e:
                     print(f"[WARNING] Could not set profile paths: {e}")
-            profile.setPersistentCookiesPolicy(QWebEngineProfile.AllowPersistentCookies)
-            profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
+            if not private:
+                profile.setPersistentCookiesPolicy(QWebEngineProfile.AllowPersistentCookies)
+                profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
 
             # Configurar User-Agent del perfil (MÉTODO CORRECTO DE QT)
             if hasattr(self.parent, 'network_interceptor') and self.parent.network_interceptor:
@@ -444,8 +490,9 @@ class TabManager:
                 except Exception as priv_ex:
                     print(f"[WARNING] apply_privacy_settings on new tab: {priv_ex}")
             # Configurar gestor de contraseñas ANTES de cargar la URL
-            # para que los scripts estén registrados en la primera carga
-            if hasattr(self.parent, 'password_manager'):
+            # para que los scripts estén registrados en la primera carga.
+            # En modo privado no se capturan ni autorrellenan contraseñas.
+            if not private and hasattr(self.parent, 'password_manager'):
                 self.parent.password_manager.setup_browser(browser)
             # Establecer la URL - se cargará con el User-Agent y scripts listos
             if load:
@@ -457,10 +504,14 @@ class TabManager:
 
             # Conectar urlChanged (múltiples conexiones)
             url_changed_1 = lambda url, b=browser: self.on_url_changed(url, b)
-            url_changed_2 = self.history_manager.record_history
             browser.urlChanged.connect(url_changed_1)
-            browser.urlChanged.connect(url_changed_2)
-            self._signal_connections[browser_id]['urlChanged'] = [url_changed_1, url_changed_2]
+            url_changed_slots = [url_changed_1]
+            # En modo privado no se registra historial
+            if not private:
+                url_changed_2 = self.history_manager.record_history
+                browser.urlChanged.connect(url_changed_2)
+                url_changed_slots.append(url_changed_2)
+            self._signal_connections[browser_id]['urlChanged'] = url_changed_slots
 
             # Conectar titleChanged
             title_changed = lambda title: self.update_tab_title(title, browser)
@@ -491,8 +542,14 @@ class TabManager:
 
             # Configurar descargas
 
+            # A-008: downloadRequested se conecta una sola vez por perfil
+            # (connect_profile es idempotente); antes se conectaba por pestaña
             if hasattr(self.parent, 'navigation_manager'):
-                self.parent.navigation_manager.setup_downloads(browser)
+                dm = getattr(self.parent.navigation_manager, 'download_manager', None)
+                if dm is not None and hasattr(dm, 'connect_profile'):
+                    dm.connect_profile(profile)
+                else:
+                    self.parent.navigation_manager.setup_downloads(browser)
             # Configurar inyección de UserScripts
 
             if hasattr(self.parent, 'userscript_manager'):
@@ -610,6 +667,41 @@ class TabManager:
             del self._signal_connections[browser_id]
         except Exception as e:
             print(f"Error al desconectar señales del browser: {str(e)}")
+    def _destroy_browser(self, browser):
+        """Detiene y programa la destrucción de una vista ya quitada del QTabWidget.
+
+        La página (por defecto o la privada) es hija de la vista y se destruye
+        con ella; si tuviera otro dueño se libera aparte.
+        """
+        if browser is None:
+            return
+        try:
+            page = browser.page() if hasattr(browser, 'page') else None
+            try:
+                browser.stop()
+            except Exception:
+                pass
+            if page is not None and page.parent() is not browser:
+                page.deleteLater()
+            browser.deleteLater()
+        except Exception as e:
+            print(f"Error al destruir la vista de la pestaña: {e}")
+
+    def dispose_tab_widget(self, browser):
+        """Limpieza completa de una vista ya quitada: señales, password manager y deleteLater."""
+        if browser is None:
+            return
+        try:
+            self._disconnect_browser_signals(browser)
+        except Exception:
+            pass
+        try:
+            if hasattr(self.parent, 'password_manager'):
+                self.parent.password_manager.cleanup_browser(browser)
+        except Exception:
+            pass
+        self._destroy_browser(browser)
+
     def close_tab(self, index):
         try:
             if self.tabs.count() > 1:
@@ -643,6 +735,9 @@ class TabManager:
                 self.group_manager.on_tab_closed(index)
 
                 self.tabs.removeTab(index)
+
+                # E-007: removeTab no destruye la vista; liberarla (y su página)
+                self._destroy_browser(tab_widget)
 
                 current_browser = self.tabs.currentWidget()
 
@@ -780,6 +875,10 @@ class TabManager:
     def guardar_sesion(self):
         """Guarda la sesión actual de pestañas (URL) en un archivo JSON"""
 
+        # A-001: la ventana privada no deja sesión en disco
+        if _is_private_mode():
+            return
+
         session = []
 
         for i in range(self.tabs.count()):
@@ -796,6 +895,10 @@ class TabManager:
             print(f"Error al guardar la sesión: {e}")
     def restaurar_sesion(self):
         """Restore tab session from JSON file"""
+
+        # A-001: la ventana privada empieza siempre limpia
+        if _is_private_mode():
+            return False
 
         if not os.path.exists(self.SESSION_FILE):
             print("No saved session to restore.")

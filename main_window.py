@@ -62,6 +62,8 @@ from auth_manager import AuthManager
 from auth_panel import LoginDialog, AuthPanel
 from plugin_paths import find_plugin_dir, BUNDLED_PLUGINS_DIR
 import time
+
+import net_proxy
 import urllib.parse
 
 # ============================================================================
@@ -77,6 +79,34 @@ from userscript_manager import UserScriptManager, UserScriptDialog
 from performance_monitor import PerformanceMonitor, PerformanceDiagnostic
 from screenshot_advanced import RegionSelector, AnnotationEditor, ElementSelector
 from session_manager import SessionManager
+
+
+def _is_private_mode() -> bool:
+    """True si este proceso es una ventana privada (--private)."""
+    try:
+        from constants import is_private_mode
+        return is_private_mode()
+    except Exception:
+        import sys as _sys
+        return "--private" in _sys.argv
+
+
+def _relaunch_command(*extra_args) -> list:
+    """Comando para lanzar otra instancia del navegador.
+
+    Congelado con PyInstaller, sys.executable ES el binario del navegador;
+    sin congelar se pasa la ruta absoluta de main.py (no depende del CWD).
+    """
+    import sys as _sys
+    if getattr(_sys, "frozen", False):
+        return [_sys.executable, *extra_args]
+    main_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+    return [_sys.executable, main_py, *extra_args]
+
+
+# C-007: workers que no terminaron a tiempo al cerrar; se conservan aquí para
+# que el QThread no se destruya mientras sigue en marcha
+_LINGERING_WORKERS: list = []
 from search_engine_manager import (
     SearchEngineManager,
     SearchEngineButton,
@@ -348,6 +378,36 @@ def _cursor_shape_for_resize_edges(edges: Qt.Edge) -> Qt.CursorShape:
     return Qt.CursorShape.SizeVerCursor
 
 
+class _GenTabPage(QWebEnginePage):
+    """Página de una GenTab (HTML generado por el LLM).
+
+    La CSP de gentab_engine bloquea fetch/XHR/imágenes remotas, pero no la
+    navegación de nivel superior: un script podría hacer location.href o
+    window.open hacia un tercero con los datos extraídos en la URL. Aquí solo
+    se permiten la carga inicial y los anclajes internos; los enlaces que pulsa
+    el usuario se abren en una pestaña normal y el resto se bloquea.
+    """
+
+    def __init__(self, profile, parent, open_link):
+        super().__init__(profile, parent)
+        self._open_link = open_link
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        scheme = url.scheme()
+        if scheme in ("data", "about") or url.host() == "gentab.local":
+            return True
+        if (nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked
+                and is_main_frame and scheme in ("http", "https")):
+            self._open_link(url.toString())
+        else:
+            print(f"[GenTab] Navegación bloqueada: {url.toString()[:120]}")
+        return False
+
+    def createWindow(self, _window_type):
+        # window.open y target=_blank: sin ventana nueva desde una GenTab
+        return None
+
+
 class _FrameResizeHandle(QWidget):
     """Zona sensible en el borde para iniciar resize vía compositor (`startSystemResize`)."""
 
@@ -383,10 +443,17 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        # A-001: ventana privada (perfil off-the-record, sin sesión ni historial)
+        self._private_mode = _is_private_mode()
         self.setWindowTitle("Katphi")
         self.setGeometry(100, 100, 1200, 800)
         self.settings = QSettings("Katphi", "Settings")
         self._window_frameless = False
+
+        # D-003: la sesión de pestañas se restaura una sola vez por proceso
+        self._session_restored = False
+        # D-003: debounce de la resincronización de plugins
+        self._resync_timer = None
 
         # VENTANA NORMAL - Comportamiento completo del sistema operativo
         # Sin FramelessWindowHint para mantener TODA la funcionalidad:
@@ -426,6 +493,13 @@ class MainWindow(QMainWindow):
         self.tab_manager = TabManager(self.history_manager, self)
         self.navigation_manager.initialize_tab_manager(self.tab_manager)
 
+        # F-001: gestor de sesiones con nombre y recuperación tras fallo
+        try:
+            self.session_manager = SessionManager(self)
+        except Exception as e:
+            self.session_manager = None
+            print(f"[ERROR] Failed to initialize Session Manager: {e}")
+
         # ====================================================================
         # NUEVAS FUNCIONALIDADES UX/UI
         # ====================================================================
@@ -446,7 +520,7 @@ class MainWindow(QMainWindow):
         # 4. Network Interceptor para modificar peticiones HTTP
         self.network_interceptor = NetworkInterceptor(self)
         from config_manager import config
-        self.network_interceptor.tor_mode = config.is_tor_enabled()
+        self.network_interceptor.tor_mode = net_proxy.is_tor_active()
         print(
             f"[OK] Network interceptor initialized - UA: {self.network_interceptor.user_agent_type}"
         )
@@ -619,6 +693,21 @@ class MainWindow(QMainWindow):
             _tab_bar.setStyleSheet(self.modern_styles.get_tab_style())
         except Exception:
             pass
+        # A-001: indicador visible de ventana privada
+        self._private_badge = None
+        if self._private_mode:
+            self._private_badge = QLabel("Privada")
+            self._private_badge.setObjectName("privateWindowBadge")
+            self._private_badge.setToolTip(
+                "Ventana privada: no se guardan historial, cookies, caché, "
+                "sesión de pestañas, descargas ni contraseñas"
+            )
+            self._private_badge.setStyleSheet(
+                "QLabel#privateWindowBadge { background: #6a1b9a; color: #ffffff; "
+                "font-weight: bold; padding: 2px 10px; margin: 4px 6px; "
+                "border-radius: 4px; }"
+            )
+            tab_strip_layout.addWidget(self._private_badge, 0)
         tab_strip_layout.addWidget(_tab_bar, 1)
         if hasattr(self.tab_manager.tabs, "set_bar_detached"):
             self.tab_manager.tabs.set_bar_detached(True)
@@ -748,7 +837,9 @@ class MainWindow(QMainWindow):
         # Restore session or Tor pending URLs
         session_restored = False
         from config_manager import config
-        pending_urls = config.get_tor_pending_urls()
+        # Las URLs pendientes del reinicio por Tor son de la ventana normal: la
+        # ventana privada no las consume ni escribe en config.yaml
+        pending_urls = [] if self._private_mode else config.get_tor_pending_urls()
         if pending_urls:
             # Prioridad: URLs guardadas antes del reinicio Tor
             for url in pending_urls:
@@ -757,10 +848,16 @@ class MainWindow(QMainWindow):
             config.clear_tor_pending_urls()
             config.persist_config()
             session_restored = True
+            self._session_restored = True
             print(f"[TOR] Restored {len(pending_urls)} tabs after reinicio")
+        elif self._private_mode:
+            # A-001: la ventana privada nunca restaura la sesión
+            self._session_restored = True
+            print("[PRIVATE] Private window: session restoration skipped")
         elif self.auth_manager and self.auth_manager.auth_state.is_authenticated:
             print("[AUTH] User is authenticated, restoring session...")
             session_restored = self.tab_manager.restaurar_sesion()
+            self._session_restored = True
         else:
             print("[AUTH] User not authenticated, skipping session restoration")
         # Configure application close event
@@ -1184,39 +1281,86 @@ class MainWindow(QMainWindow):
     def _ensure_navigation_assistant_button_visible(self):
         """El asistente de navegación está integrado en el chat — no se añade botón separado."""
         pass
+    def _stop_index_workers(self, timeout_ms: int = 3000) -> None:
+        """C-007: detiene de verdad los IndexWorker antes de salir.
+
+        run() no tiene bucle de eventos, así que quit() no hace nada: se pide
+        la interrupción y se espera con timeout. Los que sigan vivos se
+        conservan en _LINGERING_WORKERS para no destruir un QThread en marcha.
+        """
+        for w in list(getattr(self, "_index_workers", [])):
+            try:
+                if w.isRunning():
+                    w.requestInterruption()
+                    if not w.wait(timeout_ms):
+                        print("[AI] IndexWorker sigue activo tras el timeout; se conserva la referencia")
+                        for _sig in (w.indexing_done, w.finished):
+                            try:
+                                _sig.disconnect()
+                            except Exception:
+                                pass
+                        _LINGERING_WORKERS.append(w)
+            except Exception as e:
+                print(f"[AI] Error deteniendo IndexWorker: {e}")
+
+    def _shutdown_cleanup(self) -> None:
+        """Limpieza común al cerrar la ventana y antes de reiniciar (Tor)."""
+        # Esperar a los hilos del asistente y de GenTab (C-007)
+        chat = getattr(self, "chat_panel", None)
+        if chat is not None and hasattr(chat, "shutdown_workers"):
+            try:
+                chat.shutdown_workers()
+            except Exception as e:
+                print(f"[Browser] Error stopping assistant workers: {e}")
+        engine = getattr(getattr(self, "gentab_panel", None), "engine", None)
+        if engine is not None and hasattr(engine, "shutdown"):
+            try:
+                engine.shutdown()
+            except Exception as e:
+                print(f"[Browser] Error stopping GenTab worker: {e}")
+        # AI Navigation cleanup
+        if self.ai_nav_enabled:
+            self._stop_index_workers()
+            if self.suggestion_engine:
+                self.suggestion_engine.reset_session()
+            print("[AI] Navigation system cleaned up")
+        # UnifiedPluginManager no requiere shutdown explícito
+        if PLUGIN_SYSTEM_AVAILABLE and self.plugin_manager:
+            print("[Browser] Unified Plugin Manager cleanup...")
+            # shutdown_all_plugins() no existe en UnifiedPluginManager
+            # La limpieza se hace automáticamente en el destructor
+        # A-001: la ventana privada no guarda ni borra ficheros de sesión
+        # (limpiar_sesion borraría la sesión de la ventana normal)
+        if self._private_mode:
+            print("[PRIVATE] Private window: session not saved")
+            return
+        # Session Manager - guardar última sesión y limpiar recuperación de crash
+        if hasattr(self, "session_manager") and self.session_manager:
+            print("[Browser] Saving session for crash recovery...")
+            self.session_manager.on_browser_close()
+        # Save session only if user is authenticated
+        if hasattr(self, "tab_manager"):
+            if self.auth_manager and self.auth_manager.auth_state.is_authenticated:
+                print("[AUTH] User is authenticated, saving session...")
+                self.tab_manager.guardar_sesion()
+            else:
+                print("[AUTH] User not authenticated, clearing session...")
+                self.tab_manager.limpiar_sesion()
+
     def on_close(self, event):
         """Handle browser close event"""
         try:
-            # AI Navigation cleanup
-            if self.ai_nav_enabled:
-                for w in self._index_workers:
-                    if w.isRunning():
-                        w.quit()
-                        w.wait(1000)
-                if self.suggestion_engine:
-                    self.suggestion_engine.reset_session()
-                print("[AI] Navigation system cleaned up")
-            # UnifiedPluginManager no requiere shutdown explícito
-            if PLUGIN_SYSTEM_AVAILABLE and self.plugin_manager:
-                print("[Browser] Unified Plugin Manager cleanup...")
-                # shutdown_all_plugins() no existe en UnifiedPluginManager
-                # La limpieza se hace automáticamente en el destructor
-            # Session Manager - guardar para recuperación de crash
-            if hasattr(self, "session_manager") and self.session_manager:
-                print("[Browser] Saving session for crash recovery...")
-                self.session_manager.on_browser_close()
-            # Save session only if user is authenticated
-            if hasattr(self, "tab_manager"):
-                if self.auth_manager and self.auth_manager.auth_state.is_authenticated:
-                    print("[AUTH] User is authenticated, saving session...")
-                    self.tab_manager.guardar_sesion()
-                else:
-                    print("[AUTH] User not authenticated, clearing session...")
-                    self.tab_manager.limpiar_sesion()
+            self._shutdown_cleanup()
             event.accept()
         except Exception as e:
             print(f"[Browser] Error during shutdown: {e}")
             event.accept()
+
+    def setWindowTitle(self, title):
+        """A-001: en la ventana privada el título lleva siempre "(Privada)"."""
+        if getattr(self, "_private_mode", False) and "(Privada)" not in (title or ""):
+            title = f"{title} (Privada)"
+        super().setWindowTitle(title)
     def resizeEvent(self, event):
         """
         Manejar el redimensionamiento de la ventana para ocultar/mostrar elementos
@@ -1991,6 +2135,9 @@ class MainWindow(QMainWindow):
                 # Usar SOLO el sizeHint (estable). Usar ch.width() creaba un
                 # bucle de realimentación que inflaba el contenedor del chrome.
                 chrome_w = ch.sizeHint().width()
+            badge = getattr(self, "_private_badge", None)
+            if badge is not None and badge.isVisible():
+                chrome_w += badge.sizeHint().width()
             avail = cont_w - chrome_w
             if avail > 0:
                 bar.setMaximumWidth(avail)
@@ -3003,9 +3150,24 @@ class MainWindow(QMainWindow):
     def reload_with_new_profile(self):
         """Recargar el navegador con el nuevo perfil activo"""
         try:
-            # Cerrar todas las pestañas
+            # Cerrar todas las pestañas (E-007: desconectar señales, limpiar el
+            # password manager y destruir cada vista; removeTab no la borra)
             while self.tab_manager.tabs.count() > 0:
+                _w = self.tab_manager.tabs.widget(0)
+                if _w is not None and hasattr(self.tab_manager, "_disconnect_browser_signals"):
+                    self.tab_manager._disconnect_browser_signals(_w)
+                if _w is not None and hasattr(self, "password_manager"):
+                    try:
+                        self.password_manager.cleanup_browser(_w)
+                    except Exception:
+                        pass
                 self.tab_manager.tabs.removeTab(0)
+                if _w is not None:
+                    if hasattr(self.tab_manager, "_destroy_browser"):
+                        self.tab_manager._destroy_browser(_w)
+                    else:
+                        _w.deleteLater()
+            self.tab_manager.pinned_tabs.clear()
             # Limpiar historial de navegación en memoria
             if hasattr(self, "navigation_manager"):
                 self.navigation_manager.history.clear()
@@ -3084,7 +3246,14 @@ class MainWindow(QMainWindow):
             )
     def _restart_with_tor(self, enabled: bool):
         """Callback para reiniciar con Tor activado/desactivado."""
-        from main import restart_with_tor
+        # C-008: tor_restart evita reimportar main.py como otro módulo
+        from tor_restart import restart_with_tor
+        # os.execv se salta on_close: hacer antes la misma limpieza
+        # (workers, sesión salvo en modo privado, crash recovery)
+        try:
+            self._shutdown_cleanup()
+        except Exception as e:
+            print(f"[TOR] Error en la limpieza previa al reinicio: {e}")
         restart_with_tor(enabled, self)
     def toggle_tor_panel(self):
         """Toggle Tor panel visibility USING FIXED STACK"""
@@ -3098,7 +3267,7 @@ class MainWindow(QMainWindow):
                 self.show_advanced_panel(self.tor_panel)
                 if TOR_AVAILABLE and hasattr(self, "network_interceptor") and self.network_interceptor:
                     from config_manager import config
-                    self.network_interceptor.tor_mode = config.is_tor_enabled()
+                    self.network_interceptor.tor_mode = net_proxy.is_tor_active()
         else:
             QMessageBox.information(
                 self,
@@ -3315,6 +3484,20 @@ class MainWindow(QMainWindow):
                 )
                 return
             browser = BrowserView(self.tab_manager)
+            # A-001: en la ventana privada también el GenTab usa el perfil off-the-record
+            if self._private_mode:
+                from tabs import get_private_profile
+                gentab_profile = get_private_profile()
+            else:
+                gentab_profile = browser.page().profile()
+            # A-006: la página de GenTab no puede navegar por script a otro sitio
+            browser.setPage(_GenTabPage(gentab_profile, browser,
+                                        lambda u: self.tab_manager.add_new_tab(u)))
+            try:
+                from gentab_engine import apply_gentab_csp
+                html_content = apply_gentab_csp(html_content)
+            except ImportError:
+                pass
 
             profile = browser.page().profile()
             if hasattr(self, "network_interceptor") and self.network_interceptor:
@@ -4344,6 +4527,16 @@ class MainWindow(QMainWindow):
             print(f"[AUTH] Error en _gate_core_panel({plugin_id}): {e}")
 
     def resync_plugins_to_current_user(self, *args, **kwargs):
+        """D-003: agrupa en una sola resincronización las señales seguidas
+        (login_successful, auth_state_changed, plugin_license_changed...)."""
+        if self._resync_timer is None:
+            self._resync_timer = QTimer(self)
+            self._resync_timer.setSingleShot(True)
+            self._resync_timer.setInterval(300)
+            self._resync_timer.timeout.connect(self._do_resync_plugins)
+        self._resync_timer.start()
+
+    def _do_resync_plugins(self):
         """Punto ÚNICO de sincronización de plugins con el usuario actual.
 
         Se ejecuta en login, logout, cambio de estado de auth y cambios de
@@ -4441,8 +4634,11 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print(f"[AUTH] resync: error cargando instalados: {e}")
 
-        # --- 5. Restaurar sesión de pestañas solo con usuario autenticado
-        if authed and hasattr(self, "tab_manager"):
+        # --- 5. Restaurar sesión de pestañas solo con usuario autenticado,
+        #        y una sola vez por proceso (D-003): las resincronizaciones
+        #        posteriores no deben cerrar las pestañas del usuario
+        if authed and hasattr(self, "tab_manager") and not self._session_restored:
+            self._session_restored = True
             try:
                 self.tab_manager.restaurar_sesion()
             except Exception as e:
@@ -5743,7 +5939,7 @@ class MainWindow(QMainWindow):
             import subprocess
             import sys
 
-            subprocess.Popen([sys.executable, "main.py"])
+            subprocess.Popen(_relaunch_command())
             print("[Menu] Nueva ventana abierta")
         except Exception as e:
             QMessageBox.warning(self, "Error", f"No se pudo abrir nueva ventana: {e}")
@@ -5753,7 +5949,7 @@ class MainWindow(QMainWindow):
             import subprocess
             import sys
 
-            subprocess.Popen([sys.executable, "main.py", "--private"])
+            subprocess.Popen(_relaunch_command("--private"))
             print("[Menu] Ventana privada abierta")
         except Exception as e:
             QMessageBox.warning(self, "Error", f"No se pudo abrir ventana privada: {e}")
@@ -5958,19 +6154,51 @@ class MainWindow(QMainWindow):
 
         if dialog.exec():
             try:
-                if history_check.isChecked():
+                # Perfiles afectados: el por defecto y el de la pestaña actual
+                # (en la ventana privada es el perfil off-the-record)
+                profiles = [QWebEngineProfile.defaultProfile()]
+                try:
+                    _cur = self.tab_manager.tabs.currentWidget()
+                    if _cur is not None and hasattr(_cur, "page"):
+                        _p = _cur.page().profile()
+                        if _p not in profiles:
+                            profiles.append(_p)
+                except Exception:
+                    pass
+
+                # B-007: con historial + caché + cookies marcados se delega en
+                # el borrado centralizado, que conoce los almacenes reales
+                # (sesiones, crash recovery, descargas, favicons, log...)
+                full_clear = (
+                    history_check.isChecked()
+                    and cache_check.isChecked()
+                    and cookies_check.isChecked()
+                )
+                pm = getattr(self, "privacy_manager", None)
+                if full_clear and pm is not None and hasattr(pm, "clear_all_local_data"):
+                    pm.clear_all_local_data(
+                        include_passwords=passwords_check.isChecked()
+                    )
                     self.history_manager.clear_history()
-                    print("[Menu] Historial limpiado")
-                if cache_check.isChecked():
-                    profile = QWebEngineProfile.defaultProfile()
-                    profile.clearHttpCache()
-                    print("[Menu] Caché limpiado")
-                if cookies_check.isChecked():
-                    profile = QWebEngineProfile.defaultProfile()
-                    profile.cookieStore().deleteAllCookies()
-                    print("[Menu] Cookies eliminadas")
-                if passwords_check.isChecked() and hasattr(self, "password_manager"):
-                    self.password_manager.clear_all_passwords()
+                    for profile in profiles:
+                        profile.clearHttpCache()
+                        profile.cookieStore().deleteAllCookies()
+                    print("[Menu] Datos locales eliminados (clear_all_local_data)")
+                else:
+                    # Alternativa: borrado por categorías
+                    if history_check.isChecked():
+                        self.history_manager.clear_history()
+                        print("[Menu] Historial limpiado")
+                    if cache_check.isChecked():
+                        for profile in profiles:
+                            profile.clearHttpCache()
+                        print("[Menu] Caché limpiado")
+                    if cookies_check.isChecked():
+                        for profile in profiles:
+                            profile.cookieStore().deleteAllCookies()
+                        print("[Menu] Cookies eliminadas")
+                    if passwords_check.isChecked() and hasattr(self, "password_manager"):
+                        self.password_manager.clear_all_passwords()
                 QMessageBox.information(
                     self, "Éxito", "Datos de navegación eliminados correctamente"
                 )
@@ -6150,18 +6378,24 @@ class MainWindow(QMainWindow):
         PerformanceDiagnostic.run_diagnostic(self)
     def save_current_session(self):
         """Guardar sesión actual con nombre"""
-        if not self.session_manager:
+        if not getattr(self, "session_manager", None):
             QMessageBox.warning(self, "Error", "Session Manager no disponible")
             return
         from PySide6.QtWidgets import QInputDialog
 
+        if self._private_mode:
+            QMessageBox.information(
+                self, "Ventana privada",
+                "En una ventana privada no se guardan sesiones en disco."
+            )
+            return
         name, ok = QInputDialog.getText(self, "Guardar sesión", "Nombre de la sesión:")
 
-        if ok and name:
-            self.session_manager.save_named_session(name)
+        if ok and name and name.strip():
+            self.session_manager.save_named_session(name.strip())
     def show_session_manager(self):
         """Mostrar gestor de sesiones"""
-        if not self.session_manager:
+        if not getattr(self, "session_manager", None):
             QMessageBox.warning(self, "Error", "Session Manager no disponible")
             return
         self.session_manager.show_session_manager_dialog()
