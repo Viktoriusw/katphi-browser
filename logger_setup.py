@@ -29,8 +29,9 @@ from PySide6.QtCore import QObject, Signal
 # ── Ruta del fichero de log ───────────────────────────────────────────────────
 # Empaquetado (PyInstaller), __file__ apunta dentro del bundle, que puede ser de
 # solo lectura (/opt en Linux); el runtime hook ya ha fijado como directorio de
-# trabajo la carpeta de datos de la app, así que el log va ahí.
-if getattr(sys, "frozen", False):
+# trabajo la carpeta de datos de la app, así que el log va ahí. Lo mismo con el
+# lanzador de macOS (KATPHI_APP_DIR), que ejecuta el código desde dentro del .app.
+if getattr(sys, "frozen", False) or os.environ.get("KATPHI_APP_DIR"):
     _LOG_DIR = os.getcwd()
 else:
     _LOG_DIR = os.path.dirname(os.path.abspath(__file__))

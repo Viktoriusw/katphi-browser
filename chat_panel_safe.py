@@ -9,8 +9,7 @@ sugerencias proactivas y generación de GenTabs.
 import json
 import re
 import time
-import requests
-from urllib.parse import quote_plus, urlparse, parse_qs, unquote
+from urllib.parse import urlparse
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -52,14 +51,31 @@ try:
 except ImportError:
     _HELIO_INTENT_OK = False
 
-SYSTEM_PROMPT_BROWSER = """You are the AI copilot of a modern web browser. You help the user navigate, search and discover content.
+from scrapelio_client import (ScrapelioSearchWorker, format_results_for_llm, report_click,
+                              report_recommended, web_search_url)
+from browser_actions import BrowserActions, parse_direct_command, TAG_VALUES, CLOSE_INTENT_RE
 
-When you recommend websites, tools, articles or resources, ALWAYS provide recommendations as SEARCH-READY items, not fragile deep links.
+SYSTEM_PROMPT_BROWSER = """You are the AI copilot of the Katphi web browser. You help the user navigate, search and discover content, in the user's language.
 
-- Use markdown links with clear labels: [What to search](https://example.com) as reference if needed
-- Suggest 2-5 concrete options
-- Prefer robust recommendations that can be searched in Google/Bing/DuckDuckGo
-- The browser will convert your recommendations into search result tabs."""
+You can control the browser by writing these tags in your reply:
+- <search>query</search> searches the web with the browser's search engine (Scrapelio). The browser shows the results to the user and sends them back to you; then continue your answer using them.
+- <open>URL</open> opens that URL in a new browser tab. <open>3</open> opens result number 3 of the latest search.
+- <nav>back</nav>, <nav>forward</nav>, <nav>reload</nav> navigate the current tab.
+- <tab>new</tab>, <tab>close</tab>, <tab>next</tab>, <tab>prev</tab>, <tab>2</tab> manage tabs (<tab>2</tab> switches to tab 2).
+- <scroll>down</scroll>, <scroll>up</scroll>, <scroll>top</scroll>, <scroll>bottom</scroll> scroll the current page.
+- <find>text</find> highlights that text in the current page; <zoom>in</zoom>, <zoom>out</zoom>, <zoom>reset</zoom> change the zoom.
+
+Rules:
+- When the user wants to find, discover or compare websites, articles, tools or information on the web, use <search> instead of guessing links. Write one short sentence and the tag, nothing else, and wait for the results.
+- How to write the query: Scrapelio is a keyword engine that requires every word, so use 2-4 specific words that a relevant page would contain (the topic's nouns), in the user's language. Leave out filler such as "online", "tiendas", "mejores", "información sobre", "venta" unless they are the point of the request. Example: "dónde comprar katanas de colección" -> <search>katanas colección</search>.
+- Only link URLs that come from the search results or that the user gave you. Never invent URLs.
+- Each result says whether it [trata el tema] (the page is about the topic) or only mentions the words. Prefer pages that are about the topic; Wikipedia articles (marked W.) are good for background information.
+- After receiving results, recommend the 2-5 best ones as markdown links [Title](URL) with one line on why each is useful, and mention the user can ask you to open them.
+- Search results can be wrong: recommend only results whose title or snippet is clearly about what the user asked. If none are and you have not searched again yet, search once more with different, more general words. If they are still unrelated, say plainly that the search engine has no pages on that topic, and answer from your own knowledge if you can. Never present unrelated pages.
+- Use <open> only when the user explicitly asks to open or visit pages, at most 5 per reply. Giving links is not opening them.
+- Use <nav>, <tab>, <scroll>, <find> and <zoom> only when the user asks you to do that in the browser, and close tabs only if they explicitly ask. The browser confirms each action, so keep the reply to one short sentence.
+- Examples: "llévame a la primera pestaña" -> <tab>1</tab>; "pásame a la otra pestaña" -> <tab>next</tab>; "vuelve a la página de antes" -> <nav>back</nav>; "bájame un poco" -> <scroll>down</scroll>; "cierra esta pestaña" -> <tab>close</tab>; "busca la palabra precio aquí" -> <find>precio</find>.
+- Do not use tags for questions you can answer from your own knowledge or from the page content."""
 
 SYSTEM_PROMPT_NAV_ANALYST = """You are an expert web navigation analyst. Analyze the browser session described by the user.
 Respond in Spanish. Be concise and actionable:
@@ -129,6 +145,14 @@ class ChatPanelSafe(BasePanel):
     # Señal para solicitar apertura de GenTab desde dentro del panel
     gentab_requested = Signal(str)
 
+    # ── API pública para otros componentes (p. ej. el plugin de voz) ──
+    # Respuesta final del asistente en un turno (texto visible, sin etiquetas)
+    reply_finished = Signal(str)
+    # Avisos breves para el usuario: confirmaciones de acciones, resultados, errores
+    notice = Signal(str)
+    # True mientras el asistente está ocupado (LLM o búsqueda en curso)
+    busy_changed = Signal(bool)
+
     # _C se construye dinámicamente desde ThemeEngine en _build_color_palette()
     _C: dict = {}
 
@@ -143,6 +167,14 @@ class ChatPanelSafe(BasePanel):
         self._last_session_analysis = {}
         self._chat_worker: "ChatWorker | None" = None
         self._streaming_placeholder_added = False
+
+        # ── Scrapelio: búsquedas y acciones del asistente ──
+        self._scrapelio_workers: list = []        # workers vivos (evita que el GC los destruya)
+        self._last_results: list = []         # resultados de la última búsqueda (para "abre el 2")
+        self._last_query_id = None            # id de esa búsqueda en Scrapelio (clics y recomendaciones)
+        self._agent_steps = 0                 # búsquedas encadenadas por el LLM en este turno
+        self._agent_cancelled = False
+        self._agent_system_prompt = SYSTEM_PROMPT_BROWSER
 
         # ── Helio: estado interno ──
         self._helio_last_url: str = ""
@@ -208,6 +240,9 @@ class ChatPanelSafe(BasePanel):
                 "scroll_handle_hover": "rgba(255,255,255,0.25)",
             }
         super().__init__(parent)
+
+        # Acciones de navegación (órdenes directas y etiquetas del LLM)
+        self.browser_actions = BrowserActions(self.window)
 
         # Helio: conectar auto-contexto tras construir la UI
         QTimer.singleShot(2000, self._helio_connect_auto_context)
@@ -2086,6 +2121,8 @@ class ChatPanelSafe(BasePanel):
                 )
             elif mode == "session":
                 system_prompt = SYSTEM_PROMPT_NAV_ANALYST
+            else:
+                system_prompt += self._browser_state_note()
             # Conversación persistente: incluir últimos turnos
             history_window = self.session_messages[-10:] if self.session_messages else []
             messages = [{"role": "system", "content": system_prompt}] + history_window + [
@@ -2098,6 +2135,11 @@ class ChatPanelSafe(BasePanel):
 
             # Guardar el mensaje del usuario en historial antes de lanzar el worker
             self.session_messages.append({"role": "user", "content": user_content})
+
+            # Nuevo turno: el LLM puede encadenar búsquedas Scrapelio (ver _on_chat_finished)
+            self._agent_steps = 0
+            self._agent_cancelled = False
+            self._agent_system_prompt = system_prompt
 
             # Lanzar worker asíncrono para no bloquear el UI
             self._launch_chat_worker(messages, message, max_tokens, temperature)
@@ -2139,12 +2181,30 @@ class ChatPanelSafe(BasePanel):
         self._chat_worker.start()
     def _cancel_chat_worker(self):
         """Cancela el worker en curso y restaura el botón de envío."""
+        self._agent_cancelled = True
         if self._chat_worker and self._chat_worker.isRunning():
             self._chat_worker.cancel()
             self._chat_worker.wait(2000)
         self.add_message_to_chat("System", "Generación cancelada.", "assistant")
         self._restore_send_button()
         self._stop_activity()
+
+    # Etiquetas de acción que el LLM escribe para controlar el navegador
+    _ACTION_TAG_RE = re.compile(r"<(search|open|nav|tab|scroll|find|zoom)>\s*(.*?)\s*</\1>",
+                                re.IGNORECASE | re.DOTALL)
+    # Etiqueta aún abierta durante el streaming (se oculta hasta que se cierre)
+    _PARTIAL_TAG_RE = re.compile(r"<(?:search|open|nav|tab|scroll|find|zoom)>(?:(?!</).)*$|<[a-z/]{0,7}$",
+                                 re.IGNORECASE | re.DOTALL)
+    _MAX_BROWSER_ACTIONS = 3  # acciones de navegación por respuesta
+    _MAX_AGENT_SEARCHES = 2
+    _OPEN_INTENT_RE = re.compile(
+        r"\b(?:abr[eaií]\w*|ábre\w*|open|visita\w*|ll[eé]va\w*|navega\w*|ve\s+a|ir\s+a)\b",
+        re.IGNORECASE)
+
+    def _strip_action_tags(self, text: str) -> str:
+        text = self._ACTION_TAG_RE.sub("", text or "")
+        return self._PARTIAL_TAG_RE.sub("", text).strip()
+
     def _on_chat_chunk(self, chunk: str):
         """Añade fragmento de streaming al último mensaje IA."""
         if not self._streaming_placeholder_added:
@@ -2158,17 +2218,32 @@ class ChatPanelSafe(BasePanel):
             QLabel, "bubbleMsg"
         )
         if last_labels:
-            last_labels[-1].setText(self._streaming_text)
+            last_labels[-1].setText(self._strip_action_tags(self._streaming_text))
             last_labels[-1].adjustSize()
         # Auto-scroll
         QTimer.singleShot(0, lambda: self.chat_scroll.verticalScrollBar().setValue(
             self.chat_scroll.verticalScrollBar().maximum()
         ))
+    @staticmethod
+    def _strip_echo(text: str, original: str) -> str:
+        """Quita la petición del usuario si el modelo la repite al principio ("Resume esta página.")."""
+        key = (original or "").strip().rstrip(".!?¡¿ ").lower()
+        if len(key) < 10 or not text.lower().startswith(key):
+            return text
+        if text[len(key):len(key) + 1] not in ("", ".", "!", "?", ":", "\n"):
+            return text
+        rest = text[len(key):].lstrip(".!?:¡¿ \n")
+        return rest or text
+
     def _on_chat_finished(self, full_content: str):
         """Llamado cuando el worker termina correctamente."""
+        actions = self._ACTION_TAG_RE.findall(full_content or "")
+        visible = self._strip_echo(self._strip_action_tags(full_content),
+                                   getattr(self, "_streaming_original_message", ""))
         if not self._streaming_placeholder_added:
             # Sin streaming: mostrar de una vez
-            self.add_message_to_chat("IA", full_content, "assistant")
+            if visible:
+                self.add_message_to_chat("IA", visible, "assistant")
         else:
             # Streaming terminado: aplicar formato HTML al texto acumulado
             try:
@@ -2176,25 +2251,164 @@ class ChatPanelSafe(BasePanel):
                     QLabel, "bubbleMsg"
                 )
                 if last_labels:
-                    formatted = self.format_ai_response(full_content)
+                    formatted = self.format_ai_response(visible)
                     last_labels[-1].setTextFormat(Qt.RichText)
                     last_labels[-1].setText(formatted)
                     last_labels[-1].adjustSize()
+                    # Botones para los enlaces de la respuesta
+                    links = self._extract_urls_from_message(visible)
+                    bubble = last_labels[-1].parentWidget()
+                    if links and bubble is not None and bubble.layout() is not None:
+                        self._add_recommendation_cards(bubble.layout(), links)
                     self.chat_messages_widget.updateGeometry()
                     QTimer.singleShot(10, lambda: self.chat_scroll.verticalScrollBar().setValue(
                         self.chat_scroll.verticalScrollBar().maximum()
                     ))
             except Exception:
                 pass
-        # Registrar en historial
+        # Registrar en historial (con las etiquetas: el LLM ve lo que pidió)
         self.session_messages.append({"role": "assistant", "content": full_content})
         original = getattr(self, "_streaming_original_message", "")
-        self.save_to_history(original, full_content)
+        self.save_to_history(original, visible)
+
+        # Ejecutar las acciones pedidas por el LLM
+        open_targets = [arg for tag, arg in actions if tag.lower() == "open" and arg]
+        if open_targets:
+            # Solo se abren pestañas si el usuario lo pidió ("dame enlaces" no abre nada)
+            if self._OPEN_INTENT_RE.search(original or ""):
+                self._open_assistant_targets(open_targets)
+            else:
+                _chat_log.info("Ignorado <open> sin petición del usuario: %s", open_targets)
+        self._run_llm_browser_actions(actions, original)
+        queries = [arg for tag, arg in actions if tag.lower() == "search" and arg]
+        if (queries and not self._agent_cancelled
+                and self._agent_steps < self._MAX_AGENT_SEARCHES):
+            self._agent_steps += 1
+            # Seguimos ocupados: buscar y devolver los resultados al LLM
+            self._start_activity("Buscando en Scrapelio...")
+            self._scrapelio_search(queries[0], on_done=self._continue_agent_with_results)
+            return
+        if self._agent_steps:
+            self._report_recommended_results(visible)
         self._restore_send_button()
         self._stop_activity()
+        self.reply_finished.emit(visible)
+
+    def _run_llm_browser_actions(self, actions: list, original: str) -> None:
+        """Ejecuta las etiquetas <nav>/<tab>/<scroll>/<find>/<zoom> que escribió el LLM."""
+        done = 0
+        for tag, arg in actions:
+            tag = tag.lower()
+            if tag not in ("nav", "tab", "scroll", "find", "zoom"):
+                continue
+            arg = (arg or "").strip()
+            if tag != "find" and arg.lower() not in TAG_VALUES.get(tag, ()) and not (
+                    tag == "tab" and arg.isdigit()):
+                _chat_log.info("Ignorada acción no válida del LLM: <%s>%s", tag, arg)
+                continue
+            if tag == "tab" and arg.lower() == "close" and not CLOSE_INTENT_RE.search(original or ""):
+                _chat_log.info("Ignorado <tab>close</tab> sin petición del usuario")
+                continue
+            if done >= self._MAX_BROWSER_ACTIONS:
+                break
+            done += 1
+            ok, msg = self.browser_actions.execute(tag, arg)
+            self._notify(msg, ok)
+
+    def _notify(self, message: str, ok: bool = True) -> None:
+        """Muestra un aviso en el chat y lo publica para otros componentes (voz)."""
+        self.add_message_to_chat("System", message, "assistant" if ok else "error")
+        self.notice.emit(message)
+
+    # ── API pública ──────────────────────────────────────────────────────────
+
+    def submit_message(self, text: str, source: str = "text") -> None:
+        """Envía un mensaje al asistente como si el usuario lo hubiera escrito.
+        source identifica el origen ("voice", "text"...) para los registros."""
+        text = (text or "").strip()
+        if not text:
+            return
+        _chat_log.info("Mensaje recibido (%s): %s", source, text[:120])
+        if self._chat_worker and self._chat_worker.isRunning():
+            self._cancel_chat_worker()  # un mensaje nuevo sustituye al que estaba en curso
+        self.message_input.setPlainText(text)
+        self.send_message_safe()
+
+    def is_busy(self) -> bool:
+        """True mientras haya trabajo en curso (incluye esperas previas al LLM, como leer la página)."""
+        return (bool(self.activity_timer and self.activity_timer.isActive())
+                or bool(self._chat_worker and self._chat_worker.isRunning())
+                or bool(self._scrapelio_workers))
+
+    def _browser_state_note(self) -> str:
+        """Pestañas abiertas y la actual, para que el LLM pueda usar <tab> y <nav> con sentido."""
+        main = self.window()
+        tabs = getattr(getattr(main, "tab_manager", None), "tabs", None)
+        if tabs is None or not tabs.count():
+            return ""
+        current = tabs.currentIndex()
+        lines = []
+        for i in range(min(tabs.count(), 15)):
+            title = (tabs.tabText(i) or "sin título").strip()[:60]
+            lines.append(f"{i + 1}. {title}{'  <- current tab' if i == current else ''}")
+        return ("\n\nBrowser state (tab numbers for <tab>N</tab>; <nav> moves through the current "
+                "tab's history, not between tabs):\n" + "\n".join(lines))
+
+    def _open_assistant_targets(self, targets: list) -> None:
+        """Abre las URLs (o números de resultado) que pidió el LLM con <open>."""
+        urls = []
+        for t in targets[:5]:
+            t = t.strip().strip("[]()<>\"'")
+            if t.isdigit():
+                idx = int(t) - 1
+                if 0 <= idx < len(self._last_results):
+                    urls.append(self._last_results[idx]["url"])
+            elif re.match(r"^https?://", t, re.IGNORECASE):
+                urls.append(t)
+            elif re.match(r"^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/\S*)?$", t, re.IGNORECASE):
+                urls.append(f"https://{t}")
+        if urls:
+            self._open_urls_in_browser(urls)
+
+    def _result_position(self, url: str) -> int:
+        """Posición (desde 1) de la URL en la última búsqueda, o 0."""
+        for r in self._last_results:
+            if r.get("url") == url:
+                return r.get("position") or 0
+        return 0
+
+    def _report_recommended_results(self, text: str) -> None:
+        """Comunica a Scrapelio qué resultados recomendó el LLM (señal de relevancia)."""
+        for url, *_ in self._extract_urls_from_message(text)[:5]:
+            position = self._result_position(url)
+            if position:
+                report_recommended(self._last_query_id, position, url)
+
+    def _continue_agent_with_results(self, query: str, data: dict | None, error: str | None):
+        """Devuelve los resultados de Scrapelio al LLM para que continúe la respuesta."""
+        if self._agent_cancelled:
+            return
+        if error:
+            feedback = (f'[Navegador] La búsqueda "{query}" falló: {error}. '
+                        "Responde al usuario sin resultados web y sin inventar enlaces.")
+        else:
+            feedback = ("[Navegador] " + format_results_for_llm(data) +
+                        "\nEl usuario ya ve estos resultados numerados. Continúa tu respuesta usándolos.")
+        self.session_messages.append({"role": "user", "content": feedback})
+        window = self.session_messages[-12:]
+        while window and window[0]["role"] != "user":   # algunos proveedores exigen empezar por user
+            window = window[1:]
+        messages = [{"role": "system", "content": self._agent_system_prompt}] + window
+        temperature = getattr(self.llm_config, "temperature", 0.7)
+        max_tokens = max(1024, min(8192, getattr(self.llm_config, "max_tokens", 4096)))
+        self._start_activity("Analizando resultados...")
+        self._launch_chat_worker(messages, getattr(self, "_streaming_original_message", ""),
+                                 max_tokens, temperature)
+
     def _on_chat_error(self, error_msg: str):
         """Llamado cuando el worker devuelve un error."""
         self.add_message_to_chat("System", f"{error_msg}", "error")
+        self.notice.emit(error_msg)
         self._restore_send_button()
         self._stop_activity()
     def _restore_send_button(self):
@@ -2206,11 +2420,54 @@ class ChatPanelSafe(BasePanel):
         self.send_btn.clicked.connect(self.send_message_safe)
         self.send_btn.setEnabled(True)
         self.send_btn.setText("Enviar")
+    _ORDINALS = {
+        "primer": 1, "primero": 1, "primera": 1, "segundo": 2, "segunda": 2,
+        "tercer": 3, "tercero": 3, "tercera": 3, "cuarto": 4, "cuarta": 4,
+        "quinto": 5, "quinta": 5, "sexto": 6, "sexta": 6, "septimo": 7, "septima": 7,
+        "octavo": 8, "octava": 8, "noveno": 9, "novena": 9, "decimo": 10, "decima": 10,
+        "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+    }
+    _NUMBER_WORDS = {"dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "two": 2, "three": 3,
+                     "four": 4, "five": 5}
+
+    def _result_indexes_from_text(self, target: str) -> list:
+        """
+        Interpreta referencias a la última lista de resultados:
+        "el 2", "el segundo", "el 1 y el 3", "los 3 primeros", "todos".
+        Devuelve índices base 0, o [] si el texto no se refiere a resultados.
+        """
+        n_results = len(self._last_results)
+        if not n_results or re.search(r"[a-z0-9-]\.[a-z]{2,}", target):
+            return []
+        if re.match(r"^(?:todos|todas|all)\b", target):
+            return list(range(min(n_results, 5)))
+        m = re.match(r"^(?:los|las|the)?\s*(\d+|dos|tres|cuatro|cinco|two|three|four|five)\s+"
+                     r"(?:primer[oa]s|first)\b", target)
+        if m:
+            n = int(m.group(1)) if m.group(1).isdigit() else self._NUMBER_WORDS[m.group(1)]
+            return list(range(min(n, n_results, 5)))
+        # Solo palabras de referencia ("el", "resultado", ordinales, números, "y"...)
+        words = re.findall(r"[a-z0-9]+", target)
+        filler = {"el", "la", "los", "las", "y", "e", "and", "the", "resultado", "resultados",
+                  "enlace", "enlaces", "link", "links", "numero", "n", "o", "result"}
+        idxs = []
+        for w in words:
+            if w.isdigit():
+                idxs.append(int(w))
+            elif w in self._ORDINALS:
+                idxs.append(self._ORDINALS[w])
+            elif w not in filler:
+                return []
+        return [i - 1 for i in dict.fromkeys(idxs) if 1 <= i <= n_results][:5]
+
     def _try_handle_browser_command(self, message):
         """
-        Ejecuta acciones directas del navegador desde lenguaje natural:
-        - "busca ...": abre búsqueda en nueva pestaña
-        - "abre ...": abre URL(s)/dominios o una búsqueda si no hay URL
+        Ejecuta acciones directas del navegador (sin pasar por el LLM):
+        - "busca ...": busca en Scrapelio y muestra los resultados en el chat
+        - "abre <url|dominio>": abre la(s) web(s)
+        - "abre el 2" / "abre los 3 primeros" / "abre todos": abre resultados de la última búsqueda
+        - "abre <texto>": abre el mejor resultado de Scrapelio
+        Solo se reconocen al inicio del mensaje; el resto lo decide el LLM.
         """
         text = (message or "").strip()
         lower = text.lower().strip()
@@ -2223,61 +2480,274 @@ class ChatPanelSafe(BasePanel):
                  .replace("ó", "o")
                  .replace("ú", "u")
         )
+        polite = r"^(?:por\s+favor,?\s+|porfa,?\s+|please,?\s+)?"
 
-        # Buscar en la web (acepta frases como "por favor buscame X")
-        search_match = re.search(
-            r"\b(?:busca(?:me|r)?|search|find)\b\s+(.+)$",
-            normalized,
-            flags=re.IGNORECASE
+        # Órdenes de navegación (atrás, pestañas, desplazamiento, zoom, buscar en la página).
+        # Van antes que "busca"/"abre": "busca X en la página" o "abre una pestaña nueva".
+        command = parse_direct_command(text)
+        if command:
+            ok, msg = self.browser_actions.execute(*command)
+            self._notify(msg, ok)
+            self.session_messages.append({"role": "user", "content": text})
+            self.session_messages.append({"role": "assistant", "content": msg})
+            return True
+
+        if re.match(polite + r"(?:resume(?:me|n)?|resumen\s+de|haz(?:me)?\s+un\s+resumen\s+de|"
+                             r"de\s+que\s+(?:va|trata)|lee(?:me)?)\s+(?:(?:la|esta|esa)\s+)?"
+                             r"(?:pagina|web|pestana)(?:\s+actual)?[\s.!?]*$", normalized):
+            self._summarize_current_page(text)
+            return True
+
+        search_match = re.match(
+            polite + r"(?:busca(?:me|r)?|buscame|search|find)\b[\s:]+(?:en\s+(?:internet|la\s+web|google|scrapelio|widex)\s+)?(.+)$",
+            normalized, flags=re.DOTALL,
         )
         if search_match:
-            start_idx = search_match.start(1)
-            query = text[start_idx:].strip(" .,:;!?")
+            query = text[search_match.start(1):].strip(" .,:;!?¿¡")
             if not query:
                 self.add_message_to_chat("System", "Escribe qué quieres buscar. Ejemplo: \"busca vuelos baratos a Tokio\"", "error")
                 return True
-            opened_url = self._open_best_result_from_query(query)
-            if opened_url:
-                self.add_message_to_chat("IA", f"He abierto el mejor resultado web para: **{query}**\n\n[{opened_url}]({opened_url})", "assistant")
-            else:
-                search_url = self._build_search_url(query)
-                self._open_url_in_browser(search_url)
-                self.add_message_to_chat("IA", f"No pude resolver resultado directo. Abrí la búsqueda para: **{query}**\n\n[{search_url}]({search_url})", "assistant")
+            self._scrapelio_search(query)
             return True
-        # Abrir web(s) (acepta "abre", "abrir", "open", incluso dentro de frase)
-        open_match = re.search(
-            r"\b(?:abre|abrir|open)\b\s+(.+)$",
-            normalized,
-            flags=re.IGNORECASE
+
+        open_match = re.match(
+            polite + r"(?:abre(?:me)?|abrir|open)\b[\s:]+(.+)$",
+            normalized, flags=re.DOTALL,
         )
         if open_match:
-            start_idx = open_match.start(1)
-            target = text[start_idx:].strip(" .,:;!?")
+            target = text[open_match.start(1):].strip(" .,:;!?¿¡")
             if not target:
                 self.add_message_to_chat("System", "Indica qué quieres abrir. Ejemplo: \"abre github.com\"", "error")
+                return True
+            # Referencias a la última búsqueda: "el 2", "los tres primeros", "todos"
+            idxs = self._result_indexes_from_text(normalized[open_match.start(1):].strip(" .,:;!?¿¡"))
+            if idxs:
+                urls = [self._last_results[i]["url"] for i in idxs]
+                self._open_urls_in_browser(urls)
+                titles = "\n".join(f"- [{self._last_results[i].get('title') or self._last_results[i]['url']}]"
+                                   f"({self._last_results[i]['url']})" for i in idxs)
+                self._notify(f"Abiertas {len(urls)} pestaña(s).")
+                self.session_messages.append({"role": "user", "content": text})
+                self.session_messages.append({"role": "assistant", "content": f"He abierto:\n{titles}"})
                 return True
             links = self._extract_urls_from_message(target)
             urls = [u[0] for u in links]
 
             # Si no hay URL explícita, intentar detectar dominios sueltos
             if not urls:
-                domains = re.findall(r'\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b', target)
+                # Dominio con su ruta: "es.wikipedia.org/wiki/Lenteja" no debe quedarse en la portada
+                domains = re.findall(r'\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b(?:/[^\s<>"\']*)?', target)
                 for d in domains:
                     urls.append(f"https://{d}")
-            # Si sigue sin haber URLs, abrir una búsqueda con el texto objetivo
+            # Sin URL: abrir el mejor resultado de Scrapelio
             if not urls:
-                opened_url = self._open_best_result_from_query(target)
-                if opened_url:
-                    self.add_message_to_chat("IA", f"No detecté URL exacta, abrí el mejor resultado para: **{target}**\n\n[{opened_url}]({opened_url})", "assistant")
-                else:
-                    search_url = self._build_search_url(target)
-                    self._open_url_in_browser(search_url)
-                    self.add_message_to_chat("IA", f"No detecté una URL exacta, así que abrí una búsqueda para: **{target}**\n\n[{search_url}]({search_url})", "assistant")
+                self._scrapelio_search(target, open_first=True)
                 return True
             self._open_urls_in_browser(urls)
-            self.add_message_to_chat("IA", f"He abierto {len(urls)} pestaña(s) en el navegador.", "assistant")
+            self._notify(f"Abiertas {len(urls)} pestaña(s).")
             return True
         return False
+
+    # ── Scrapelio: búsqueda asíncrona ────────────────────────────────────────────
+
+    def _scrapelio_search(self, query: str, open_first: bool = False, on_done=None) -> None:
+        """
+        Busca en Scrapelio en segundo plano y muestra los resultados en el chat.
+        open_first: abre el primer resultado en una pestaña.
+        on_done(query, data|None, error|None): continuación (p. ej. el LLM).
+        """
+        worker = ScrapelioSearchWorker(query, parent=self)
+        self._scrapelio_workers.append(worker)
+
+        def _finish():
+            if worker in self._scrapelio_workers:
+                self._scrapelio_workers.remove(worker)
+            worker.deleteLater()
+
+        def _ok(q, data):
+            _finish()
+            results = data.get("results", [])
+            if results:
+                self._last_results = results
+                self._last_query_id = data.get("query_id")
+            self._show_scrapelio_results(q, data)
+            # El LLM sabe qué resultados ve el usuario (para "¿cuál me recomiendas?")
+            if on_done is None:
+                self.session_messages.append(
+                    {"role": "user", "content": f"busca {q}"})
+                self.session_messages.append(
+                    {"role": "assistant", "content": format_results_for_llm(data)})
+            if open_first and results:
+                self._open_url_in_browser(results[0]["url"])
+            if on_done:
+                on_done(q, data, None)
+            elif not self._scrapelio_workers:
+                self._stop_activity()
+
+        def _fail(q, err):
+            _finish()
+            self.add_message_to_chat("System", err, "error")
+            if on_done:
+                on_done(q, None, err)
+            elif not self._scrapelio_workers:
+                self._stop_activity()
+
+        worker.results_ready.connect(_ok)
+        worker.failed.connect(_fail)
+        if on_done is None:
+            self._start_activity("Buscando en Scrapelio...")
+        worker.start()
+
+    def _show_scrapelio_results(self, query: str, data: dict, limit: int = 8) -> None:
+        """Muestra los resultados de Scrapelio como tarjetas numeradas en el chat."""
+        import html as _html
+        c = self._C
+        results = data.get("results", [])[:limit]
+
+        frame = QFrame()
+        frame.setObjectName("scrapelioResults")
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setSpacing(6)
+
+        total = data.get("total_results", len(results))
+        head = QLabel(
+            f"<b>Scrapelio</b> · {total} resultado(s) para «{_html.escape(query)}»"
+            + (f"<br><i>Buscado como «{_html.escape(data['adjusted_query'])}»: "
+               f"{_html.escape(', '.join(data['dropped_terms']))} es demasiado general</i>"
+               if data.get("adjusted_query") else "")
+            + (" <i>(coincidencia parcial)</i>" if data.get("relaxed") and results else "")
+        )
+        head.setTextFormat(Qt.RichText)
+        head.setWordWrap(True)
+        head.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px; background: transparent;")
+        lay.addWidget(head)
+
+        wikipedia = data.get("wikipedia", [])
+        if not results and not wikipedia:
+            empty = QLabel("Sin resultados. Prueba con otras palabras.")
+            empty.setWordWrap(True)
+            empty.setStyleSheet(f"color: {c['text_muted']}; font-size: 12px; background: transparent;")
+            lay.addWidget(empty)
+
+        for i, r in enumerate(results, 1):
+            url = r.get("url", "")
+            title = _html.escape(r.get("title") or url)
+            display = _html.escape(r.get("display_url") or r.get("domain") or url)
+            snippet = _html.escape(" ".join((r.get("snippet") or "").split())[:180])
+            item = QLabel(
+                f"<div><span style='color:{c['text_muted']}'>{i}.</span> "
+                f"<a href='{_html.escape(url, quote=True)}' style='color:{c['accent']}; text-decoration:none;'>"
+                f"<b>{title}</b></a><br>"
+                f"<span style='color:{c['success']}; font-size:11px;'>{display}</span><br>"
+                f"<span style='color:{c['text_secondary']}; font-size:11px;'>{snippet}</span></div>"
+            )
+            item.setTextFormat(Qt.RichText)
+            item.setWordWrap(True)
+            item.setToolTip(url)
+            item.setOpenExternalLinks(False)
+            item.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+            item.linkActivated.connect(lambda u: self._open_url_in_browser(u))
+            item.setStyleSheet("background: transparent; padding: 2px 0;")
+            lay.addWidget(item)
+
+        for a in wikipedia:
+            url = a.get("url", "")
+            extract = _html.escape(" ".join((a.get("extract") or "").split())[:180])
+            item = QLabel(
+                f"<div><span style='color:{c['text_muted']}'>W</span> "
+                f"<a href='{_html.escape(url, quote=True)}' style='color:{c['accent']}; text-decoration:none;'>"
+                f"<b>{_html.escape(a.get('title') or url)}</b></a> "
+                f"<span style='color:{c['text_muted']}; font-size:11px;'>· Wikipedia</span><br>"
+                f"<span style='color:{c['text_secondary']}; font-size:11px;'>{extract}</span></div>"
+            )
+            item.setTextFormat(Qt.RichText)
+            item.setWordWrap(True)
+            item.setToolTip(url)
+            item.setOpenExternalLinks(False)
+            item.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+            item.linkActivated.connect(lambda u: self._open_url_in_browser(u))
+            item.setStyleSheet("background: transparent; padding: 2px 0;")
+            lay.addWidget(item)
+
+        btn_style = (
+            f"QPushButton {{ background: {c['accent_subtle']}; color: {c['accent']}; "
+            f"border: 1px solid {c['accent']}; border-radius: 6px; padding: 5px 10px; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: {c['accent']}; color: white; }}"
+        )
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        if len(results) > 1:
+            n_all = min(len(results), 5)
+            open_all = QPushButton(f"Abrir los {n_all} primeros")
+            open_all.setCursor(Qt.PointingHandCursor)
+            open_all.setStyleSheet(btn_style)
+            open_all.clicked.connect(
+                lambda _=False, us=[r["url"] for r in results[:n_all]]: self._open_urls_in_browser(us))
+            row.addWidget(open_all)
+        more = QPushButton("Ver en Scrapelio")
+        more.setCursor(Qt.PointingHandCursor)
+        more.setStyleSheet(btn_style)
+        more.clicked.connect(lambda _=False, q=query: self._open_url_in_browser(web_search_url(q)))
+        row.addWidget(more)
+        row.addStretch(1)
+        lay.addLayout(row)
+
+        if results:
+            hint = QLabel("Pulsa un título o escribe «abre el 2», «abre los 3 primeros»...")
+            hint.setStyleSheet(f"color: {c['text_muted']}; font-size: 10px; background: transparent;")
+            lay.addWidget(hint)
+
+        frame.setStyleSheet(
+            f"QFrame#scrapelioResults {{ background: {c['surface_1']}; "
+            f"border: 1px solid {c['border']}; border-radius: 8px; }}"
+        )
+        self.chat_messages_layout.addWidget(frame)
+        self.chat_messages_widget.updateGeometry()
+        QTimer.singleShot(10, lambda: self.chat_scroll.verticalScrollBar().setValue(
+            self.chat_scroll.verticalScrollBar().maximum()
+        ))
+        if results:
+            top = ". ".join(f"{i}: {r.get('title') or r.get('domain') or r.get('url', '')}"
+                            for i, r in enumerate(results[:3], 1))
+            self.notice.emit(f"{total} resultados para {query}. {top}.")
+        else:
+            self.notice.emit(f"Sin resultados para {query}.")
+
+    def _summarize_current_page(self, user_text: str) -> None:
+        """Resume la pestaña actual con el LLM ("resume esta página", "de qué va esta web")."""
+        browser = self.browser_actions.current_browser()
+        if browser is None or not hasattr(browser, "page"):
+            self._notify("No hay ninguna página abierta.", False)
+            return
+        url = browser.url().toString()
+        title = browser.page().title()
+        self._start_activity("Leyendo la página...")
+
+        def on_html(html):
+            text = self._simple_extract_text(html or "", url, title)
+            if not text.strip():
+                self._stop_activity()
+                self._notify("No he podido leer el contenido de esta página.", False)
+                return
+            system_prompt = (
+                "You are an expert assistant that summarizes web pages. Write the summary in the "
+                f"same language as this request: «{user_text}», whatever the page's language. "
+                "Be clear and brief: one sentence on what the page is about, then the 3-5 key points."
+            )
+            user_content = f"{text[:12000]}\n\nSolicitud del usuario: {user_text}"
+            self.session_messages.append({"role": "user", "content": user_content})
+            self._agent_steps = 0
+            self._agent_cancelled = False
+            self._agent_system_prompt = system_prompt
+            messages = [{"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}]
+            temperature = getattr(self.llm_config, "temperature", 0.7)
+            max_tokens = max(1024, min(8192, getattr(self.llm_config, "max_tokens", 4096)))
+            self._launch_chat_worker(messages, user_text, max_tokens, temperature)
+
+        browser.page().toHtml(on_html)
+
     def _create_gentab_from_chat(self, prompt: str) -> None:
         """Abre el panel GenTab con el prompt enriquecido con historial del chat."""
         # Helio Mejora 3: enriquecer prompt con historial de conversación
@@ -2297,36 +2767,8 @@ class ChatPanelSafe(BasePanel):
         else:
             self.gentab_requested.emit(enriched_prompt)
     def _build_search_url(self, query):
-        """Construye URL de búsqueda usando el motor predeterminado si existe."""
-        q = quote_plus(query)
-        main = self.window()
-        try:
-            if hasattr(main, 'search_engine_manager') and main.search_engine_manager:
-                default_engine = main.search_engine_manager.get_default_engine()
-                engine_id = getattr(default_engine, "id", "duckduckgo")
-                if engine_id == "google":
-                    return f"https://www.google.com/search?q={q}"
-                if engine_id == "bing":
-                    return f"https://www.bing.com/search?q={q}"
-                return f"https://duckduckgo.com/?q={q}"
-        except Exception:
-            pass
-        return f"https://duckduckgo.com/?q={q}"
-    def _get_search_engine_name(self):
-        """Obtiene nombre legible del buscador activo."""
-        main = self.window()
-        try:
-            if hasattr(main, 'search_engine_manager') and main.search_engine_manager:
-                default_engine = main.search_engine_manager.get_default_engine()
-                engine_id = getattr(default_engine, "id", "duckduckgo")
-                if engine_id == "google":
-                    return "Google"
-                if engine_id == "bing":
-                    return "Bing"
-                return "DuckDuckGo"
-        except Exception:
-            pass
-        return "DuckDuckGo"
+        """URL de la página de resultados de Scrapelio (motor propio)."""
+        return web_search_url(query)
     def _extract_all_open_tabs_context(self, limit_tabs=8):
         """Extrae contexto de múltiples pestañas abiertas de forma síncrona (con timeout por pestaña)."""
         import logging as _logging
@@ -2388,15 +2830,18 @@ class ChatPanelSafe(BasePanel):
         """Inicia animación suave en la etiqueta de estado."""
         c = self._C
         self._activity_idx = 0
+        self._activity_text = base_text
         if not self.activity_timer:
             self.activity_timer = QTimer(self)
-            self.activity_timer.timeout.connect(lambda: self._tick_activity(base_text))
+            self.activity_timer.timeout.connect(
+                lambda: self._tick_activity(getattr(self, "_activity_text", "Procesando...")))
         if hasattr(self, "status_label"):
             self.status_label.setStyleSheet(
                 f"color: {c['warning'] if 'warning' in c else '#D29922'}; "
                 "font-size: 11px; background: transparent;"
             )
         self.activity_timer.start(200)
+        self.busy_changed.emit(True)
     def _tick_activity(self, base_text):
         frame = self._activity_frames[self._activity_idx % len(self._activity_frames)]
         self._activity_idx += 1
@@ -2407,6 +2852,7 @@ class ChatPanelSafe(BasePanel):
         c = self._C
         if self.activity_timer and self.activity_timer.isActive():
             self.activity_timer.stop()
+        self.busy_changed.emit(False)
         if hasattr(self, "status_label"):
             if self.server_url:
                 self.status_label.setText("● Conectado")
@@ -2418,71 +2864,22 @@ class ChatPanelSafe(BasePanel):
                 self.status_label.setStyleSheet(
                     f"color: {c['error']}; font-size: 11px; background: transparent;"
                 )
-    def _get_search_engine_id(self):
-        """Obtiene id interno del buscador activo."""
-        main = self.window()
-        try:
-            if hasattr(main, 'search_engine_manager') and main.search_engine_manager:
-                default_engine = main.search_engine_manager.get_default_engine()
-                return getattr(default_engine, "id", "duckduckgo")
-        except Exception:
-            pass
-        return "duckduckgo"
-    def _open_best_result_from_query(self, query):
-        """
-        Resuelve una consulta al primer resultado web y lo abre automáticamente.
-        Devuelve la URL abierta o None.
-        """
-        direct_url = self._resolve_first_result_url(query)
-        if direct_url:
-            self._open_url_in_browser(direct_url)
-            return direct_url
-        return None
-    def _resolve_first_result_url(self, query):
-        """
-        Intenta resolver la consulta a la primera URL real del buscador seleccionado.
-        Fallback: None.
-        """
-        search_url = self._build_search_url(query)
-        engine_id = self._get_search_engine_id()
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-            )
-        }
+    _MD_LINK_RE = re.compile(r'\[([^\]]+)\]\((https?://[^)\s]+)\)')
+    _BARE_URL_RE = re.compile(r'(?<![="\'>])(https?://[^\s<>"\')\]]+)')
 
-        try:
-            resp = requests.get(search_url, headers=headers, timeout=10)
-            if resp.status_code != 200 or not resp.text:
-                return None
-            html = resp.text
+    def _linkify(self, line: str) -> str:
+        """Convierte [texto](url) y URLs sueltas en enlaces HTML clicables."""
+        import html as _html
+        accent = self._C.get("accent", "#4B9EFF")
 
-            # Bing parser
-            if engine_id == "bing":
-                m = re.search(r'<li class="b_algo".*?<h2><a href="(https?://[^"]+)"', html, re.DOTALL)
-                if m:
-                    return m.group(1)
-            # Google parser (frágil por cambios, pero útil como intento)
-            if engine_id == "google":
-                m = re.search(r'/url\\?q=(https?[^&"]+)&', html)
-                if m:
-                    return unquote(m.group(1))
-            # DuckDuckGo parser
-            m = re.search(r'class="result__a"[^>]*href="([^"]+)"', html)
-            if m:
-                href = m.group(1)
-                # Puede venir redirect /l/?uddg=...
-                if "duckduckgo.com/l/?" in href or href.startswith("/l/?"):
-                    parsed = urlparse(href if href.startswith("http") else f"https://duckduckgo.com{href}")
-                    uddg = parse_qs(parsed.query).get("uddg", [])
-                    if uddg:
-                        return unquote(uddg[0])
-                if href.startswith("http"):
-                    return href
-        except Exception:
-            return None
-        return None
+        def _a(url, label):
+            url = url.rstrip('.,;:!?')
+            return (f'<a href="{_html.escape(url, quote=True)}" '
+                    f'style="color:{accent}; text-decoration:none;">{label}</a>')
+
+        line = self._MD_LINK_RE.sub(lambda m: _a(m.group(2), m.group(1)), line)
+        return self._BARE_URL_RE.sub(lambda m: _a(m.group(1), m.group(1).rstrip('.,;:!?')), line)
+
     def format_ai_response(self, text):
         """
         Formats text with simple lists/headers to readable HTML.
@@ -2503,6 +2900,7 @@ class ChatPanelSafe(BasePanel):
                 # Línea vacía = separación de párrafo
                 formatted_lines.append('<div style="margin: 8px 0;"></div>')
                 continue
+            line = self._linkify(line)
             # Detect main headings (lines ending with :)
             if line.endswith(':') and len(line) < 100:
                 formatted_lines.append(f'<h3 style="margin: 15px 0 10px 0; font-size: 16px; font-weight: bold;">{line}</h3>')
@@ -2621,20 +3019,22 @@ class ChatPanelSafe(BasePanel):
             msg_lbl = QLabel(content_html)
             msg_lbl.setTextFormat(Qt.RichText)
         else:
-            msg_lbl = QLabel(_html.escape(message) if message_type != "assistant" else message)
+            msg_lbl = QLabel(message)
             msg_lbl.setTextFormat(Qt.PlainText if message_type != "assistant" else Qt.RichText)
         msg_lbl.setObjectName("bubbleMsg")
         msg_lbl.setWordWrap(True)
         msg_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
         msg_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
-        msg_lbl.setOpenExternalLinks(True)
+        # Los enlaces se abren en una pestaña de Katphi, no en el navegador del sistema
+        msg_lbl.setOpenExternalLinks(False)
+        msg_lbl.linkActivated.connect(lambda u: self._open_url_in_browser(u))
         msg_layout.addWidget(msg_lbl)
 
-        # Tarjetas de recomendación solo para IA real
+        # Botones para abrir los enlaces de la respuesta de la IA
         if message_type == "assistant" and sender == "IA":
-            search_links = self._extract_search_links_from_message(message)
-            if search_links:
-                self._add_recommendation_cards(msg_layout, search_links)
+            links = self._extract_urls_from_message(message)
+            if links:
+                self._add_recommendation_cards(msg_layout, links)
         # Añadir a la lista con margen izquierdo para mensajes de usuario
         if margin_left:
             row = QHBoxLayout()
@@ -2671,160 +3071,59 @@ class ChatPanelSafe(BasePanel):
             if not any(u[0] == url for u in urls):
                 urls.append((url, None))
         return urls[:10]  # Máximo 10 para no saturar la UI
-    def _extract_search_links_from_message(self, text):
-        """
-        Convierte recomendaciones de la IA en enlaces de búsqueda robustos.
-        Devuelve lista de tuplas: (search_url, label)
-        """
-        raw_links = self._extract_urls_from_message(text)
-        search_links = []
-        seen = set()
-
-        for url, title in raw_links:
-            query = self._build_search_query_from_recommendation(url, title)
-            if not query:
-                continue
-            search_url = self._build_search_url(query)
-            if search_url in seen:
-                continue
-            seen.add(search_url)
-            label = title or query
-            search_links.append((search_url, label))
-        # Fallback: sólo extraer bullets que parezcan nombres de sitios/herramientas,
-        # NUNCA cabeceras markdown, frases largas de análisis ni mensajes del sistema.
-        if not search_links and text:
-            for line in text.splitlines():
-                stripped = line.strip()
-                # Ignorar cabeceras markdown (# ## ###)
-                if stripped.startswith("#"):
-                    continue
-                # Ignorar líneas que son claramente frases normales de análisis
-                # Ignorar líneas demasiado cortas o demasiado largas
-                clean = stripped.strip(" -•*\t")
-                if len(clean) < 8 or len(clean) > 60:
-                    continue
-                # Solo aceptar si parece un nombre de herramienta/sitio:
-                # debe contener al menos un punto o ser una palabra compuesta
-                # Requisito mínimo: no ser una frase con verbo
-                words = clean.split()
-                if len(words) > 6:
-                    continue  # Frases largas no son recomendaciones de sitios
-                query = clean
-                search_url = self._build_search_url(query)
-                if search_url in seen:
-                    continue
-                seen.add(search_url)
-                search_links.append((search_url, query))
-                if len(search_links) >= 5:
-                    break
-        return search_links[:10]
-    def _build_search_query_from_recommendation(self, url, title=None):
-        """Construye una query estable para buscador desde URL/título sugerido por IA."""
-        if title and title.strip():
-            return title.strip()
-        clean = re.sub(r'^https?://', '', (url or '').strip(), flags=re.IGNORECASE)
-        clean = clean.split('#')[0].split('?')[0]
-        parts = [p for p in clean.split('/') if p]
-        if not parts:
-            return ""
-        domain = parts[0].replace("www.", "")
-        path = "".join(parts[1:3]) if len(parts) > 1 else ""
-        path = path.replace('-', ' ').replace('_', ' ')
-        query = f"{domain} {path}".strip()
-        return query[:120]
-    def _add_recommendation_cards(self, parent_layout, urls):
-        """Añade tarjetas para abrir resultados de búsqueda en pestañas."""
+    def _add_recommendation_cards(self, parent_layout, links):
+        """Añade botones para abrir en pestañas los enlaces de una respuesta de la IA."""
+        c = self._C
         rec_frame = QFrame()
         rec_frame.setObjectName("recommendationCards")
         rec_layout = QVBoxLayout(rec_frame)
-        rec_layout.setContentsMargins(8, 10, 8, 4)
-        rec_layout.setSpacing(8)
+        rec_layout.setContentsMargins(8, 8, 8, 6)
+        rec_layout.setSpacing(6)
 
-        rec_label = QLabel(f"<b>Abrir búsqueda en {self._get_search_engine_name()}</b>")
-        rec_label.setStyleSheet("color: #1a73e8; font-size: 12px;")
-        rec_label.setTextFormat(Qt.RichText)
-        rec_layout.addWidget(rec_label)
-
-        # Fila de botones por enlace
-        buttons_row = QHBoxLayout()
-        buttons_row.setSpacing(6)
-        for url, title in urls:
-            label = (title or url)
-            if len(label) > 45:
-                label = label[:42] + "..."
-            btn = QPushButton(f"{label}")
+        btn_style = (
+            f"QPushButton {{ background: {c['accent_subtle']}; color: {c['accent']}; "
+            f"border: 1px solid {c['accent']}; border-radius: 6px; padding: 5px 10px; "
+            "font-size: 11px; text-align: left; }"
+            f"QPushButton:hover {{ background: {c['accent']}; color: white; }}"
+        )
+        for url, title in links:
+            label = title or re.sub(r"^https?://(www\.)?", "", url)
+            if len(label) > 50:
+                label = label[:47] + "..."
+            btn = QPushButton(f"Abrir: {label}")
             btn.setToolTip(url)
             btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background: rgba(26, 115, 232, 0.12);
-                    color: #1a73e8; border: 1px solid rgba(26, 115, 232, 0.4);
-                    border-radius: 6px; padding: 6px 12px; font-size: 12px;
-                    text-align: left; max-width: 220px;
-                }
-                QPushButton:hover {
-                    background: rgba(26, 115, 232, 0.25);
-                    border-color: #1a73e8;
-                }
-            """)
-            btn.clicked.connect(lambda checked, u=url: self._open_url_in_browser(u))
-            buttons_row.addWidget(btn)
-        buttons_row.addStretch(1)
-        rec_layout.addLayout(buttons_row)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _=False, u=url: self._open_url_in_browser(u))
+            rec_layout.addWidget(btn)
 
-        if len(urls) > 1:
-            open_all_btn = QPushButton(f"Abrir todas en {self._get_search_engine_name()}")
+        if len(links) > 1:
+            open_all_btn = QPushButton(f"Abrir los {len(links)} enlaces")
             open_all_btn.setCursor(Qt.PointingHandCursor)
-            open_all_btn.setStyleSheet("""
-                QPushButton {
-                    background: #1a73e8; color: white; border: none;
-                    border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: bold;
-                }
-                QPushButton:hover { background: #1557b0; }
-            """)
-            open_all_btn.clicked.connect(lambda: self._open_urls_in_browser([u[0] for u in urls]))
+            open_all_btn.setStyleSheet(
+                f"QPushButton {{ background: {c['accent']}; color: white; border: none; "
+                "border-radius: 6px; padding: 6px 12px; font-size: 11px; font-weight: bold; }"
+            )
+            open_all_btn.clicked.connect(
+                lambda _=False, us=[u for u, _t in links]: self._open_urls_in_browser(us))
             rec_layout.addWidget(open_all_btn)
-        rec_frame.setStyleSheet("""
-            QFrame#recommendationCards {
-                background: rgba(26, 115, 232, 0.06);
-                border: 1px solid rgba(26, 115, 232, 0.2);
-                border-radius: 8px;
-            }
-        """)
+        rec_frame.setStyleSheet(
+            f"QFrame#recommendationCards {{ background: transparent; "
+            f"border: 1px solid {c['border']}; border-radius: 8px; }}"
+        )
         parent_layout.addWidget(rec_frame)
-    def _auto_open_recommendations(self, search_links, max_auto_open=3):
-        """
-        Abre automáticamente resultados web reales desde recomendaciones de búsqueda.
-        search_links: [(search_url, label), ...]
-        """
-        opened = 0
-        for search_url, label in search_links:
-            if opened >= max_auto_open:
-                break
-            query = (label or "").strip()
-            if not query:
-                # fallback: usar q de la URL
-                try:
-                    parsed = urlparse(search_url)
-                    q = parse_qs(parsed.query).get("q", [""])[0]
-                    query = unquote(q)
-                except Exception:
-                    query = ""
-            if not query:
-                continue
-            direct = self._resolve_first_result_url(query)
-            if direct:
-                self._open_url_in_browser(direct)
-                opened += 1
-    def _open_url_in_browser(self, url):
+    def _open_url_in_browser(self, url, focus=True):
         """Abre una URL en una nueva pestaña del navegador."""
+        position = self._result_position(url)
+        if position:   # es un resultado de Scrapelio: el clic le ayuda a ordenar mejor
+            report_click(self._last_query_id, position, url)
         main = self.window()
         if hasattr(main, 'tab_manager') and main.tab_manager:
-            main.tab_manager.add_new_tab(url)
+            main.tab_manager.add_new_tab(url, focus=focus)
     def _open_urls_in_browser(self, urls):
-        """Abre varias URLs en pestañas nuevas."""
-        for url in urls:
-            self._open_url_in_browser(url)
+        """Abre varias URLs: la primera pasa al frente, el resto en segundo plano."""
+        for i, url in enumerate(urls):
+            self._open_url_in_browser(url, focus=(i == 0))
     def clear_chat(self):
         """Clear chat area"""
         for i in reversed(range(self.chat_messages_layout.count())):

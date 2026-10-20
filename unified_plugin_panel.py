@@ -5,15 +5,16 @@ Versión rediseñada: Solo Tienda y Gestión
 """
 
 from typing import Optional
+import html
 import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, 
     QPushButton, QLabel, QHeaderView, QMessageBox, QFrame,
     QListWidget, QListWidgetItem, QScrollArea, QProgressBar
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QUrl
-from PySide6.QtGui import QColor, QFont, QDesktopServices, QIcon
-from base_panel import BasePanel
+from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QSize
+from PySide6.QtGui import QDesktopServices, QIcon
+from base_panel import BasePanel, ICONS_AVAILABLE, resolve_icon_path, build_strip_icon
 from unified_plugin_manager import UnifiedPluginManager, PluginInfo, PluginAccessInfo, PluginAccessLevel
 
 logger = logging.getLogger(__name__)
@@ -64,14 +65,124 @@ class UnifiedPluginPanel(BasePanel):
             (self.create_management_tab, "ide_gear", "Gestión"),
         ]
 
+    # Tamaño compacto de los botones-icono, igual que en el resto de paneles
+    _BTN_SIZE = 28
+    _BTN_ICON = 16
+
     def _apply_base_theme(self):
         """Aplicar tema al panel y actualizar widgets con colores dinámicos."""
         super()._apply_base_theme()
         c = self.get_theme_colors()
-        if hasattr(self, 'plugin_list') and self.plugin_list:
-            self._apply_list_style(self.plugin_list)
-        if hasattr(self, 'status_label') and self.status_label:
-            self.status_label.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px;")
+        # Estilos propios de la tienda, por objectName: así tarjetas, insignias
+        # y tabla siguen el tema activo sin tener que reconstruirse.
+        self.setStyleSheet(self.styleSheet() + f"""
+            QLabel#storeTitle {{
+                font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+                color: {c['text_secondary']}; background: transparent;
+            }}
+            QLabel#storeHint, QLabel#storeStatus {{
+                font-size: 11px; color: {c['text_secondary']}; background: transparent;
+            }}
+            QListWidget#storeList {{
+                background: transparent; border: none; outline: none;
+            }}
+            QListWidget#storeList::item,
+            QListWidget#storeList::item:hover,
+            QListWidget#storeList::item:selected {{
+                background: transparent; border: none; padding: 0px;
+            }}
+            QWidget#storeCardWrap {{ background: transparent; }}
+            QFrame#storeCard {{
+                background: {c['surface_1']};
+                border: 1px solid {c['border']};
+                border-radius: 6px;
+            }}
+            QFrame#storeCard:hover {{ border-color: {c['accent']}; }}
+            QFrame#storeCard QLabel {{ background: transparent; border: none; }}
+            QFrame#storeCard QWidget#storeCardRow {{ background: transparent; }}
+            QLabel#storeCardName {{
+                font-size: 12px; font-weight: 600; color: {c['text_primary']};
+            }}
+            QLabel#storeCardDesc {{ font-size: 11px; color: {c['text_secondary']}; }}
+            QLabel#storeBadge {{
+                font-size: 9px; font-weight: 600; letter-spacing: 0.5px;
+                padding: 1px 6px; border-radius: 3px;
+            }}
+            QFrame#storeCard QLabel#storeBadge[kind="installed"] {{
+                color: {c['accent']}; background: {c['accent_subtle']};
+            }}
+            QFrame#storeCard QLabel#storeBadge[kind="subscribed"] {{
+                color: {c['success']}; border: 1px solid {c['success']};
+            }}
+            QFrame#storeCard QLabel#storeBadge[kind="premium"] {{
+                color: {c['warning']}; border: 1px solid {c['warning']};
+            }}
+            QPushButton#katphiIconBtn[kind="danger"]:hover {{
+                border-color: {c['error']}; background: {c['error_subtle']};
+            }}
+            QPushButton#katphiIconBtn[kind="primary"] {{ border-color: {c['accent']}; }}
+            QProgressBar {{
+                background: {c['surface_1']}; border: none; border-radius: 2px;
+                max-height: 4px; min-height: 4px;
+            }}
+            QProgressBar::chunk {{ background: {c['accent']}; border-radius: 2px; }}
+            QTableWidget#storeTable {{
+                background: {c['surface_1']};
+                alternate-background-color: {c['surface_1']};
+                border: 1px solid {c['border']};
+                border-radius: 6px;
+                gridline-color: {c['border']};
+                font-size: 11px;
+            }}
+            QTableWidget#storeTable::item:selected {{ background: {c['selected']}; }}
+            QTableWidget#storeTable QWidget {{ background: transparent; }}
+            QLabel#storeCell {{ padding: 0px 6px; color: {c['text_primary']}; }}
+            QLabel#storeCell[kind="success"] {{ color: {c['success']}; }}
+            QLabel#storeCell[kind="warning"] {{ color: {c['warning']}; }}
+            QLabel#storeCell[kind="error"] {{ color: {c['error']}; }}
+            QLabel#storeCell[kind="text_secondary"] {{ color: {c['text_secondary']}; }}
+            QHeaderView::section {{
+                background: {c['surface_0']};
+                color: {c['text_secondary']};
+                border: none;
+                border-bottom: 1px solid {c['border']};
+                padding: 4px 6px;
+                font-size: 10px; font-weight: 600;
+            }}
+            QTableCornerButton::section {{ background: {c['surface_0']}; border: none; }}
+        """)
+        for lbl in self.findChildren(QLabel, "storeLockIcon"):
+            lbl.setPixmap(self._themed_pixmap("lock", 16))
+
+    def _themed_pixmap(self, icon_name: str, size: int):
+        """Icono SVG teñido con el color secundario del tema activo."""
+        color = self.get_theme_colors().get("text_secondary", "#A0A0A0")
+        path = resolve_icon_path(icon_name) if ICONS_AVAILABLE else ""
+        if path:
+            return build_strip_icon(path, color, QSize(size, size)).pixmap(size, size)
+        return QIcon(f"icons/{icon_name}.svg").pixmap(size, size)
+
+    def _icon_btn(self, icon_name: str, tooltip: str, callback=None, kind: str = "") -> QPushButton:
+        """Botón sólo-icono compacto y temático (como en el resto de paneles)."""
+        btn = self.create_icon_button(icon_name, tooltip, callback,
+                                      size=self._BTN_SIZE, icon_size=self._BTN_ICON)
+        if kind:
+            btn.setProperty("kind", kind)
+        return btn
+
+    def _make_header(self, title: str, buttons) -> QHBoxLayout:
+        """Cabecera de pestaña: título en versalitas + botones-icono a la derecha."""
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
+        title_label = QLabel(title.upper())
+        title_label.setObjectName("storeTitle")
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        for icon_name, tooltip, callback in buttons:
+            header_layout.addWidget(self._icon_btn(icon_name, tooltip, callback))
+        return header_layout
+
     def initial_load(self):
         """Carga inicial de plugins"""
         if not self.plugins_loaded:
@@ -83,121 +194,118 @@ class UnifiedPluginPanel(BasePanel):
 
     def create_store_tab(self):
         """Crear pestaña de tienda de plugins"""
-        c = self.get_theme_colors()
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        # Encabezado
-        header_layout = QHBoxLayout()
-
-        title_label = QLabel("Tienda de Plugins")
-        title_label.setFont(QFont("Arial", 16, QFont.Bold))
-        header_layout.addWidget(title_label)
-
-        header_layout.addStretch()
-
-        refresh_licenses_btn = QPushButton(QIcon("icons/key.svg"), "")
-        refresh_licenses_btn.setToolTip("Refrescar Licencias — actualiza el estado de tus suscripciones desde el servidor")
-        refresh_licenses_btn.clicked.connect(self.refresh_licenses_from_backend)
-        header_layout.addWidget(refresh_licenses_btn)
-
-        refresh_btn = QPushButton(QIcon("icons/refresh.svg"), "")
-        refresh_btn.setToolTip("Actualizar")
-        refresh_btn.clicked.connect(self.load_available_plugins)
-        header_layout.addWidget(refresh_btn)
-
-        layout.addLayout(header_layout)
+        layout.addLayout(self._make_header("Tienda de plugins", [
+            ("key", "Refrescar licencias — actualiza el estado de tus suscripciones desde el servidor",
+             self.refresh_licenses_from_backend),
+            ("refresh", "Actualizar", self.load_available_plugins),
+        ]))
 
         # Lista de plugins
         self.plugin_list = QListWidget()
-        self._apply_list_style(self.plugin_list)
+        self.plugin_list.setObjectName("storeList")
+        self.plugin_list.setSpacing(3)
+        self.plugin_list.setSelectionMode(QListWidget.NoSelection)
+        self.plugin_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         layout.addWidget(self.plugin_list)
 
         # Barra de progreso
         self.progress_bar = QProgressBar()
+        self.progress_bar.setTextVisible(False)
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
 
         # Etiqueta de estado
         self.status_label = QLabel("Cargando plugins...")
-        self.status_label.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px;")
+        self.status_label.setObjectName("storeStatus")
         layout.addWidget(self.status_label)
 
         return widget
 
-    def _apply_list_style(self, list_widget: QListWidget) -> None:
-        """Aplica estilo de tema al QListWidget."""
-        c = self.get_theme_colors()
-        list_widget.setStyleSheet(f"""
-            QListWidget {{
-                border: 1px solid {c['border']};
-                border-radius: 4px;
-                background-color: {c['surface_1']};
-                outline: none;
-            }}
-            QListWidget::item {{
-                border-bottom: 1px solid {c['border']};
-                padding: 5px;
-                background-color: transparent;
-            }}
-            QListWidget::item:selected {{
-                background-color: {c['selected']};
-            }}
-        """)
     # ==================== PESTAÑA GESTIÓN ====================
 
     def create_management_tab(self):
         """Crear pestaña de gestión de plugins"""
-        c = self.get_theme_colors()
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        # Encabezado
-        header_layout = QHBoxLayout()
-
-        title_label = QLabel("Mis Plugins")
-        title_label.setFont(QFont("Arial", 16, QFont.Bold))
-        header_layout.addWidget(title_label)
-
-        header_layout.addStretch()
-
-        refresh_btn = QPushButton(QIcon("icons/refresh.svg"), "")
-        refresh_btn.setToolTip("Actualizar")
-        refresh_btn.clicked.connect(self.refresh_management_tab)
-        header_layout.addWidget(refresh_btn)
-
-        layout.addLayout(header_layout)
+        layout.addLayout(self._make_header("Mis plugins", [
+            ("refresh", "Actualizar", self.refresh_management_tab),
+        ]))
 
         # Descripción
         desc_label = QLabel(
             "Plugins instalados localmente. Inicia sesión para ver el estado de tus suscripciones."
         )
+        desc_label.setObjectName("storeHint")
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet(
-            f"color: {c['text_secondary']}; padding: 10px; "
-            f"background-color: {c['surface_1']}; border-radius: 4px;"
-        )
         layout.addWidget(desc_label)
 
         # Tabla de plugins suscritos
         self.management_table = QTableWidget()
+        self.management_table.setObjectName("storeTable")
         self.management_table.setColumnCount(6)
         self.management_table.setHorizontalHeaderLabels([
-            "Plugin", "Estado", "Expira", "Instalado", "Acciones", "Info"
+            "Plugin", "Estado", "Expira", "Instalado", "", ""
         ])
+        self.management_table.horizontalHeaderItem(4).setToolTip("Instalar / desinstalar")
+        self.management_table.horizontalHeaderItem(5).setToolTip("Información")
+        self.management_table.verticalHeader().setVisible(False)
+        self.management_table.verticalHeader().setDefaultSectionSize(self._BTN_SIZE + 12)
+        self.management_table.setShowGrid(False)
+        self.management_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.management_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.management_table.setFocusPolicy(Qt.NoFocus)
 
         # Configurar tabla
         header = self.management_table.horizontalHeader()
+        header.setHighlightSections(False)
         header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        for col in range(1, 4):
+            header.setSectionResizeMode(col, QHeaderView.Fixed)
+        for col in (4, 5):
+            header.setSectionResizeMode(col, QHeaderView.Fixed)
+            self.management_table.setColumnWidth(col, self._BTN_SIZE + 10)
 
         layout.addWidget(self.management_table)
 
         return widget
+
+    def _set_colored_item(self, row: int, col: int, text: str, color_key: str) -> None:
+        """Celda de texto coloreada con un color del tema (vía QSS, sigue al tema)."""
+        label = QLabel(text)
+        label.setObjectName("storeCell")
+        label.setProperty("kind", color_key)
+        label.setWordWrap(col == 0)  # nombre del plugin / mensajes a ancho completo
+        self.management_table.setCellWidget(row, col, label)
+
+    def _fit_text_columns(self) -> None:
+        """Ajusta Estado/Expira/Instalado a su contenido (las celdas son QLabel)."""
+        table = self.management_table
+        header = table.horizontalHeader()
+        for col in range(1, 4):
+            width = header.sectionSizeFromContents(col).width()
+            for row in range(table.rowCount()):
+                if table.columnSpan(row, 0) > 1:
+                    continue
+                cell = table.cellWidget(row, col)
+                if cell:
+                    width = max(width, cell.sizeHint().width())
+            table.setColumnWidth(col, width + 4)
+
+    def _cell_button(self, btn: QPushButton) -> QWidget:
+        """Centra un botón-icono dentro de una celda de la tabla."""
+        cell = QWidget()
+        cell_layout = QHBoxLayout(cell)
+        cell_layout.setContentsMargins(0, 0, 0, 0)
+        cell_layout.addWidget(btn, 0, Qt.AlignCenter)
+        return cell
     def refresh_management_tab(self):
         """Refrescar tabla de gestión con todos los plugins instalados localmente."""
         if not hasattr(self, 'management_table'):
@@ -212,10 +320,8 @@ class UnifiedPluginPanel(BasePanel):
         # Siempre mostrar plugins instalados localmente
         local_ids = self.plugin_manager.get_installed_plugins()
 
-        if not local_ids:
-            self._show_no_subscriptions_message()
-            return
-
+        # Sin plugins locales NO se sale aquí: un usuario recién suscrito no tiene
+        # nada instalado y necesita ver sus plugins suscritos con el botón Instalar.
         for plugin_id in local_ids:
             plugin_info = self.plugin_manager.get_plugin_info(plugin_id)
             if plugin_info is None:
@@ -258,30 +364,27 @@ class UnifiedPluginPanel(BasePanel):
                         self._add_plugin_to_management_table(plugin_info, access_info)
             except Exception as e:
                 logger.warning(f"No se pudieron cargar plugins del backend: {e}")
+
+        if self.management_table.rowCount() == 0:
+            self._show_no_subscriptions_message()
+        self._fit_text_columns()
     def _add_plugin_to_management_table(self, plugin_info: PluginInfo, access_info: PluginAccessInfo):
         """Agregar un plugin a la tabla de gestión"""
         row = self.management_table.rowCount()
         self.management_table.insertRow(row)
 
         # Columna 0: Nombre del plugin
-        name_item = QTableWidgetItem(plugin_info.name)
-        name_item.setFont(QFont("Arial", 10, QFont.Bold))
-        self.management_table.setItem(row, 0, name_item)
+        self._set_colored_item(row, 0, f"<b>{html.escape(plugin_info.name)}</b>", "text_primary")
 
         # Columna 1: Estado
         if access_info.access_level == PluginAccessLevel.PREMIUM:
-            status_item = QTableWidgetItem("Premium")
-            status_item.setForeground(QColor(40, 167, 69))
+            self._set_colored_item(row, 1, "Premium", "success")
         elif access_info.access_level == PluginAccessLevel.TRIAL:
-            status_item = QTableWidgetItem(f"Prueba ({access_info.trial_remaining}d)")
-            status_item.setForeground(QColor(255, 193, 7))
+            self._set_colored_item(row, 1, f"Prueba ({access_info.trial_remaining}d)", "warning")
         elif access_info.access_level == PluginAccessLevel.FREE:
-            status_item = QTableWidgetItem("Gratis")
-            status_item.setForeground(QColor(108, 117, 125))
+            self._set_colored_item(row, 1, "Gratis", "text_secondary")
         else:  # NONE (sin sesión/licencia) o EXPIRED
-            status_item = QTableWidgetItem("Sin acceso — inicia sesión")
-            status_item.setForeground(QColor(220, 53, 69))
-        self.management_table.setItem(row, 1, status_item)
+            self._set_colored_item(row, 1, "Sin acceso — inicia sesión", "error")
 
         # Columna 2: Fecha de expiración
         expires_text = "N/A"
@@ -298,90 +401,46 @@ class UnifiedPluginPanel(BasePanel):
             except Exception as e:
                 logger.warning(f"Error parsing expires_at: {e}")
                 expires_text = "N/A"
-        expires_item = QTableWidgetItem(expires_text)
-        expires_item.setForeground(QColor(108, 117, 125))
-        self.management_table.setItem(row, 2, expires_item)
+        self._set_colored_item(row, 2, expires_text, "text_secondary")
 
         # Columna 3: Instalado (Si/No)
         is_installed = self.plugin_manager.is_plugin_installed(plugin_info.id)
         if is_installed:
-            installed_item = QTableWidgetItem("Sí")
-            installed_item.setForeground(QColor(40, 167, 69))
+            self._set_colored_item(row, 3, "Sí", "success")
         else:
-            installed_item = QTableWidgetItem("No")
-            installed_item.setForeground(QColor(220, 53, 69))
-        self.management_table.setItem(row, 3, installed_item)
+            self._set_colored_item(row, 3, "No", "text_secondary")
 
         # Columna 4: Botón de Acción (Instalar/Desinstalar)
-        action_btn = QPushButton()
         if is_installed:
-            action_btn.setIcon(QIcon("icons/ide_trash.svg"))
-            action_btn.setToolTip("Desinstalar")
-            action_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #dc3545;
-                    color: white;
-                    border: none;
-                    padding: 6px;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: #c82333;
-                }
-            """)
-            action_btn.clicked.connect(lambda checked, pid=plugin_info.id: self.uninstall_plugin(pid))
+            action_btn = self._icon_btn(
+                "ide_trash", "Desinstalar",
+                lambda checked=False, pid=plugin_info.id: self.uninstall_plugin(pid),
+                kind="danger")
         else:
-            action_btn.setIcon(QIcon("icons/download.svg"))
-            action_btn.setToolTip("Instalar")
-            action_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #28a745;
-                    color: white;
-                    border: none;
-                    padding: 6px;
-                    border-radius: 4px;
-                }
-                QPushButton:hover {
-                    background-color: #218838;
-                }
-            """)
-            action_btn.clicked.connect(lambda checked, pid=plugin_info.id: self.install_plugin(pid))
-        self.management_table.setCellWidget(row, 4, action_btn)
+            action_btn = self._icon_btn(
+                "download", "Instalar",
+                lambda checked=False, pid=plugin_info.id: self.install_plugin(pid),
+                kind="primary")
+        self.management_table.setCellWidget(row, 4, self._cell_button(action_btn))
 
         # Columna 5: Botón de Información
-        info_btn = QPushButton(QIcon("icons/info.svg"), "")
-        info_btn.setToolTip("Ver información del plugin")
-        info_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
-                border: none;
-                padding: 6px 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #5a6268;
-            }
-        """)
-        info_btn.clicked.connect(lambda checked, pinfo=plugin_info: self.show_plugin_info_simple(pinfo))
-        self.management_table.setCellWidget(row, 5, info_btn)
+        info_btn = self._icon_btn(
+            "info", "Ver información del plugin",
+            lambda checked=False, pinfo=plugin_info: self.show_plugin_info_simple(pinfo))
+        self.management_table.setCellWidget(row, 5, self._cell_button(info_btn))
     def _show_auth_required_message(self):
         """Mostrar mensaje de que se requiere autenticación"""
         self.management_table.setRowCount(1)
-        message_item = QTableWidgetItem("Por favor, inicia sesión para ver tus plugins suscritos")
-        message_item.setForeground(QColor(108, 117, 125))
-        message_item.setFont(QFont("Arial", 11, QFont.Bold))
-        self.management_table.setItem(0, 0, message_item)
+        self._set_colored_item(0, 0, "Por favor, inicia sesión para ver tus plugins suscritos",
+                               "text_secondary")
         self.management_table.setSpan(0, 0, 1, 6)
     def _show_no_subscriptions_message(self):
         """Mostrar mensaje de que no hay suscripciones"""
         self.management_table.setRowCount(1)
-        message_item = QTableWidgetItem(
-            "No tienes plugins suscritos. Visita la pestaña Tienda para ver los plugins disponibles."
-        )
-        message_item.setForeground(QColor(108, 117, 125))
-        message_item.setFont(QFont("Arial", 11))
-        self.management_table.setItem(0, 0, message_item)
+        self._set_colored_item(
+            0, 0,
+            "No tienes plugins suscritos. Visita la pestaña Tienda para ver los plugins disponibles.",
+            "text_secondary")
         self.management_table.setSpan(0, 0, 1, 6)
     def show_plugin_info_simple(self, plugin_info: PluginInfo):
         """Mostrar información básica del plugin"""
@@ -499,81 +558,68 @@ class UnifiedPluginPanel(BasePanel):
         self.plugin_list.setItemWidget(item, plugin_widget)
     def create_plugin_widget(self, plugin_info: PluginInfo) -> QWidget:
         """Crear widget para un plugin en la tienda"""
-        c = self.get_theme_colors()
         widget = QWidget()
+        widget.setObjectName("storeCardWrap")
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         access_info = self.plugin_manager.get_plugin_access(plugin_info.id)
         has_subscription = access_info.access_level in [PluginAccessLevel.PREMIUM, PluginAccessLevel.TRIAL]
         is_installed = self.plugin_manager.is_plugin_installed(plugin_info.id)
 
         container = QFrame()
-        container.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
-
-        if has_subscription:
-            border_color = c['success'] if not is_installed else c['accent']
-        else:
-            border_color = c['error']
-        container.setStyleSheet(f"""
-            QFrame {{
-                background-color: {c['surface_1']};
-                border: 2px solid {border_color};
-                border-radius: 12px;
-                padding: 16px;
-            }}
-        """)
-
+        container.setObjectName("storeCard")
         container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(10, 8, 8, 8)
+        container_layout.setSpacing(4)
 
-        # Encabezado
+        # Encabezado: nombre + insignia de estado + acciones
         header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
 
         name_label = QLabel(plugin_info.name)
-        name_label.setFont(QFont("Arial", 14, QFont.Bold))
+        name_label.setObjectName("storeCardName")
         header_layout.addWidget(name_label)
+
+        if is_installed:
+            badge_text, badge_kind = "INSTALADO", "installed"
+        elif has_subscription:
+            badge_text, badge_kind = "SUSCRITO", "subscribed"
+        else:
+            badge_text, badge_kind = "PREMIUM", "premium"
+        status_badge = QLabel(badge_text)
+        status_badge.setObjectName("storeBadge")
+        status_badge.setProperty("kind", badge_kind)
+        header_layout.addWidget(status_badge, 0, Qt.AlignVCenter)
 
         header_layout.addStretch()
 
-        if is_installed:
-            status_badge = QLabel("INSTALADO")
-            status_badge.setStyleSheet("background-color: #17a2b8; color: white; padding: 4px 12px; border-radius: 12px; font-size: 10px; font-weight: bold;")
-        elif has_subscription:
-            status_badge = QLabel("SUSCRITO")
-            status_badge.setStyleSheet("background-color: #28a745; color: white; padding: 4px 12px; border-radius: 12px; font-size: 10px; font-weight: bold;")
-        else:
-            status_badge = QLabel("PREMIUM")
-            status_badge.setStyleSheet("background-color: #dc3545; color: white; padding: 4px 12px; border-radius: 12px; font-size: 10px; font-weight: bold;")
-        header_layout.addWidget(status_badge)
+        header_layout.addWidget(self._icon_btn(
+            "info", "Más información",
+            lambda checked=False, pinfo=plugin_info: self.show_plugin_info_simple(pinfo)))
+
+        # Suscrito pero sin instalar: instalar directamente desde la tienda
+        if has_subscription and not is_installed:
+            header_layout.addWidget(self._icon_btn(
+                "download", "Instalar",
+                lambda checked=False, pid=plugin_info.id: self.install_plugin(pid),
+                kind="primary"))
+
+        # Botón de URL del sitio web (se abre en el navegador Katphi)
+        header_layout.addWidget(self._icon_btn(
+            "link", "Ver en la web",
+            lambda checked=False, pid=plugin_info.id: self.open_plugin_in_browser(pid)))
 
         container_layout.addLayout(header_layout)
 
         # Descripción
         desc_label = QLabel(plugin_info.description)
+        desc_label.setObjectName("storeCardDesc")
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px; padding: 8px 0;")
-        desc_label.setMaximumHeight(50)
+        desc_label.setMaximumHeight(44)
         container_layout.addWidget(desc_label)
 
-        # Botones
-        buttons_layout = QHBoxLayout()
-
-        info_btn = QPushButton(QIcon("icons/info.svg"), "")
-        info_btn.setToolTip("Más Info")
-        info_btn.setStyleSheet("background-color: #6c757d; color: white; border: none; padding: 6px; border-radius: 4px;")
-        info_btn.clicked.connect(lambda: self.show_plugin_info_simple(plugin_info))
-        buttons_layout.addWidget(info_btn)
-
-        buttons_layout.addStretch()
-
-        # Botón de URL del sitio web (se abre en el navegador Katphi)
-        web_btn = QPushButton(QIcon("icons/link.svg"), "")
-        web_btn.setToolTip("Ver en Web")
-        web_btn.setStyleSheet("background-color: #007bff; color: white; border: none; padding: 6px; border-radius: 4px;")
-        web_btn.clicked.connect(lambda: self.open_plugin_in_browser(plugin_info.id))
-        buttons_layout.addWidget(web_btn)
-
-        container_layout.addLayout(buttons_layout)
         layout.addWidget(container)
 
         return widget
@@ -602,31 +648,32 @@ class UnifiedPluginPanel(BasePanel):
                                f"No se pudo abrir la URL del plugin:\n{str(e)}")
     def create_auth_required_widget(self) -> QWidget:
         """Widget para mostrar que se requiere autenticación"""
-        c = self.get_theme_colors()
         widget = QWidget()
+        widget.setObjectName("storeCardWrap")
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         container = QFrame()
-        container.setStyleSheet(
-            f"QFrame {{ background-color: {c['surface_1']}; border: 2px solid {c['border']}; "
-            f"border-radius: 8px; padding: 10px; }}"
-        )
+        container.setObjectName("storeCard")
         container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(10, 8, 10, 8)
+        container_layout.setSpacing(4)
 
         title_layout = QHBoxLayout()
+        title_layout.setSpacing(6)
         title_icon_label = QLabel()
-        title_icon_label.setPixmap(QIcon("icons/lock.svg").pixmap(18, 18))
+        title_icon_label.setObjectName("storeLockIcon")
+        title_icon_label.setPixmap(self._themed_pixmap("lock", 16))
         title_layout.addWidget(title_icon_label)
-        title_label = QLabel("Autenticación Requerida")
-        title_label.setFont(QFont("Arial", 14, QFont.Bold))
+        title_label = QLabel("Autenticación requerida")
+        title_label.setObjectName("storeCardName")
         title_layout.addWidget(title_label)
         title_layout.addStretch()
         container_layout.addLayout(title_layout)
 
         desc_label = QLabel("Para acceder a los plugins disponibles, necesitas iniciar sesión con tu cuenta de usuario.")
+        desc_label.setObjectName("storeCardDesc")
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet(f"color: {c['text_secondary']};")
         container_layout.addWidget(desc_label)
 
         layout.addWidget(container)

@@ -15,7 +15,7 @@ import sys
 
 # Únicos plugins que se cargan sin sesión ni licencia. Cualquier otro plugin,
 # diga lo que diga su plugin_info.json, es premium y necesita licencia del backend.
-FREE_PLUGIN_IDS = frozenset({"themes", "split_view"})
+FREE_PLUGIN_IDS = frozenset({"themes", "split_view", "voice_control"})
 
 
 def is_free_plugin(plugin_id: str) -> bool:

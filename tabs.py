@@ -76,6 +76,23 @@ class _NewTabButton(QPushButton):
         self._apply_style(color)
 
 
+class BrowserView(QWebEngineView):
+    """QWebEngineView que abre target="_blank" / window.open en pestañas del navegador.
+
+    Sin createWindow() QtWebEngine descarta esas navegaciones (no pasa nada al hacer clic).
+    """
+
+    def __init__(self, tab_manager, parent=None):
+        super().__init__(parent)
+        self._tab_manager = tab_manager
+
+    def createWindow(self, window_type):
+        # Clic central / Ctrl+clic → segundo plano; el resto en primer plano
+        background = window_type == QWebEnginePage.WebWindowType.WebBrowserBackgroundTab
+        # Qt carga la URL destino en la vista devuelta
+        return self._tab_manager.add_new_tab("about:blank", focus=not background, load=False)
+
+
 class BrowserTabBar(QTabBar):
     """
     QTabBar con botón '+' integrado que se posiciona justo después
@@ -355,8 +372,9 @@ class TabManager:
                 browser.page().runJavaScript(js)
         except Exception as e:
             print(f"Error injecting dark scrollbar CSS: {e}")
-    def add_new_tab(self, url=None):
-        """Creates a new tab and returns it"""
+    def add_new_tab(self, url=None, focus=True, load=True):
+        """Creates a new tab and returns it (focus=False la abre en segundo plano;
+        load=False no carga la URL: la usa createWindow, que navega la vista él mismo)"""
 
         try:
             # Si no se proporciona URL, usar la página de inicio configurada
@@ -380,7 +398,7 @@ class TabManager:
                     else:
                         url = "https://duckduckgo.com"
             # Crear el navegador
-            browser = QWebEngineView()
+            browser = BrowserView(self)
 
             # IMPORTANTE: Configurar el perfil ANTES de establecer la URL
             # para que la primera petición HTTP use el User-Agent correcto
@@ -430,7 +448,8 @@ class TabManager:
             if hasattr(self.parent, 'password_manager'):
                 self.parent.password_manager.setup_browser(browser)
             # Establecer la URL - se cargará con el User-Agent y scripts listos
-            browser.setUrl(QUrl(url))
+            if load:
+                browser.setUrl(QUrl(url))
 
             # Conectar señales y guardar referencias para desconectar después
             browser_id = id(browser)
@@ -482,14 +501,15 @@ class TabManager:
 
             index = self.tabs.addTab(browser, "New Tab")
 
-            self.tabs.setCurrentIndex(index)
+            if focus:
+                self.tabs.setCurrentIndex(index)
 
             # Notificar al group manager sobre la nueva pestaña
             self.group_manager.on_tab_added(index)
 
             # Actualizar la barra de URL si está disponible
 
-            if hasattr(self.parent, 'url_bar'):
+            if focus and load and hasattr(self.parent, 'url_bar'):
                 self.parent.url_bar.setText(url)
             # TODO V2: Aplicar profile del grupo aquí si la pestaña va a un grupo específico
 

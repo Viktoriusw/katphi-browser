@@ -1,4 +1,4 @@
-# Guía de instalación — Katphi Browser 3.5.1
+# Guía de instalación — Katphi Browser 3.5.2
 
 Esta guía explica cómo ejecutar Katphi Browser desde el código fuente y cómo
 compilar los paquetes. Si solo quieres usar el navegador, descarga la versión

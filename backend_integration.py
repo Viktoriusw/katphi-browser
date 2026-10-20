@@ -343,7 +343,9 @@ class BackendIntegration(QObject):
 
         headers = kwargs.get('headers', {})
 
-        if self.access_token:
+        # No pisar un Authorization explícito: /auth/refresh debe ir con el
+        # refresh token, no con el access token (ya caducado en ese momento)
+        if self.access_token and 'Authorization' not in headers:
             headers['Authorization'] = f'Bearer {self.access_token}'
         kwargs['headers'] = headers
 

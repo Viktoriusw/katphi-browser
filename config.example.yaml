@@ -60,3 +60,7 @@ tor:
   enabled: false
   pending_restore_urls: []
   socks_port: 9150
+scrapelio:
+  # Motor de búsqueda propio (Scrapelio) que usa el asistente de navegación
+  # (también se puede fijar con la variable de entorno SCRAPELIO_URL)
+  url: https://scrapelio.com

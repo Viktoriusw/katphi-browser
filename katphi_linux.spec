@@ -38,6 +38,7 @@ pyside6_hiddenimports = [
     'PySide6.QtSvgWidgets',
     'PySide6.QtMultimedia',
     'PySide6.QtMultimediaWidgets',
+    'PySide6.QtTextToSpeech',
 ]
 
 # ── config.yaml de distribución ────────────────────────────────────────────
@@ -77,7 +78,7 @@ project_datas = [
 ]
 
 # Edición gratuita: el paquete solo puede llevar los plugins gratuitos.
-_FREE_PLUGINS = {'themes', 'split_view'}
+_FREE_PLUGINS = {'themes', 'split_view', 'voice_control'}
 _bundled = {d for d in os.listdir('plugins')
             if os.path.isdir(os.path.join('plugins', d)) and d != '__pycache__'}
 if _bundled - _FREE_PLUGINS:
@@ -107,6 +108,9 @@ app_hiddenimports = [
     'concurrent.futures',
     'asyncio',
     'dataclasses',
+    # Usados solo por plugins (se empaquetan como datos y PyInstaller no los analiza)
+    'wave',          # voice_control
+    'array',         # voice_control
     'typing',
     'pathlib',
     're',

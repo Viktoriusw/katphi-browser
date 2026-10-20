@@ -12,7 +12,7 @@ para evitar strings mágicos y valores hardcodeados dispersos en el código.
 
 APP_NAME = "Katphi"
 APP_TITLE = "Katphi Browser"
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.5.2"
 APP_VENDOR = "Katphi"
 APP_ORGANIZATION = "Katphi"
 

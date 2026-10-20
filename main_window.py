@@ -1615,13 +1615,8 @@ class MainWindow(QMainWindow):
                 "icons/settings.png", "Plugins", self.toggle_plugin_panel
             )
             self.side_strip.addAction(self.plugin_action)
-        # Pentesting Suite - botón fijo en la barra lateral
-        # La lógica de carga del panel se resuelve en toggle_pentesting_panel
-        if PLUGIN_SYSTEM_AVAILABLE:
-            self.pentesting_action = create_strip_action(
-                "icons/security.png", "Pentesting Suite", self.toggle_pentesting_panel
-            )
-            self.side_strip.addAction(self.pentesting_action)
+        # Pentesting Suite - premium: su botón lo añade _load_pentesting_plugin_dynamic
+        # solo cuando el plugin está instalado y con licencia
         # Botón de "Cuenta" eliminado según requerimiento del usuario
 
         self.bookmark_action = create_strip_action(
@@ -3306,8 +3301,8 @@ class MainWindow(QMainWindow):
     def _open_gentab_in_new_tab(self, title: str, html_content: str):
         """Abre una GenTab generada en una nueva pestaña del navegador."""
         try:
-            from PySide6.QtWebEngineWidgets import QWebEngineView
             from PySide6.QtCore import QUrl
+            from tabs import BrowserView
 
             if not html_content or len(html_content.strip()) < 80:
                 print(
@@ -3319,7 +3314,7 @@ class MainWindow(QMainWindow):
                     "La IA devolvió contenido vacío o inválido. Revisa el contexto de pestañas e inténtalo de nuevo.",
                 )
                 return
-            browser = QWebEngineView()
+            browser = BrowserView(self.tab_manager)
 
             profile = browser.page().profile()
             if hasattr(self, "network_interceptor") and self.network_interceptor:

@@ -304,7 +304,16 @@ class BasePanel(QWidget):
 
     def _refresh_all_icon_buttons(self) -> None:
         """Refresca el tinte de todos los botones-icono registrados."""
-        for btn in getattr(self, "_icon_buttons", []):
+        # Los paneles que recrean widgets (p. ej. tarjetas de la tienda) dejan
+        # botones ya destruidos por Qt en la lista: se descartan aquí.
+        try:
+            from shiboken6 import isValid
+        except ImportError:
+            def isValid(_obj):
+                return True
+        alive = [btn for btn in getattr(self, "_icon_buttons", []) if isValid(btn)]
+        self._icon_buttons = alive
+        for btn in alive:
             self._refresh_icon_button(btn)
 
     def _register_tab_icon(self, index: int, icon_name: str) -> None:

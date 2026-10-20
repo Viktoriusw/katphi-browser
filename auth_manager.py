@@ -406,9 +406,10 @@ class AuthManager(QObject):
 
                     logger.info("[AUTH] Loaded saved credentials and restored session")
                 else:
-                    logger.info("[AUTH] Saved credentials expired")
-
-                    self._clear_saved_credentials()
+                    # expires_at es la caducidad del access token (30 min), no la
+                    # de la sesión: backend_integration._restore_session la renueva
+                    # con el refresh token y emite login_successful si sigue válida.
+                    logger.info("[AUTH] Access token expired, backend will refresh the saved session")
         except Exception as e:
             logger.error(f"[AUTH] Error loading saved credentials: {e}")
 
@@ -719,7 +720,10 @@ class AuthManager(QObject):
         if not self.backend.is_authenticated():
             logger.warning(f"Plugin {plugin_id} access denied: Backend authentication lost")
 
-            self.logout()
+            # Solo cerrar sesión si el backend ya la descartó (refresh rechazado);
+            # ante un fallo de red al refrescar se deniega sin destruir la sesión
+            if not self.backend.refresh_token:
+                self.logout()
 
             return False
         # Verificar con el backend directamente (validación en tiempo real)
