@@ -21,28 +21,106 @@ from PySide6.QtWebEngineCore import QWebEngineUrlRequestInterceptor, QWebEngineU
 import sqlite3
 import os
 import re
+import sys
 from datetime import datetime
+from urllib.parse import urlsplit
 from pathlib import Path
+
+
+def _chromium_major() -> str:
+    try:
+        from PySide6.QtWebEngineCore import qWebEngineChromiumVersion
+        return qWebEngineChromiumVersion().split('.')[0]
+    except Exception:
+        return '140'
+
+
+def _platform_token() -> str:
+    if sys.platform.startswith('win'):
+        return 'Windows NT 10.0; Win64; x64'
+    if sys.platform == 'darwin':
+        return 'Macintosh; Intel Mac OS X 10_15_7'
+    return 'X11; Linux x86_64'
+
+
+def _build_user_agents() -> dict:
+    major = _chromium_major()
+    chrome = (f'Mozilla/5.0 ({_platform_token()}) AppleWebKit/537.36 '
+              f'(KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36')
+    return {
+        'Chrome': chrome,
+        'Firefox': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
+        'Brave': chrome,  # Brave usa el mismo UA que Chrome
+        'Safari': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
+        'Edge': f'{chrome} Edg/{major}.0.0.0',
+        'Android': f'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{major}.0.0.0 Mobile Safari/537.36',
+        'iOS': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1',
+        'Custom': ''
+    }
+
+
+_RT = QWebEngineUrlRequestInfo.ResourceType
+_RT_MEDIA = getattr(_RT, 'ResourceTypeMedia', None)
+_RT_XHR = getattr(_RT, 'ResourceTypeXhr', getattr(_RT, 'ResourceTypeXmlHttpRequest', None))
+
+
+# Dominios cuyas peticiones nunca bloquean los patrones del usuario
+WHITELIST_DOMAINS = (
+    'google.com',
+    'gstatic.com',
+    'googleapis.com',
+    'recaptcha.net',
+    'googleusercontent.com',
+    'phncdn.com',
+    'challenges.cloudflare.com',
+    'cloudflare.com',
+    'cloudflareinsights.com',
+    # CDNs de vídeo — necesarios para reproducción en sitios distintos de YouTube
+    'googlevideo.com',
+    'akamaized.net',
+    'akamaihd.net',
+    'akamaistream.net',
+    'fastly.net',
+    'vimeocdn.com',
+    'vimeo.com',
+    'jtvnw.net',
+    'twitchsvc.net',
+    'twitchusercontent.com',
+    'tiktokcdn.com',
+    'muscdn.com',
+    'video.twimg.com',
+    'nflxvideo.net',
+    'nflximg.net',
+    'brightcove.net',
+    'jwplatform.com',
+    'jwpsrv.com',
+    'fbcdn.net',
+    'cdninstagram.com',
+    'fbsbx.com',
+    'dailymotionakam.com',
+    'dmcdn.net',
+    'b-cdn.net',
+    'bunnycdn.com',
+)
 
 
 class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
     """Interceptor de peticiones de red"""
 
-    # Señales
+    # Señales (se conservan por compatibilidad con plugins; ya no se emiten
+    # por petición: emitirlas desde el hilo de E/S en cada petición costaba
+    # una cola de eventos entre hilos sin nadie escuchando)
     request_intercepted = Signal(str, str)  # URL, método
     request_blocked = Signal(str)  # URL bloqueada
 
-    # User-Agents predefinidos
-    USER_AGENTS = {
-        'Chrome': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-        'Firefox': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
-        'Brave': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Brave/136',
-        'Safari': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
-        'Edge': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0',
-        'Android': 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.6478.122 Mobile Safari/537.36',
-        'iOS': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1',
-        'Custom': ''
-    }
+    # User-Agents predefinidos. Los de Chromium (Chrome/Brave/Edge) se generan
+    # con la versión real de Chromium y el sistema operativo real: si el UA dice
+    # otra versión u otro SO que Sec-CH-UA / navigator.userAgentData, los
+    # antibots (Cloudflare...) detectan la incoherencia.
+    USER_AGENTS = _build_user_agents()
+
+    # Presets que no son Chromium: Firefox y Safari no envían Client Hints
+    NON_CHROMIUM_UA_TYPES = ('Firefox', 'Safari', 'iOS')
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -153,6 +231,10 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
         # Cargar headers personalizados
         cursor.execute("SELECT name, value FROM custom_headers WHERE enabled = 1")
         self.custom_headers = {name: value for name, value in cursor.fetchall()}
+        self._custom_headers_bytes = [
+            (name.encode('utf-8'), value.encode('utf-8'))
+            for name, value in self.custom_headers.items()
+        ]
 
         conn.close()
     def _compile_pattern(self, pattern, pattern_type):
@@ -196,17 +278,20 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
         """
         Interceptar y modificar peticiones HTTP
 
+        Se ejecuta en el hilo de E/S de Chromium para CADA petición: nada de
+        print() ni señales aquí. El User-Agent no se toca: lo pone el perfil
+        (setHttpUserAgent), que además mantiene navigator.userAgent coherente.
+
         Args:
             info: Información de la petición
         """
+        qurl = info.requestUrl()
+
         # Bloqueo WebRTC en modo Tor
-        if getattr(self, 'tor_mode', False):
-            url = info.requestUrl().toString()
-            if any(p in url for p in ('stun:', 'turn:', 'stuns:', 'turns:')):
-                info.block(True)
-                return
-        url = info.requestUrl().toString()
-        method = info.requestMethod().data().decode('utf-8')
+        if self.tor_mode and qurl.scheme() in ('stun', 'turn', 'stuns', 'turns'):
+            info.block(True)
+            return
+        url = qurl.toString()
 
         # Incrementar contador
         self.request_count += 1
@@ -215,49 +300,26 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
         if self._should_block_url(url):
             info.block(True)
             self.blocked_count += 1
-            self.request_blocked.emit(url)
-
             if self.enable_logging:
-                self._log_request(url, method, blocked=True)
-            print(f"[BLOCKED] {method} {url}")
+                self._log_request(url, info.requestMethod().data().decode('utf-8'), blocked=True)
             return
-        # Modificar User-Agent
-        user_agent = self._get_user_agent()
-        if user_agent:
-            info.setHttpHeader(b'User-Agent', user_agent.encode('utf-8'))
-            # Debug: mostrar solo para la primera petición de cada página
-            if 'text/html' in url or self.request_count % 100 == 1:
-                print(f"[UA] Applying User-Agent ({self.user_agent_type}): {user_agent[:80]}...")
         # Agregar/modificar headers
         if self.enable_dnt:
             info.setHttpHeader(b'DNT', b'1')
         # No bloquear Referer en peticiones de medios: CDNs de vídeo (phncdn, etc.)
         # requieren Referer para servir contenido; si se elimina → 403 → MediaError UNKNOWN_ERROR
         if self.block_referer:
-            try:
-                rt = info.resourceType()
-                media_type = getattr(
-                    QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeMedia',
-                    getattr(QWebEngineUrlRequestInfo.ResourceType, 'Media', None)
-                )
-                xhr_type = getattr(
-                    QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeXmlHttpRequest',
-                    getattr(QWebEngineUrlRequestInfo.ResourceType, 'XmlHttpRequest', None)
-                )
-                is_media = media_type and rt == media_type
-                is_media_xhr = xhr_type and rt == xhr_type and self._is_media_url(url)
-                if not (is_media or is_media_xhr):
-                    info.setHttpHeader(b'Referer', b'')
-            except Exception:
+            rt = info.resourceType()
+            is_media = rt == _RT_MEDIA
+            is_media_xhr = rt == _RT_XHR and self._is_media_url(url)
+            if not (is_media or is_media_xhr):
                 info.setHttpHeader(b'Referer', b'')
         # Headers personalizados
-        for header_name, header_value in self.custom_headers.items():
-            info.setHttpHeader(header_name.encode('utf-8'), header_value.encode('utf-8'))
+        for header_name, header_value in self._custom_headers_bytes:
+            info.setHttpHeader(header_name, header_value)
         # Logging
         if self.enable_logging:
-            self._log_request(url, method, blocked=False)
-        # Emitir señal
-        self.request_intercepted.emit(url, method)
+            self._log_request(url, info.requestMethod().data().decode('utf-8'), blocked=False)
     def _is_media_url(self, url: str) -> bool:
         """Indica si la URL parece ser de contenido multimedia (vídeo/audio)."""
         url_lower = url.lower()
@@ -279,49 +341,16 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
     def _should_block_url(self, url):
         """Verificar si una URL debe ser bloqueada"""
 
-        # WHITELIST: Dominios críticos que NUNCA deben bloquearse
-        WHITELIST_DOMAINS = [
-            'google.com',
-            'gstatic.com',
-            'googleapis.com',
-            'recaptcha.net',
-            'googleusercontent.com',
-            'phncdn.com',
-            'challenges.cloudflare.com',
-            'cloudflare.com',
-            'cloudflareinsights.com',
-            # CDNs de vídeo — necesarios para reproducción en sitios distintos de YouTube
-            'googlevideo.com',
-            'akamaized.net',
-            'akamaihd.net',
-            'akamaistream.net',
-            'fastly.net',
-            'vimeocdn.com',
-            'vimeo.com',
-            'jtvnw.net',
-            'twitchsvc.net',
-            'twitchusercontent.com',
-            'tiktokcdn.com',
-            'muscdn.com',
-            'video.twimg.com',
-            'nflxvideo.net',
-            'nflximg.net',
-            'brightcove.net',
-            'jwplatform.com',
-            'jwpsrv.com',
-            'fbcdn.net',
-            'cdninstagram.com',
-            'fbsbx.com',
-            'dailymotionakam.com',
-            'dmcdn.net',
-            'b-cdn.net',
-            'bunnycdn.com',
-        ]
-
-        # Verificar si la URL pertenece a un dominio en whitelist
-        for domain in WHITELIST_DOMAINS:
-            if domain in url:
-                return False  # NO bloquear - dominio en whitelist
+        # Lista blanca por host (no por subcadena: "evil.com/?x=google.com"
+        # no debe librarse de las reglas del usuario)
+        if not self.blocked_patterns:
+            return False
+        try:
+            host = (urlsplit(url).hostname or '').lower()
+        except ValueError:
+            host = ''
+        if host and any(host == d or host.endswith('.' + d) for d in WHITELIST_DOMAINS):
+            return False
         # Continuar con la lógica de bloqueo normal
         for pattern_info in self.blocked_patterns:
             pattern = pattern_info['compiled']
@@ -340,6 +369,44 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
                 print(f"[WARNING] Error matching pattern: {e}")
                 continue
         return False
+    def apply_to_profile(self, profile):
+        """Aplica el User-Agent al perfil y alinea con él los Client Hints.
+
+        Sec-CH-UA y navigator.userAgentData salen de profile.clientHints():
+        si no se tocan siguen diciendo "Chromium 140 / Linux" aunque el UA diga
+        otra cosa, y esa incoherencia la detectan los antibots.
+        """
+        profile.setHttpUserAgent(self._get_user_agent())
+        try:
+            hints = profile.clientHints()
+        except Exception:
+            return
+        try:
+            hints.resetAll()
+            ua_type = self.user_agent_type
+            if ua_type in self.NON_CHROMIUM_UA_TYPES or ua_type == 'Custom':
+                # Firefox/Safari no envían Client Hints; con un UA personalizado
+                # no sabemos qué navegador imita
+                hints.setAllClientHintsEnabled(False)
+                return
+            hints.setAllClientHintsEnabled(True)
+            full = hints.fullVersion()
+            brands = {'Not=A?Brand': '24.0.0.0', 'Chromium': full}
+            if ua_type == 'Chrome':
+                brands['Google Chrome'] = full
+            elif ua_type == 'Edge':
+                brands['Microsoft Edge'] = full
+            elif ua_type == 'Brave':
+                brands['Brave'] = full
+            hints.setFullVersionList(brands)
+            if ua_type == 'Android':
+                hints.setPlatform('Android')
+                hints.setPlatformVersion('10.0.0')
+                hints.setIsMobile(True)
+                hints.setArch('')
+                hints.setModel('K')
+        except Exception as e:
+            print(f"[WARNING] Could not set client hints: {e}")
     def _get_user_agent(self):
         """Obtener el User-Agent configurado"""
         if self.user_agent_type == 'Custom':

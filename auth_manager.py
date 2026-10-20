@@ -484,7 +484,11 @@ class AuthManager(QObject):
             licenses_data = self.settings.value("plugin_licenses")
 
             if licenses_data:
-                licenses_dict = json.loads(licenses_data)
+                from security_utils import get_token_encryption
+                decrypted = get_token_encryption().decrypt(licenses_data)
+                # Una caché antigua en texto plano (o manipulada) se descarta:
+                # el backend la rehace cifrada al sincronizar las licencias
+                licenses_dict = json.loads(decrypted) if decrypted else {}
 
                 self.auth_state.plugin_licenses = {
 
@@ -509,7 +513,10 @@ class AuthManager(QObject):
                 for plugin_id, license_info in self.auth_state.plugin_licenses.items()
             }
 
-            self.settings.setValue("plugin_licenses", json.dumps(licenses_dict))
+            from security_utils import get_token_encryption
+            encrypted = get_token_encryption().encrypt(json.dumps(licenses_dict))
+            if encrypted:
+                self.settings.setValue("plugin_licenses", encrypted)
 
             print("[AUTH] Plugin licenses saved")
         except Exception as e:
@@ -782,6 +789,14 @@ class AuthManager(QObject):
             logger.info(f"Plugin {plugin_id} access granted")
 
             return True
+        # Con la lista de licencias ya recibida del backend, su "no" es
+        # definitivo: la caché local (QSettings) solo cubre el arranque, antes
+        # de que llegue esa lista. Antes un "no" del backend se podía saltar
+        # editando la caché.
+        if getattr(self.backend, "_licenses_loaded", False):
+            logger.warning(f"Plugin {plugin_id} access denied by backend")
+
+            return False
         # Verificar cache local como fallback
 
         logger.info(f"[DEBUG] Checking local cache for {plugin_id}. Total licenses in cache: {len(self.auth_state.plugin_licenses)}")

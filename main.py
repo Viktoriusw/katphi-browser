@@ -230,8 +230,12 @@ def _configure_stealth_chromium_flags():
         "--disable-infobars",
         # SharedArrayBuffer sin COOP/COEP: necesario para WASM workers (Amazon IVS/Twitch).
         "--enable-features=SharedArrayBuffer",
-        # Deshabilitar VA-API (hardware decode) — falla en este sistema (vaMapBuffer2 missing).
-        # Forzar FFmpeg software decode, que sí tiene H.264/AAC compilado.
+        # Deshabilitar VA-API (decodificación por hardware): falla en algunos
+        # drivers (vaMapBuffer2 missing). Solo afecta a cómo se decodifica, no
+        # a QUÉ códecs hay: H.264/AAC dependen de que Qt WebEngine esté
+        # compilado con webengine_proprietary_codecs (el de pip NO lo está; el
+        # "FFmpeg 7.x" del log es de Qt Multimedia, no de Chromium).
+        # Ver media_support.py y tools/build_qtwebengine_codecs.sh.
         "--disable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL",
     ]
     if "--webEngineArgs" in sys.argv:

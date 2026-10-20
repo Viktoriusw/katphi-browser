@@ -87,6 +87,23 @@ Crea el entorno virtual, instala las dependencias la primera vez y arranca el na
 
 La guía completa, con solución de problemas, está en [INSTALACION.md](INSTALACION.md).
 
+### Vídeo H.264/AAC
+
+El Qt WebEngine que instala `pip install PySide6` está compilado sin códecs
+propietarios: reproduce VP9, AV1, Opus y MP3 (YouTube funciona), pero no H.264, AAC
+ni HEVC, que es lo que sirven la mayoría de webs de vídeo. Cuando un vídeo no se puede
+reproducir por eso, Katphi lo avisa y ofrece abrirlo en el navegador del sistema o en
+mpv/VLC si están instalados.
+
+```bash
+python3 tools/check_codecs.py              # ¿qué códecs tiene tu Qt WebEngine?
+tools/build_qtwebengine_codecs.sh          # Linux: compilarlo con H.264/AAC (1-4 h, ~40 GB)
+tools/build_qtwebengine_codecs.sh restore  # volver al de PySide6
+```
+
+H.264, AAC y HEVC están sujetos a patentes; distribuir binarios que los incluyan puede
+requerir licencias.
+
 ## Compilar los paquetes
 
 | Plataforma | Comando | Resultado |

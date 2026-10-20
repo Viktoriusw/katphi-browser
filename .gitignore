@@ -58,3 +58,22 @@ venv_win/
 
 # Plugins descargados de la tienda (el repositorio solo lleva el sistema base)
 plugins/*/
+
+# Datos de sesión y de usuario que nunca deben compartirse
+*.db.migrated
+*.migrated
+*.corrupt
+last_session.json
+current_session.json
+crash_recovery.json
+sessions/
+katphi_browser.log*
+downloads_history.db
+
+# Paquetes sueltos de herramientas (no forman parte del proyecto)
+*.whl
+
+# Cachés de herramientas
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

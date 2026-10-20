@@ -516,6 +516,11 @@ class MainWindow(QMainWindow):
         print(
             f"[OK] Profile system initialized - Current profile: {self.profile_manager.current_profile_id}"
         )
+        try:
+            from tabs import apply_profile_storage
+            apply_profile_storage(self.profile_manager)
+        except Exception as e:
+            print(f"[WARNING] apply_profile_storage: {e}")
 
         # 4. Network Interceptor para modificar peticiones HTTP
         self.network_interceptor = NetworkInterceptor(self)
@@ -988,6 +993,13 @@ class MainWindow(QMainWindow):
             self.privacy_manager.sync_default_webengine_profile()
         except Exception as _sync_ex:
             print(f"[WARNING] sync_default_webengine_profile: {_sync_ex}")
+
+        # Vídeos con H.264/AAC: aviso y alternativas si el motor no los reproduce
+        try:
+            from media_support import MediaSupportMonitor
+            self.media_support_monitor = MediaSupportMonitor(self.tab_manager, self)
+        except Exception as _media_ex:
+            print(f"[WARNING] MediaSupportMonitor: {_media_ex}")
 
         # Configurar Password Manager
         self.password_dock = QDockWidget("Password Manager", self)
@@ -3255,6 +3267,15 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"[TOR] Error en la limpieza previa al reinicio: {e}")
         restart_with_tor(enabled, self)
+
+    def _restart_browser(self):
+        """Reinicia el navegador con los mismos argumentos (p. ej. tras cambiar de perfil)."""
+        from tor_restart import relaunch
+        try:
+            self._shutdown_cleanup()
+        except Exception as e:
+            print(f"[PROFILE] Error en la limpieza previa al reinicio: {e}")
+        relaunch()
     def toggle_tor_panel(self):
         """Toggle Tor panel visibility USING FIXED STACK"""
         if hasattr(self, "tor_panel") and self.tor_panel:
@@ -3502,8 +3523,7 @@ class MainWindow(QMainWindow):
             profile = browser.page().profile()
             if hasattr(self, "network_interceptor") and self.network_interceptor:
                 try:
-                    user_agent = self.network_interceptor._get_user_agent()
-                    profile.setHttpUserAgent(user_agent)
+                    self.network_interceptor.apply_to_profile(profile)
                 except Exception:
                     pass
             base_url = QUrl("https://gentab.local/")
@@ -4252,6 +4272,17 @@ class MainWindow(QMainWindow):
                 self.profile_manager.switch_profile(profile_id)
                 if hasattr(self, "profile_switcher"):
                     self.profile_switcher.update_current_profile()
+                from tabs import apply_profile_storage
+                if not apply_profile_storage(self.profile_manager):
+                    # Cookies, caché y almacenamiento del nuevo perfil solo se
+                    # pueden cargar al arrancar el motor web
+                    reply = QMessageBox.question(
+                        self, "Cambiar de perfil",
+                        "Los datos del nuevo perfil (cookies, sesiones, caché) se "
+                        "cargan al reiniciar el navegador.\n\n¿Reiniciar ahora?",
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+                    if reply == QMessageBox.Yes:
+                        self._restart_browser()
         except Exception as e:
             print(f"[PROFILE] Error switching profile: {e}")
 
@@ -4714,8 +4745,8 @@ class MainWindow(QMainWindow):
             # Obtener el User-Agent configurado
             user_agent_string = self.network_interceptor._get_user_agent()
 
-            # Configurar el User-Agent en el perfil predeterminado
-            default_profile.setHttpUserAgent(user_agent_string)
+            # Configurar el User-Agent (y Client Hints) en el perfil predeterminado
+            self.network_interceptor.apply_to_profile(default_profile)
 
             # Configurar el interceptor de red en el perfil predeterminado
             default_profile.setUrlRequestInterceptor(self.network_interceptor)
@@ -4746,8 +4777,8 @@ class MainWindow(QMainWindow):
             # Obtener el User-Agent configurado actualizado
             user_agent_string = self.network_interceptor._get_user_agent()
 
-            # Actualizar el User-Agent en el perfil predeterminado
-            default_profile.setHttpUserAgent(user_agent_string)
+            # Actualizar el User-Agent (y Client Hints) en el perfil predeterminado
+            self.network_interceptor.apply_to_profile(default_profile)
 
             print(
                 f"[UA-UPDATE] ✓ User-Agent updated on default profile: {self.network_interceptor.user_agent_type}"

@@ -2901,192 +2901,20 @@ class PrivacyManager(QWidget):
             pass
         except Exception as e:
             print(f"Error updating site permissions: {str(e)}")
-    def install_youtube_script(self, profile):
-        """Instala script para bloquear anuncios específicamente en YouTube"""
+    @staticmethod
+    def remove_youtube_script(profile):
+        """Quita el antiguo script "yt-adblock" si quedó instalado en el perfil.
 
+        Corría en el ApplicationWorld, así que sus parches de fetch/XHR/
+        defineProperty nunca llegaban al JS de la página: no bloqueaba nada.
+        Los anuncios de YouTube los filtra el bloqueador de red.
+        """
         try:
-            # Remover script existente si ya existe
-
             scripts = profile.scripts()
-
-            # Eliminar copias anteriores: insert() no deduplica y esta función
-            # se llama en cada pestaña y navegación (E-005).
-            # find() devuelve QList[QWebEngineScript] en PySide6 6.11
             for _existing in scripts.find("yt-adblock"):
                 scripts.remove(_existing)
-            # Crear nuevo script
-
-            script = QWebEngineScript()
-
-            script.setName("yt-adblock")
-
-            script.setInjectionPoint(QWebEngineScript.DocumentCreation)
-
-            script.setWorldId(QWebEngineScript.ApplicationWorld)
-
-            script.setRunsOnSubFrames(False)
-
-            # JavaScript para bloquear anuncios de YouTube
-
-            js_code = """
-
-(function() {
-
-    'use strict';
-
-    console.log('YouTube AdBlock script loaded');
-
-    // Interceptar ytInitialPlayerResponse
-
-    let originalDefineProperty = Object.defineProperty;
-
-    Object.defineProperty = function(obj, prop, descriptor) {
-
-        if (prop === 'ytInitialPlayerResponse' && descriptor && descriptor.value) {
-
-            try {
-
-                if (descriptor.value.adPlacements) {
-
-                    delete descriptor.value.adPlacements;
-                }
-
-                if (descriptor.value.playerAds) {
-
-                    delete descriptor.value.playerAds;
-                }
-
-                if (descriptor.value.adSlots) {
-
-                    delete descriptor.value.adSlots;
-                }
-            } catch (e) {}
-        }
-
-        return originalDefineProperty.call(this, obj, prop, descriptor);
-    };
-
-    // Parchear fetch para bloquear requests de anuncios
-
-    const originalFetch = window.fetch;
-
-    window.fetch = function(url, options) {
-
-        if (typeof url === 'string' || url instanceof URL) {
-
-            const urlStr = url.toString();
-
-            const blockedPatterns = [
-
-                'pagead2.googlesyndication.com',
-
-                'googleads.g.doubleclick.net',
-
-                'pubads.g.doubleclick.net',
-
-                'securepubads.g.doubleclick.net',
-
-                '/pagead/',
-
-                '/api/stats/ads'
-            ];
-
-            for (const pattern of blockedPatterns) {
-
-                if (urlStr.includes(pattern)) {
-
-                    console.log('Blocked fetch to:', urlStr);
-
-                    return Promise.reject(new Error('Blocked by AdBlock'));
-                }
-            }
-        }
-
-        return originalFetch.apply(this, arguments);
-    };
-
-    // Parchear XMLHttpRequest
-
-    const originalOpen = XMLHttpRequest.prototype.open;
-
-    XMLHttpRequest.prototype.open = function(method, url) {
-
-        if (typeof url === 'string') {
-
-            const blockedPatterns = [
-
-                'pagead2.googlesyndication.com',
-
-                'googleads.g.doubleclick.net',
-
-                'pubads.g.doubleclick.net',
-
-                'securepubads.g.doubleclick.net',
-
-                '/pagead/',
-
-                '/api/stats/ads'
-            ];
-
-            for (const pattern of blockedPatterns) {
-
-                if (url.includes(pattern)) {
-
-                    console.log('Blocked XHR to:', url);
-
-                    // Redirigir a endpoint dummy
-
-                    arguments[1] = 'data:text/plain,blocked';
-
-                    break;
-                }
-            }
-        }
-
-        return originalOpen.apply(this, arguments);
-    };
-
-    // Limpiar config de player existente
-
-    if (window.ytplayer && window.ytplayer.config) {
-
-        try {
-
-            if (window.ytplayer.config.args) {
-
-                delete window.ytplayer.config.args.ad_device;
-
-                delete window.ytplayer.config.args.ad_flags;
-
-                delete window.ytplayer.config.args.ad_logging_flag;
-
-                delete window.ytplayer.config.args.ad_preroll;
-
-                delete window.ytplayer.config.args.ad_tag;
-
-                delete window.ytplayer.config.args.adsystem;
-            }
-        } catch (e) {}
-    }
-
-
-})();
-
-            """
-
-            script.setSourceCode(js_code)
-
-            # Aplicar solo a YouTube
-
-            script.setWorldId(QWebEngineScript.ApplicationWorld)
-
-            # Añadir script al perfil
-
-            scripts.insert(script)
-
-            print("Script de YouTube AdBlock instalado")
         except Exception as e:
-            print(f"Error instalando script de YouTube: {e}")
+            logger.debug("remove_youtube_script: %s", e)
 
     def install_stealth_script(self, profile: QWebEngineProfile) -> None:
         """Inyecta JavaScript anti-detección en el perfil del navegador.
@@ -3253,114 +3081,11 @@ class PrivacyManager(QWidget):
         try { delete window[p]; } catch (e) {}
     });
 
-    // 8. Google Cast API — stub protegido con getter/setter
-    //    PROBLEMA: el Cast SDK de gstatic.com carga después del stealth script y
-    //    reemplaza window.cast con su propio objeto (sin framework). Usar
-    //    Object.defineProperty con setter intercepta esa asignación e inyecta
-    //    nuestros stubs en el nuevo objeto antes de que los scripts del sitio lo lean.
+    // 8. Google Cast: sin window.cast falso. Un cast.framework simulado sin
+    //    chrome.cast hacía creer a reproductores como Video.js (plugin
+    //    chromecast) que había Cast, y fallaban al leer chrome.cast.media.
+    //    Solo se avisa "Cast no disponible" a quien espere __onGCastApiAvailable.
     (function () {
-        var _noop = function () {};
-        var _noopCtx = {
-            setOptions: _noop, addEventListener: _noop,
-            removeEventListener: _noop,
-            getCurrentSession: function () { return null; },
-            getCastState: function () { return 'NO_DEVICES_AVAILABLE'; },
-            getSessionObj: function () { return null; }
-        };
-        var _castFw = {
-            VERSION: '1.0.0',
-            AutoJoinPolicy: {
-                CUSTOM_CONTROLLER_SCOPED: 'custom_controller_scoped',
-                TAB_AND_ORIGIN_SCOPED: 'tab_and_origin_scoped',
-                ORIGIN_SCOPED: 'origin_scoped',
-                PAGE_SCOPED: 'page_scoped'
-            },
-            DefaultActionPolicy: {
-                CREATE_SESSION: 'create_session',
-                CAST_THIS_TAB: 'cast_this_tab'
-            },
-            LoggerLevel: { DEBUG: 0, INFO: 800, WARNING: 900, ERROR: 1000, NONE: 1500 },
-            CastContext: { getInstance: function () { return _noopCtx; } },
-            RemotePlayer: function () {
-                this.isConnected = false; this.isMuted = false; this.isPaused = false;
-                this.volumeLevel = 1; this.currentTime = 0; this.duration = 0;
-                this.displayStatus = ''; this.displayName = ''; this.mediaInfo = null;
-                this.imageUrl = null; this.playerState = null; this.title = '';
-            },
-            RemotePlayerController: function () {
-                this.addEventListener = _noop; this.removeEventListener = _noop;
-                this.playOrPause = _noop; this.stop = _noop; this.seek = _noop;
-                this.muteOrUnmute = _noop; this.setVolumeLevel = _noop;
-            },
-            RemotePlayerEventType: {
-                IS_CONNECTED_CHANGED: 'isConnectedChanged',
-                IS_MEDIA_LOADED_CHANGED: 'isMediaLoadedChanged',
-                DURATION_CHANGED: 'durationChanged',
-                CURRENT_TIME_CHANGED: 'currentTimeChanged',
-                IS_PAUSED_CHANGED: 'isPausedChanged',
-                VOLUME_LEVEL_CHANGED: 'volumeLevelChanged',
-                IS_MUTED_CHANGED: 'isMutedChanged',
-                DISPLAY_NAME_CHANGED: 'displayNameChanged',
-                STATUS_TEXT_CHANGED: 'statusTextChanged',
-                TITLE_CHANGED: 'titleChanged',
-                DISPLAY_STATUS_CHANGED: 'displayStatusChanged',
-                MEDIA_INFO_CHANGED: 'mediaInfoChanged',
-                IMAGE_URL_CHANGED: 'imageUrlChanged',
-                PLAYER_STATE_CHANGED: 'playerStateChanged'
-            },
-            CastState: {
-                NO_DEVICES_AVAILABLE: 'NO_DEVICES_AVAILABLE',
-                NOT_CONNECTED: 'NOT_CONNECTED',
-                CONNECTING: 'CONNECTING',
-                CONNECTED: 'CONNECTED'
-            },
-            SessionState: {
-                NO_SESSION: 'NO_SESSION',
-                SESSION_STARTING: 'SESSION_STARTING',
-                SESSION_STARTED: 'SESSION_STARTED',
-                SESSION_ENDING: 'SESSION_ENDING',
-                SESSION_ENDED: 'SESSION_ENDED',
-                SESSION_START_FAILED: 'SESSION_START_FAILED'
-            },
-            CastContextEventType: {
-                CAST_STATE_CHANGED: 'caststatechanged',
-                SESSION_STATE_CHANGED: 'sessionstatechanged'
-            }
-        };
-        var _castMedia = {
-            DEFAULT_MEDIA_RECEIVER_APP_ID: 'CC1AD845',
-            IdleReason: { CANCELLED: 'CANCELLED', INTERRUPTED: 'INTERRUPTED', FINISHED: 'FINISHED', ERROR: 'ERROR' },
-            PlayerState: { IDLE: 'IDLE', PLAYING: 'PLAYING', PAUSED: 'PAUSED', BUFFERING: 'BUFFERING' },
-            RepeatMode: { OFF: 'REPEAT_OFF', ALL: 'REPEAT_ALL', SINGLE: 'REPEAT_SINGLE', ALL_AND_SHUFFLE: 'REPEAT_ALL_AND_SHUFFLE' },
-            MediaInfo: function (url, mime) { this.contentId = url; this.contentType = mime; },
-            LoadRequest: function (mediaInfo) { this.media = mediaInfo; },
-            SeekRequest: function () {}
-        };
-
-        // _innerCast: objeto que siempre existe como window.cast
-        var _innerCast = { framework: _castFw, media: _castMedia };
-
-        try {
-            // El setter intercepta cualquier window.cast = newObj (incluido el Cast SDK)
-            // e inyecta nuestros stubs si el nuevo objeto no los tiene.
-            Object.defineProperty(window, 'cast', {
-                configurable: true,
-                enumerable: true,
-                get: function () { return _innerCast; },
-                set: function (val) {
-                    if (val && typeof val === 'object') {
-                        if (!val.framework || !val.framework.AutoJoinPolicy) {
-                            val.framework = _castFw;
-                        }
-                        if (!val.media) {
-                            val.media = _castMedia;
-                        }
-                        _innerCast = val;
-                    }
-                }
-            });
-        } catch (e) {}
-
         // __onGCastApiAvailable: si el Cast SDK no carga o no lo llama, lo llamamos
         // nosotros con false (sin Chromecast) para que los players no queden esperando.
         var _gcaCalled = false;
@@ -3418,14 +3143,18 @@ class PrivacyManager(QWidget):
             network_interceptor = self.parent.network_interceptor
         if block_ads:
             if network_interceptor is not None:
-                profile.setUrlRequestInterceptor(
-                    CombinedUrlRequestInterceptor(
+                # Una sola instancia reutilizada: antes se creaba una nueva en
+                # cada pestaña y en cada cambio de ajustes
+                combined = getattr(self, "_combined_interceptor", None)
+                if combined is None or combined._network is not network_interceptor:
+                    combined = CombinedUrlRequestInterceptor(
                         self.ad_blocker,
                         network_interceptor,
                         block_ads=True,
                         parent=self,
                     )
-                )
+                    self._combined_interceptor = combined
+                profile.setUrlRequestInterceptor(combined)
             else:
                 profile.setUrlRequestInterceptor(self.ad_blocker)
         else:
@@ -3467,17 +3196,7 @@ class PrivacyManager(QWidget):
                 # ad-blocking, para evitar que Google y otros detecten automatización.
                 self.install_stealth_script(profile)
 
-                if self.settings.get_setting("block_ads"):
-                    # Instalar script de YouTube para bloqueo adicional
-                    self.install_youtube_script(profile)
-                else:
-                    # Remover script de YouTube si existe
-                    try:
-                        _scripts = profile.scripts()
-                        for _existing in _scripts.find("yt-adblock"):
-                            _scripts.remove(_existing)
-                    except Exception as e:
-                        print(f"Error removiendo script de YouTube: {e}")
+                self.remove_youtube_script(profile)
                 # Configurar permisos
 
                 settings = profile.settings()

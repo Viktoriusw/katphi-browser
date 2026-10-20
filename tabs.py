@@ -50,6 +50,34 @@ def get_private_profile():
     return _private_profile
 
 
+_storage_profile_id = None
+
+
+def apply_profile_storage(profile_manager):
+    """Fija las rutas de datos del perfil por defecto según el perfil de usuario.
+
+    Debe llamarse una vez, antes de crear la primera página: Qt WebEngine no
+    admite cambiar setPersistentStoragePath/setCachePath con páginas vivas.
+    Devuelve False si ya estaba fijado para otro perfil (el cambio de perfil
+    se aplica al reiniciar).
+    """
+    global _storage_profile_id
+    if _is_private_mode() or profile_manager is None:
+        return True
+    profile_id = profile_manager.current_profile_id
+    if _storage_profile_id is not None:
+        return _storage_profile_id == profile_id
+    profile = QWebEngineProfile.defaultProfile()
+    try:
+        profile.setPersistentStoragePath(profile_manager.get_profile_path())
+        profile.setCachePath(profile_manager.get_profile_path(subdirectory="cache"))
+        _storage_profile_id = profile_id
+        print(f"[PROFILE] Using profile-specific paths: {profile.persistentStoragePath()}")
+    except Exception as e:
+        print(f"[WARNING] Could not set profile paths: {e}")
+    return True
+
+
 class _NewTabButton(QPushButton):
     """Botón '+' que se posiciona justo después de la última pestaña."""
 
@@ -447,24 +475,12 @@ class TabManager:
             # Configurar el perfil con datos aislados por usuario
             profile = browser.page().profile()
 
-            # Si hay un profile_manager disponible, usar rutas específicas del perfil
-            # (no en modo privado: el perfil off-the-record no escribe en disco)
+            # Las rutas de almacenamiento del perfil se fijan una sola vez al
+            # arrancar (apply_profile_storage): cambiarlas aquí, con otras
+            # páginas ya vivas en el mismo perfil, mezclaba datos de perfiles.
             if private:
                 profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
                 profile.setHttpCacheType(QWebEngineProfile.MemoryHttpCache)
-            elif hasattr(self.parent, 'profile_manager') and self.parent.profile_manager:
-                profile_path = self.parent.profile_manager.get_profile_path()
-
-                # Configurar rutas de almacenamiento persistente
-                cookies_path = self.parent.profile_manager.get_profile_path(subdirectory="cookies")
-                cache_path = self.parent.profile_manager.get_profile_path(subdirectory="cache")
-
-                try:
-                    profile.setPersistentStoragePath(profile_path)
-                    profile.setCachePath(cache_path)
-                    print(f"[PROFILE] Using profile-specific paths: {profile_path}")
-                except Exception as e:
-                    print(f"[WARNING] Could not set profile paths: {e}")
             if not private:
                 profile.setPersistentCookiesPolicy(QWebEngineProfile.AllowPersistentCookies)
                 profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
@@ -472,11 +488,9 @@ class TabManager:
             # Configurar User-Agent del perfil (MÉTODO CORRECTO DE QT)
             if hasattr(self.parent, 'network_interceptor') and self.parent.network_interceptor:
                 try:
-                    # Obtener el User-Agent configurado
-                    user_agent_string = self.parent.network_interceptor._get_user_agent()
-
-                    # MÉTODO 1: Configurar User-Agent a nivel de perfil (afecta a navigator.userAgent)
-                    profile.setHttpUserAgent(user_agent_string)
+                    # MÉTODO 1: User-Agent del perfil (navigator.userAgent, cabecera
+                    # HTTP y Client Hints coherentes)
+                    self.parent.network_interceptor.apply_to_profile(profile)
                     print(f"[UA-PROFILE] User-Agent set on profile: {self.parent.network_interceptor.user_agent_type}")
 
                     # MÉTODO 2: Configurar interceptor de red (afecta a headers HTTP)
@@ -489,6 +503,13 @@ class TabManager:
                     self.parent.privacy_manager.apply_privacy_settings(browser)
                 except Exception as priv_ex:
                     print(f"[WARNING] apply_privacy_settings on new tab: {priv_ex}")
+            # Aviso de vídeos H.264/AAC no reproducibles (se desactiva solo si
+            # el motor web tiene esos códecs)
+            try:
+                import media_support
+                media_support.install_scripts(profile)
+            except Exception as media_ex:
+                print(f"[WARNING] media_support on new tab: {media_ex}")
             # Configurar gestor de contraseñas ANTES de cargar la URL
             # para que los scripts estén registrados en la primera carga.
             # En modo privado no se capturan ni autorrellenan contraseñas.
