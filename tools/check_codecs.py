@@ -14,7 +14,10 @@ import json
 import os
 import sys
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# En Windows no hace falta (la vista nunca se muestra) y WebEngine con la
+# plataforma offscreen puede no arrancar
+if sys.platform != "win32":
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QTimer, QUrl, qVersion  # noqa: E402
 from PySide6.QtWebEngineCore import qWebEngineChromiumVersion  # noqa: E402

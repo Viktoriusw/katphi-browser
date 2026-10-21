@@ -101,6 +101,11 @@ tools/build_qtwebengine_codecs.sh          # Linux: compilarlo con H.264/AAC (1-
 tools/build_qtwebengine_codecs.sh restore  # volver al de PySide6
 ```
 
+En Windows lo hace `build_windows.bat` (llama a
+`tools\build_qtwebengine_codecs_windows.ps1`): la primera vez compila Qt WebEngine con
+MSVC en `C:\qtwe` (3-8 h, ~100 GB; requiere Visual Studio 2022 con C++ y el
+Windows 11 SDK 10.0.26100) y en los builds siguientes solo lo reinstala.
+
 H.264, AAC y HEVC están sujetos a patentes; distribuir binarios que los incluyan puede
 requerir licencias.
 

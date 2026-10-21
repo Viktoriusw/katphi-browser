@@ -39,7 +39,9 @@ pip install "pyinstaller>=6.0.0"
 pip install "pyinstaller-hooks-contrib>=2024.0"
 
 :: Core
-pip install "PySide6>=6.8.0"
+:: PySide6 fijado: el Qt WebEngine con codecs H.264/AAC se compila para esta
+:: version exacta (tools\build_qtwebengine_codecs_windows.ps1)
+pip install "PySide6==6.11.0"
 pip install "requests>=2.28.0"
 pip install "beautifulsoup4>=4.11.0"
 pip install "lxml>=4.9.0"
@@ -75,6 +77,36 @@ pip install "reportlab>=4.0.0"
 :: Legibilidad de texto (dependencia del plugin seo_analyzer)
 pip install "textstat>=0.7.3"
 
+echo.
+echo [INFO] Qt WebEngine con codecs H.264/AAC...
+echo.
+
+:: El Qt WebEngine de pip no reproduce H.264/AAC (los videos de casi todas las
+:: webs salvo YouTube). La primera vez se compila en C:\qtwe (3-8 horas, ~100 GB,
+:: requiere Visual Studio 2022 + Windows 11 SDK 10.0.26100); despues solo se
+:: reinstala sobre venv_build en segundos.
+:: Para un build de prueba sin codecs: set KATPHI_SIN_CODECS=1
+if "%KATPHI_SIN_CODECS%"=="1" (
+    echo [AVISO] KATPHI_SIN_CODECS=1: el ejecutable NO reproducira H.264/AAC
+    goto :pyinstaller
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\build_qtwebengine_codecs_windows.ps1 -Python "%CD%\venv_build\Scripts\python.exe"
+if errorlevel 1 (
+    echo.
+    echo [ERROR] No se pudo compilar o instalar Qt WebEngine con codecs.
+    echo         Revisa los errores arriba y C:\qtwe\configure.log
+    pause
+    exit /b 1
+)
+python tools\check_codecs.py
+if errorlevel 1 (
+    echo.
+    echo [ERROR] El Qt WebEngine instalado sigue sin H.264/AAC.
+    pause
+    exit /b 1
+)
+
+:pyinstaller
 echo.
 echo [INFO] Iniciando build con PyInstaller...
 echo       Esto puede tardar 5-15 minutos...
