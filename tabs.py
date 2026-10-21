@@ -10,9 +10,9 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from PySide6.QtCore import QUrl, Qt, QSettings, Signal, QEvent, QSize
 
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 
-from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
+from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineSettings
 
 from tab_groups import TabGroupManager
 
@@ -139,6 +139,58 @@ class _NewTabButton(QPushButton):
         self._apply_style(color)
 
 
+class FullScreenWindow(QWidget):
+    """Ventana a pantalla completa para requestFullscreen() de una web (vídeos).
+
+    Como el ejemplo simplebrowser de Qt: la página pasa a una vista propia de
+    esta ventana y al salir vuelve a la vista de su pestaña, así la interfaz
+    del navegador no hay que ocultarla pieza a pieza.
+    """
+
+    def __init__(self, old_view):
+        super().__init__(None, Qt.Window)
+        self._old_view = old_view
+        self._restored = False
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowTitle(old_view.window().windowTitle())
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._view = QWebEngineView(self)
+        layout.addWidget(self._view)
+        self._view.setPage(old_view.page())
+        # Esc sale (Chromium no la gestiona por sí solo dentro de Qt)
+        QShortcut(QKeySequence(Qt.Key_Escape), self,
+                  activated=lambda: self._view.page().triggerAction(QWebEnginePage.ExitFullScreen))
+        screen = old_view.window().screen()
+        if screen is not None:
+            self.setGeometry(screen.geometry())
+        self.showFullScreen()
+        self.activateWindow()
+        self._view.setFocus()
+
+    def restore(self):
+        """Devuelve la página a la vista de la pestaña y cierra la ventana."""
+        if self._restored:
+            return
+        self._restored = True
+        try:
+            self._old_view.setPage(self._view.page())
+            self._old_view.setFocus()
+        except RuntimeError:
+            pass  # la pestaña ya se destruyó
+        self.close()
+
+    def closeEvent(self, event):
+        # Alt+F4 / cierre del gestor de ventanas: avisar a la web antes
+        if not self._restored:
+            try:
+                self._view.page().triggerAction(QWebEnginePage.ExitFullScreen)
+            except RuntimeError:
+                pass
+            self.restore()
+        super().closeEvent(event)
+
+
 class BrowserView(QWebEngineView):
     """QWebEngineView que abre target="_blank" / window.open en pestañas del navegador.
 
@@ -148,6 +200,26 @@ class BrowserView(QWebEngineView):
     def __init__(self, tab_manager, parent=None):
         super().__init__(parent)
         self._tab_manager = tab_manager
+        self._fullscreen_window = None
+
+    def setup_fullscreen(self):
+        """Permite requestFullscreen(); sin esto las webs dan "Fullscreen is not supported"."""
+        page = self.page()
+        page.settings().setAttribute(QWebEngineSettings.FullScreenSupportEnabled, True)
+        page.fullScreenRequested.connect(self._on_fullscreen_requested)
+
+    def _on_fullscreen_requested(self, request):
+        request.accept()
+        if request.toggleOn():
+            if self._fullscreen_window is None:
+                self._fullscreen_window = FullScreenWindow(self)
+        else:
+            self.exit_fullscreen_window()
+
+    def exit_fullscreen_window(self):
+        window, self._fullscreen_window = self._fullscreen_window, None
+        if window is not None:
+            window.restore()
 
     def createWindow(self, window_type):
         # Clic central / Ctrl+clic → segundo plano; el resto en primer plano
@@ -468,6 +540,11 @@ class TabManager:
             # compartido (la página es hija de la vista y se destruye con ella)
             if private:
                 browser.setPage(QWebEnginePage(get_private_profile(), browser))
+            else:
+                # Página explícita (mismo perfil por defecto): la implícita de
+                # QWebEngineView se destruye al pasarla a la vista de pantalla
+                # completa y devolverla
+                browser.setPage(QWebEnginePage(QWebEngineProfile.defaultProfile(), browser))
 
             # IMPORTANTE: Configurar el perfil ANTES de establecer la URL
             # para que la primera petición HTTP use el User-Agent correcto
@@ -503,6 +580,7 @@ class TabManager:
                     self.parent.privacy_manager.apply_privacy_settings(browser)
                 except Exception as priv_ex:
                     print(f"[WARNING] apply_privacy_settings on new tab: {priv_ex}")
+            browser.setup_fullscreen()
             # Aviso de vídeos H.264/AAC no reproducibles (se desactiva solo si
             # el motor web tiene esos códecs)
             try:
@@ -697,6 +775,9 @@ class TabManager:
         if browser is None:
             return
         try:
+            # Si la pestaña se cierra en pantalla completa, recuperar antes la página
+            if hasattr(browser, 'exit_fullscreen_window'):
+                browser.exit_fullscreen_window()
             page = browser.page() if hasattr(browser, 'page') else None
             try:
                 browser.stop()

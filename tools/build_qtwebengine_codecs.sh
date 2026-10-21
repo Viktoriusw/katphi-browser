@@ -33,7 +33,9 @@ PYTHON="${PYTHON:-python3}"
 # Ruta CORTA: Chromium genera nombres de fichero a partir de la ruta del
 # directorio de build y con rutas largas falla con "File name too long".
 WORKDIR="${WORKDIR:-$HOME/qtwe}"
-JOBS="${JOBS:-$(( $(nproc) > 8 ? 8 : $(nproc) ))}"
+# Cada objeto de QtWebEngineCore pide ~1,5-3 GB de RAM: con 8 hilos y 32 GB
+# el equipo se quedó sin memoria y se congeló. 4 es seguro con 32 GB.
+JOBS="${JOBS:-4}"
 ACTION="${1:-all}"
 
 QT_VERSION="$("$PYTHON" -c 'import PySide6.QtCore as c; print(c.qVersion())')"
@@ -95,6 +97,15 @@ fetch_dev_packages() {
         target="$(basename "$(readlink "$so")")"
         [ -e "/usr/lib/x86_64-linux-gnu/$target" ] && ln -sf "/usr/lib/x86_64-linux-gnu/$target" "$so"
     done
+    # Algunos -dev (libnspr4-dev) solo traen el .a; la .so de ejecución va sin
+    # versión en el sistema. Sin este enlace ld coge el .a y falla con
+    # "DSO missing from command line" al enlazar v8_context_snapshot_generator
+    for a in "$l"/*.a; do
+        local base
+        base="$(basename "$a" .a)"
+        [ -e "$l/$base.so" ] || [ ! -e "/usr/lib/x86_64-linux-gnu/$base.so" ] || \
+            ln -sf "/usr/lib/x86_64-linux-gnu/$base.so" "$l/$base.so"
+    done
 }
 
 build_env() {
@@ -127,7 +138,10 @@ configure_and_build() {
         grep -q "QT_FEATURE_webengine_proprietary_codecs:INTERNAL=ON" CMakeCache.txt || {
             echo "ERROR: proprietary_codecs no quedó activado." >&2; exit 1; }
     fi
-    nice -n 15 ninja -j"$JOBS"
+    # El ninja interior de Chromium ignora el -j del exterior (y NINJAFLAGS solo
+    # se lee al configurar): sin esto lanza un compilador por núcleo
+    sed -i -E "s#(/ninja|[ ]ninja)( -j[0-9]+)? -C ?($BUILD/src/core/Release/[^ ]+)#\\1 -j$JOBS -C \\3#g" build.ninja
+    nice -n 15 ninja -j1
 }
 
 install_into_pyside6() {
