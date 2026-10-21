@@ -18,6 +18,14 @@ pyside6_datas += collect_data_files('PySide6.QtWebEngine')
 # Binarios de PySide6 (DLLs, QtWebEngineProcess.exe, etc.)
 pyside6_binaries = collect_dynamic_libs('PySide6')
 
+# Fuera la copia de seguridad que deja tools/build_qtwebengine_codecs.sh
+# (Qt/.webengine-original): son ~220 MB del WebEngine sin codecs
+def _sin_backup_webengine(entries):
+    return [e for e in entries if '.webengine-original' not in e[0]]
+
+pyside6_datas = _sin_backup_webengine(pyside6_datas)
+pyside6_binaries = _sin_backup_webengine(pyside6_binaries)
+
 # Hidden imports de PySide6
 pyside6_hiddenimports = [
     'PySide6.QtCore',
