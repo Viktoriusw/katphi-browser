@@ -124,6 +124,44 @@
       "download_url": "https://api.katphi.com/api/plugins/katphi_files/download",
       "info_url": "https://api.katphi.com/api/plugins/katphi_files/info"
     },
+    "containers": {
+      "name": "Containers",
+      "version": "1.0.0",
+      "author": "Katphi Team",
+      "description": "Identidades aisladas: pestañas con sus propias cookies y sesiones para tener varias cuentas del mismo sitio abiertas a la vez.",
+      "premium": true,
+      "category": "network",
+      "tags": ["containers", "contenedores", "privacy", "cookies", "accounts", "identity"],
+      "features": ["Contenedores con cookies, almacenamiento local y caché separados", "Símbolo y color de cada contenedor en sus pestañas", "Abrir siempre un sitio en su contenedor", "Contenedores temporales que se borran al cerrar la pestaña", "User-Agent propio por contenedor", "Reabrir una pestaña o abrir un enlace en otro contenedor", "Las pestañas vuelven a su contenedor al restaurar la sesión", "Con Katphi Sync: contenedores y sitios asignados en todos tus equipos"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "3.6.0",
+        "dependencies": []
+      },
+      "permissions": ["ui_modification", "tab_management", "file_system"],
+      "icon": "containers_icon.svg",
+      "download_url": "https://api.katphi.com/api/plugins/containers/download",
+      "info_url": "https://api.katphi.com/api/plugins/containers/info"
+    },
+    "katphi_sync": {
+      "name": "Katphi Sync",
+      "version": "1.0.0",
+      "author": "Katphi Team",
+      "description": "Marcadores, contraseñas, pestañas y contenedores en todos tus equipos, cifrados de extremo a extremo en tu propia nube (carpeta sincronizada o WebDAV).",
+      "premium": true,
+      "category": "network",
+      "tags": ["sync", "sincronización", "e2e", "encryption", "bookmarks", "passwords", "webdav"],
+      "features": ["Cifrado de extremo a extremo (AES-256-GCM, clave derivada con scrypt)", "Sin servidor de Katphi: tu carpeta sincronizada o tu WebDAV (Nextcloud, ownCloud, NAS)", "Marcadores y carpetas, incluida la barra de favoritos", "Contraseñas del gestor del navegador", "Pestañas abiertas en tus otros equipos", "Con Containers: contenedores y sitios asignados", "Fusión por elemento: gana el último cambio y los borrados se propagan", "Lista de equipos conectados y cambio de frase sin perder datos"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "3.6.0",
+        "dependencies": ["cryptography", "requests"]
+      },
+      "permissions": ["web_access", "file_system", "network_access", "ui_modification"],
+      "icon": "katphi_sync_icon.svg",
+      "download_url": "https://api.katphi.com/api/plugins/katphi_sync/download",
+      "info_url": "https://api.katphi.com/api/plugins/katphi_sync/info"
+    },
     "themes": {
       "name": "Advanced Theme System",
       "version": "1.0.0",

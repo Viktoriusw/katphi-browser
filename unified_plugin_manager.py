@@ -473,6 +473,22 @@ class UnifiedPluginManager(QObject):
                 "trial_days": 7
             },
 
+            "containers": {
+                "name": "Containers",
+                "free_features": [],
+                "premium_features": ["containers", "site_rules", "temporary_containers",
+                                     "container_user_agent"],
+                "trial_days": 7
+            },
+
+            "katphi_sync": {
+                "name": "Katphi Sync",
+                "free_features": [],
+                "premium_features": ["sync_bookmarks", "sync_passwords", "sync_tabs",
+                                     "sync_containers"],
+                "trial_days": 7
+            },
+
             "ai_assistant": {
 
                 "name": "Asistente de IA",

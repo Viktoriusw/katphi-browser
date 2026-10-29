@@ -55,6 +55,7 @@ except ImportError:
 from scrapelio_client import (ScrapelioSearchWorker, format_results_for_llm, report_click,
                               report_recommended, web_search_url)
 from browser_actions import BrowserActions, parse_direct_command, TAG_VALUES, CLOSE_INTENT_RE
+from plugin_tools import PluginTools, PLUGIN_NAMES, TAGS as PLUGIN_TAGS
 
 SYSTEM_PROMPT_BROWSER = """You are the AI copilot of the Katphi web browser. You help the user navigate, search and discover content, in the user's language.
 
@@ -199,6 +200,7 @@ class ChatPanelSafe(BasePanel):
         self._last_results: list = []         # resultados de la última búsqueda (para "abre el 2")
         self._last_query_id = None            # id de esa búsqueda en Scrapelio (clics y recomendaciones)
         self._agent_steps = 0                 # búsquedas encadenadas por el LLM en este turno
+        self._plugin_steps = 0                # usos de plugins encadenados en este turno
         self._agent_cancelled = False
         self._agent_system_prompt = SYSTEM_PROMPT_BROWSER
 
@@ -273,6 +275,8 @@ class ChatPanelSafe(BasePanel):
 
         # Acciones de navegación (órdenes directas y etiquetas del LLM)
         self.browser_actions = BrowserActions(self.window)
+        # Plugins premium que puede usar el asistente (Scraping, SEO, Office)
+        self.plugin_tools = PluginTools(self.window, self)
 
         # Helio: conectar auto-contexto tras construir la UI
         QTimer.singleShot(2000, self._helio_connect_auto_context)
@@ -740,8 +744,8 @@ class ChatPanelSafe(BasePanel):
                     })
                 if tab_count > 1:
                     _basic_suggestions.append({
-                        "text": "Crea un dashboard desde tus pestañas",
-                        "action": "gentab_dashboard",
+                        "text": "Crea un mapa mental de tus pestañas",
+                        "action": "gentab_mindmap",
                     })
                 _basic_suggestions.append({
                     "text": "Analiza tu sesión de navegación",
@@ -782,13 +786,16 @@ class ChatPanelSafe(BasePanel):
             elif action == "analyze":
                 self._run_session_analysis()
             elif action and action.startswith("gentab_"):
-                _prompts = {
-                    "gentab_compare": "Compara los productos/contenidos de todas las pestañas en una tabla interactiva ordenable.",
-                    "gentab_flashcards": "Genera flashcards interactivas con preguntas y respuestas extraídas del contenido.",
-                    "gentab_news": "Resume las noticias en un briefing ejecutivo con los puntos más importantes.",
-                    "gentab_dashboard": "Crea un dashboard con métricas y datos extraídos de las pestañas. Usa gráficos y contadores.",
+                import gentab_formats
+                _formats = {
+                    "gentab_compare": "compare",
+                    "gentab_flashcards": "flashcards",
+                    "gentab_news": "briefing",
+                    "gentab_mindmap": "mindmap",
                 }
-                prompt = _prompts.get(action, "Genera una app interactiva desde las pestañas.")
+                fmt = _formats.get(action)
+                prompt = (gentab_formats.FORMATS[fmt]["task"] if fmt
+                          else "Genera una app interactiva desde las pestañas.")
                 self._apply_quick_action(prompt, "gentab")
             else:
                 # Acción genérica: poner texto en el chat
@@ -1159,21 +1166,9 @@ class ChatPanelSafe(BasePanel):
             ("Analizar y resumir sesión con IA",
              "Analiza todas mis pestañas abiertas, identifica qué estoy investigando y dame un resumen con insights clave.",
              "session"),
-            ("Comparar contenido de pestañas",
-             "Compara el contenido de todas las pestañas abiertas en una tabla interactiva con los puntos clave de cada una.",
-             "gentab"),
             ("Resumen ejecutivo multi-pestaña",
              "Resume todas las pestañas abiertas en un briefing ejecutivo con los puntos más importantes.",
              "multi"),
-            ("Mapa de enlaces y relaciones",
-             "Genera un mapa de enlaces que muestre todos los links encontrados en las pestañas, agrupados por dominio.",
-             "gentab"),
-            ("Flashcards de estudio",
-             "Genera flashcards interactivas con preguntas y respuestas extraídas del contenido de mis pestañas.",
-             "gentab"),
-            ("Dashboard de datos",
-             "Crea un dashboard con métricas y KPIs extraídos de los datos de las pestañas. Usa gráficos y contadores.",
-             "gentab"),
         ]
 
         _qa_style = (
@@ -1204,6 +1199,18 @@ class ChatPanelSafe(BasePanel):
         gentab_info.setWordWrap(True)
         gentab_info.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
         gg_layout.addWidget(gentab_info)
+
+        # Un botón por formato: cada uno genera una página con estructura propia
+        import gentab_formats
+        for info in gentab_formats.FORMATS.values():
+            btn = QPushButton(info["label"])
+            btn.setToolTip(info["description"])
+            btn.setStyleSheet(_qa_style)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(
+                lambda checked=False, p=info["task"]: self._apply_quick_action(p, "gentab")
+            )
+            gg_layout.addWidget(btn)
 
         self._gentab_prompt_input = QTextEdit()
         self._gentab_prompt_input.setPlaceholderText(
@@ -1932,6 +1939,15 @@ class ChatPanelSafe(BasePanel):
             <li><strong>Clear chat:</strong> Use the "Clear Chat" button to start a new conversation</li>
         </ul>
 
+        <h3>Premium plugins from the chat:</h3>
+        <p>If you have Scraping, SEO Analyzer or Katphi Office installed, ask the assistant in your own words:</p>
+        <ul>
+            <li><strong>Scraping:</strong> "extrae los productos de esta página", "exporta la selección a Excel"</li>
+            <li><strong>SEO Analyzer:</strong> "analiza el SEO de esta página", "¿qué palabras clave tiene?", "exporta el informe en PDF"</li>
+            <li><strong>Katphi Office:</strong> "pon los datos en una hoja de cálculo", "hazme una tabla comparativa en una hoja", "resume este documento" (with the document open in the current tab)</li>
+        </ul>
+        <p>New spreadsheets are saved in your Downloads folder and opened in Katphi Office. Exports always ask where to save.</p>
+
         <h3>Advanced Settings:</h3>
         <ul>
             <li><strong>Temperature:</strong> Controls the creativity of responses (0.0 = very conservative, 1.0 = very creative)</li>
@@ -2193,7 +2209,7 @@ class ChatPanelSafe(BasePanel):
             elif mode == "session":
                 system_prompt = SYSTEM_PROMPT_NAV_ANALYST
             else:
-                system_prompt += self._browser_state_note()
+                system_prompt += self.plugin_tools.prompt_section() + self._browser_state_note()
             # Conversación persistente: incluir últimos turnos
             history_window = self.session_messages[-10:] if self.session_messages else []
             messages = [{"role": "system", "content": system_prompt}] + history_window + [
@@ -2209,6 +2225,7 @@ class ChatPanelSafe(BasePanel):
 
             # Nuevo turno: el LLM puede encadenar búsquedas Scrapelio (ver _on_chat_finished)
             self._agent_steps = 0
+            self._plugin_steps = 0
             self._agent_cancelled = False
             self._agent_system_prompt = system_prompt
 
@@ -2287,6 +2304,7 @@ class ChatPanelSafe(BasePanel):
                 w.wait(timeout_ms)
             except RuntimeError:
                 pass
+        self.plugin_tools.shutdown(timeout_ms)
 
     def _cancel_chat_worker(self):
         """Cancela el worker en curso y restaura el botón de envío."""
@@ -2297,13 +2315,15 @@ class ChatPanelSafe(BasePanel):
         self._stop_activity()
 
     # Etiquetas de acción que el LLM escribe para controlar el navegador
-    _ACTION_TAG_RE = re.compile(r"<(search|open|nav|tab|scroll|find|zoom)>\s*(.*?)\s*</\1>",
+    _ACTION_TAG_RE = re.compile(r"<(search|open|nav|tab|scroll|find|zoom|scrape|seo|office)>\s*(.*?)\s*</\1>",
                                 re.IGNORECASE | re.DOTALL)
     # Etiqueta aún abierta durante el streaming (se oculta hasta que se cierre)
-    _PARTIAL_TAG_RE = re.compile(r"<(?:search|open|nav|tab|scroll|find|zoom)>(?:(?!</).)*$|<[a-z/]{0,7}$",
+    _PARTIAL_TAG_RE = re.compile(r"<(?:search|open|nav|tab|scroll|find|zoom|scrape|seo|office)>(?:(?!</).)*$"
+                                 r"|<[a-z/]{0,7}$",
                                  re.IGNORECASE | re.DOTALL)
     _MAX_BROWSER_ACTIONS = 3  # acciones de navegación por respuesta
     _MAX_AGENT_SEARCHES = 2
+    _MAX_PLUGIN_STEPS = 4      # usos de plugins encadenados por turno
     _OPEN_INTENT_RE = re.compile(
         r"\b(?:abr[eaií]\w*|ábre\w*|open|visita\w*|ll[eé]va\w*|navega\w*|ve\s+a|ir\s+a)\b",
         re.IGNORECASE)
@@ -2387,6 +2407,13 @@ class ChatPanelSafe(BasePanel):
             else:
                 _chat_log.info("Ignorado <open> sin petición del usuario: %s", open_targets)
         self._run_llm_browser_actions(actions, original)
+        plugin_calls = [(tag.lower(), arg) for tag, arg in actions if tag.lower() in PLUGIN_TAGS]
+        if plugin_calls and not self._agent_cancelled:
+            if self._plugin_steps < self._MAX_PLUGIN_STEPS:
+                self._plugin_steps += 1
+                self._run_plugin_tool(*plugin_calls[0])
+                return
+            _chat_log.info("Límite de usos de plugins en este turno; ignorado <%s>", plugin_calls[0][0])
         queries = [arg for tag, arg in actions if tag.lower() == "search" and arg]
         if (queries and not self._agent_cancelled
                 and self._agent_steps < self._MAX_AGENT_SEARCHES):
@@ -2421,6 +2448,24 @@ class ChatPanelSafe(BasePanel):
             done += 1
             ok, msg = self.browser_actions.execute(tag, arg)
             self._notify(msg, ok)
+
+    def _run_plugin_tool(self, tag: str, arg: str) -> None:
+        """Ejecuta una etiqueta <scrape>/<seo>/<office> y devuelve el resultado al LLM."""
+        self._start_activity(f"Usando {PLUGIN_NAMES.get(tag, tag)}...")
+
+        def done(ok: bool, message: str, feedback: str):
+            if self._agent_cancelled:
+                return
+            if message:
+                self._notify(message, ok)
+            if feedback:
+                self._continue_agent(feedback, "Analizando el resultado...")
+                return
+            self._restore_send_button()
+            self._stop_activity()
+            self.reply_finished.emit(message)
+
+        self.plugin_tools.run(tag, arg, done)
 
     def _notify(self, message: str, ok: bool = True) -> None:
         """Muestra un aviso en el chat y lo publica para otros componentes (voz)."""
@@ -2501,6 +2546,10 @@ class ChatPanelSafe(BasePanel):
         else:
             feedback = ("[Navegador] " + format_results_for_llm(data) +
                         "\nEl usuario ya ve estos resultados numerados. Continúa tu respuesta usándolos.")
+        self._continue_agent(feedback, "Analizando resultados...")
+
+    def _continue_agent(self, feedback: str, activity: str) -> None:
+        """Añade el resultado de una herramienta a la conversación y relanza el LLM."""
         self.session_messages.append({"role": "user", "content": feedback})
         window = self.session_messages[-12:]
         while window and window[0]["role"] != "user":   # algunos proveedores exigen empezar por user
@@ -2508,7 +2557,7 @@ class ChatPanelSafe(BasePanel):
         messages = [{"role": "system", "content": self._agent_system_prompt}] + window
         temperature = getattr(self.llm_config, "temperature", 0.7)
         max_tokens = max(1024, min(8192, getattr(self.llm_config, "max_tokens", 4096)))
-        self._start_activity("Analizando resultados...")
+        self._start_activity(activity)
         self._launch_chat_worker(messages, getattr(self, "_streaming_original_message", ""),
                                  max_tokens, temperature)
 

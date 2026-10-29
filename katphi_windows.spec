@@ -175,6 +175,12 @@ app_hiddenimports = [
     'cryptography.hazmat.primitives.asymmetric.x25519',
     'cryptography.hazmat.primitives.ciphers.aead',
     'cryptography.hazmat.primitives.kdf.hkdf',
+    'uuid',          # containers, katphi_sync
+    'zlib',          # katphi_sync
+    'platform',      # katphi_sync
+    'calendar',      # katphi_sync
+    'tempfile',      # katphi_sync
+    'cryptography.hazmat.primitives.kdf.scrypt',     # katphi_sync
     'typing',
     'pathlib',
     're',

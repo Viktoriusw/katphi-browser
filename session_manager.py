@@ -139,7 +139,7 @@ class SessionManager:
             browser = tabs_widget.widget(i)
             if not browser or not hasattr(browser, 'url'):
                 continue
-            url = browser.url().toString()
+            url = tab_manager.tab_url(browser) if hasattr(tab_manager, 'tab_url') else browser.url().toString()
             title = tabs_widget.tabText(i)
 
             # Capturar estado de scroll (asíncrono: el valor llega en un
@@ -168,7 +168,9 @@ class SessionManager:
                 'title': title,
                 'scroll': scroll_data,
                 'active': (i == tabs_widget.currentIndex()),
-                'pinned': i in tab_manager.pinned_tabs if hasattr(tab_manager, 'pinned_tabs') else False
+                'pinned': i in tab_manager.pinned_tabs if hasattr(tab_manager, 'pinned_tabs') else False,
+                # Datos de plugins de la pestaña (p. ej. su contenedor)
+                'extra': dict(getattr(browser, 'tab_extra', None) or {})
             }
 
             tabs_data.append(tab_data)
@@ -201,7 +203,8 @@ class SessionManager:
             if not url or url == 'about:blank':
                 continue
             # Crear pestaña
-            browser = tab_manager.add_new_tab(url)
+            extra = tab_data.get('extra')
+            browser = tab_manager.add_new_tab(url, extra=extra if isinstance(extra, dict) else None)
             if browser is None:
                 continue
             if base_index is None:

@@ -15,6 +15,7 @@ API idéntica: LLMClient(config).chat(messages, max_tokens, temperature)
 """
 
 import json
+import re
 import logging
 import requests
 from dataclasses import dataclass, field
@@ -591,15 +592,40 @@ class LLMClient:
         if resp.status_code != 200:
             return []
         return [m.get("id", "") for m in resp.json().get("data", []) if m.get("id")]
+    # Modelos de LM Studio que no sirven para chat (voz, embeddings, reranking)
+    _NON_CHAT_MODEL_RE = re.compile(r"whisper|embed|rerank|tts|speech|transcri", re.I)
+
+    def _lmstudio_models(self) -> List[Dict]:
+        """Modelos de la API nativa de LM Studio (tipo, estado y contexto); [] si no es LM Studio."""
+        try:
+            url = f"{self.config.local_url.rstrip('/')}/api/v0/models"
+            resp = self._session.get(url, timeout=6)
+            if resp.status_code == 200:
+                return [m for m in resp.json().get("data", []) if isinstance(m, dict)]
+        except Exception:
+            pass
+        return []
+
+    def _is_chat_model(self, model: Dict) -> bool:
+        if model.get("type") in ("embeddings", "embedding"):
+            return False
+        return not self._NON_CHAT_MODEL_RE.search(model.get("id", ""))
+
     def _detect_local_model(self) -> str:
-        """Devuelve el primer modelo disponible, usando caché para evitar GETs repetidos."""
+        """Modelo de chat del servidor local: el cargado si lo hay; nunca uno de voz o embeddings."""
         if self._cached_model_id is not None:
+            return self._cached_model_id
+        candidates = [m for m in self._lmstudio_models() if self._is_chat_model(m)]
+        loaded = [m for m in candidates if m.get("state") == "loaded"]
+        if loaded or candidates:
+            self._cached_model_id = (loaded or candidates)[0].get("id", "")
             return self._cached_model_id
         try:
             url = f"{self.config.local_url.rstrip('/')}/v1/models"
             resp = self._session.get(url, timeout=6)
             if resp.status_code == 200:
-                models = resp.json().get("data", [])
+                models = [m for m in resp.json().get("data", [])
+                          if isinstance(m, dict) and self._is_chat_model(m)]
                 if models:
                     self._cached_model_id = models[0].get("id", "")
                     return self._cached_model_id
@@ -619,15 +645,23 @@ class LLMClient:
             return self._ollama_context_window()
         if self.config.provider in OPENAI_COMPAT_PROVIDERS:
             return OPENAI_COMPAT_PROVIDERS[self.config.provider]["context"]
+        # LM Studio: contexto con el que está cargado el modelo que se va a usar
+        model_id = self._detect_local_model()
+        for m in self._lmstudio_models():
+            if m.get("id") == model_id and m.get("state") == "loaded":
+                ctx = m.get("loaded_context_length")
+                if isinstance(ctx, int) and ctx >= 1024:
+                    return ctx
         try:
             url = f"{self.config.local_url.rstrip('/')}/v1/models"
             resp = self._session.get(url, timeout=6)
             if resp.status_code != 200:
                 return 4096
-            models = resp.json().get("data", [])
+            models = [m for m in resp.json().get("data", [])
+                      if isinstance(m, dict) and self._is_chat_model(m)]
             if not models:
                 return 4096
-            first = models[0] if isinstance(models[0], dict) else {}
+            first = models[0]
             # Guardar el modelo en caché de paso
             if not self._cached_model_id and first.get("id"):
                 self._cached_model_id = first["id"]

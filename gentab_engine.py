@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from PySide6.QtCore import QObject, Signal, QThread, QSettings
@@ -25,6 +25,7 @@ from llm_client import (
     LLMClient, LLMConfig, LLMError, PROVIDER_LOCAL, PROVIDER_LLMAPI, PROVIDER_OLLAMA,
     OPENAI_COMPAT_PROVIDERS,
 )
+import gentab_formats
 from constants import (
     GENTAB_MAX_CONTENT_PER_TAB,
     GENTAB_MAX_TOTAL_CONTEXT,
@@ -106,6 +107,8 @@ class TabContext:
     content_length: int
     domain: str
     extracted_at: str = ""
+    # (texto, url) de los enlaces reales de la página, para el directorio de enlaces
+    links: List[Tuple[str, str]] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.extracted_at:
@@ -235,6 +238,41 @@ class ContentExtractor:
         if links:
             sections.append("LINKS (real destination URLs):\n" + '\n'.join(links))
         return '\n\n'.join(sections)
+    MAX_LINKS_PER_TAB = 300
+
+    @staticmethod
+    def extract_links(html: str, url: str) -> List[Tuple[str, str]]:
+        """(texto, url absoluta) de los enlaces del contenido, sin menús ni repetidos."""
+        try:
+            soup = BeautifulSoup(html, 'lxml')
+        except Exception:
+            soup = BeautifulSoup(html, 'html.parser')
+        if ContentExtractor._is_search_engine(url):
+            pairs = []
+            for item in ContentExtractor._resolve_search_links(soup, url):
+                text, _, href = item.rpartition(": ")
+                pairs.append((text, href))
+            return pairs
+        for tag in soup(['script', 'style', 'nav', 'footer', 'aside', 'noscript', 'svg']):
+            tag.decompose()
+        # Solo el contenido principal: fuera quedan menús, selectores de idioma, etc.
+        root = soup.find('main') or soup.find('article') or soup.find('body') or soup
+        page = url.split('#', 1)[0]
+        links, seen = [], set()
+        for a in root.find_all('a', href=True):
+            if a.get('hreflang'):
+                continue  # selector de idioma (versiones de la misma página)
+            href = urljoin(url, a['href'].strip()).split('#', 1)[0]
+            if not href.startswith(('http://', 'https://')) or href == page or href in seen:
+                continue
+            text = a.get_text(" ", strip=True) or a.get('title', '').strip()
+            if len(text) < 2:
+                continue
+            seen.add(href)
+            links.append((text, href))
+            if len(links) >= ContentExtractor.MAX_LINKS_PER_TAB:
+                break
+        return links
     @staticmethod
     def get_domain(url: str) -> str:
         try:
@@ -269,6 +307,8 @@ class GenTabWorker(QThread):
             cfg.max_tokens = max_tokens
             self.llm_config = cfg
         self._model_ctx_window = 4096
+        # Formato de gentab_formats; None = deducirlo de la petición
+        self.output_format: Optional[str] = None
     _CTX_OVERHEAD_TOKENS = 500
     _MIN_CONTEXT_CHARS = 800
     _MAX_INITIAL_CONTEXT_CHARS = 10000
@@ -276,71 +316,83 @@ class GenTabWorker(QThread):
     _OUTPUT_RESERVE_TOKENS = 200
     _MIN_OUTPUT_TOKENS = 3500
 
+    # Salida mínima: el HTML libre es largo; el JSON de los formatos con plantilla, no
+    _MIN_OUTPUT_TOKENS_JSON = 2000
+    _MAX_HISTORY_CHARS = 1500
+
+    def _resolve_format(self) -> str:
+        fmt = getattr(self, "output_format", None)
+        if fmt in gentab_formats.FORMATS or fmt == gentab_formats.FORMAT_FREE:
+            return fmt
+        return gentab_formats.detect_format(self.prompt)
+
+    def _sources(self) -> List[Dict[str, str]]:
+        return [{"url": tc.url, "title": tc.title, "domain": tc.domain} for tc in self.tab_contexts]
+
+    def _model_name(self) -> str:
+        if self.llm_config.provider == PROVIDER_LLMAPI:
+            return self.llm_config.llmapi_model
+        if self.llm_config.provider == PROVIDER_OLLAMA:
+            return f"ollama:{self.llm_config.ollama_model or 'auto'}"
+        if self.llm_config.provider in OPENAI_COMPAT_PROVIDERS:
+            return f"{self.llm_config.provider}:{self.llm_config.compat_model(self.llm_config.provider)}"
+        return "local"
+
+    def _fit_prompt(self, client, system_prompt, build_user, min_output):
+        """(user_prompt, prompt_tokens, max_tokens) ajustando el contexto a la ventana del modelo."""
+        self._model_ctx_window = client.detect_context_window()
+        desired_output = max(self.max_tokens, min_output)
+        max_input_tokens = self._model_ctx_window - desired_output - self._CTX_OVERHEAD_TOKENS
+        context_budget = min(ContentExtractor.MAX_TOTAL_CONTEXT, self._MAX_INITIAL_CONTEXT_CHARS)
+        context_text = self._build_context(max_total_chars=context_budget)
+        user_prompt = build_user(context_text)
+        prompt_tokens = self._estimate_tokens(system_prompt) + self._estimate_tokens(user_prompt)
+        while prompt_tokens > max_input_tokens and context_budget > self._MIN_CONTEXT_CHARS:
+            context_budget = max(self._MIN_CONTEXT_CHARS, int(context_budget * self._CONTEXT_SHRINK_FACTOR))
+            context_text = self._build_context(max_total_chars=context_budget)
+            user_prompt = build_user(context_text)
+            prompt_tokens = self._estimate_tokens(system_prompt) + self._estimate_tokens(user_prompt)
+        self.progress.emit(
+            f"Contexto: {len(context_text)} chars de {len(self.tab_contexts)} pestañas "
+            f"(ventana: {self._model_ctx_window} tokens)"
+        )
+        max_tokens = max(min_output,
+                         min(desired_output, self._model_ctx_window - prompt_tokens - self._OUTPUT_RESERVE_TOKENS))
+        return user_prompt, prompt_tokens, max_tokens
+
     def run(self):
         try:
-            client = LLMClient(self.llm_config)
-            system_prompt = self._build_system_prompt()
-
-            self._model_ctx_window = client.detect_context_window()
-
-            # Reservar al menos _MIN_OUTPUT_TOKENS para la respuesta HTML
-            desired_output = max(self.max_tokens, self._MIN_OUTPUT_TOKENS)
-            max_input_tokens = self._model_ctx_window - desired_output - self._CTX_OVERHEAD_TOKENS
-
-            self.progress.emit("Construyendo contexto multi-tab...")
-            context_budget = min(ContentExtractor.MAX_TOTAL_CONTEXT, self._MAX_INITIAL_CONTEXT_CHARS)
-            context_text = self._build_context(max_total_chars=context_budget)
-            user_prompt = self._build_user_prompt(context_text)
-            prompt_tokens = self._estimate_tokens(system_prompt) + self._estimate_tokens(user_prompt)
-
-            while prompt_tokens > max_input_tokens and context_budget > self._MIN_CONTEXT_CHARS:
-                context_budget = max(self._MIN_CONTEXT_CHARS, int(context_budget * self._CONTEXT_SHRINK_FACTOR))
-                context_text = self._build_context(max_total_chars=context_budget)
-                user_prompt = self._build_user_prompt(context_text)
-                prompt_tokens = self._estimate_tokens(system_prompt) + self._estimate_tokens(user_prompt)
-            self.progress.emit(
-                f"Contexto: {len(context_text)} chars de {len(self.tab_contexts)} pestañas "
-                f"(ventana: {self._model_ctx_window} tokens)"
-            )
-
-            safe_max_tokens = max(
-                self._MIN_OUTPUT_TOKENS,
-                min(desired_output, self._model_ctx_window - prompt_tokens - self._OUTPUT_RESERVE_TOKENS),
-            )
-
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-
-            self.progress.emit(f"Generando aplicación (max {safe_max_tokens} tokens de salida)...")
+            fmt = self._resolve_format()
+            self.progress.emit(f"Formato: {gentab_formats.format_label(fmt)}")
             start_time = time.time()
-
-            raw_content = client.chat(messages, max_tokens=safe_max_tokens, temperature=self.temperature)
-            generation_time = time.time() - start_time
-
-            html = self._extract_html(raw_content)
-
-            if not html:
-                html = self._build_fallback_html(raw_content or "No se pudo generar contenido.")
-                self.progress.emit("Respuesta sin HTML válido. Usando fallback de texto.")
-            if self._is_html_visually_empty(html):
-                self.progress.emit("HTML vacío. Construyendo resumen interactivo local.")
-                html = self._build_local_summary_html()
-            html = self._inject_source_links(html)
-            # A-006: toda GenTab (del LLM o de los fallbacks locales) pasa por la CSP
-            html = apply_gentab_csp(html)
-            if self.llm_config.provider == PROVIDER_LLMAPI:
-                model_name = self.llm_config.llmapi_model
-            elif self.llm_config.provider == PROVIDER_OLLAMA:
-                model_name = f"ollama:{self.llm_config.ollama_model or 'auto'}"
-            elif self.llm_config.provider in OPENAI_COMPAT_PROVIDERS:
-                model_name = f"{self.llm_config.provider}:{self.llm_config.compat_model(self.llm_config.provider)}"
+            raw_content = ""
+            prompt_tokens = 0
+            max_tokens = 0
+            title = ""
+            if fmt == gentab_formats.FORMAT_LINKS:
+                # Directorio de enlaces: datos reales de las páginas, sin modelo
+                model_name = "sin IA"
+                data = gentab_formats.links_data(self.tab_contexts)
+                if data:
+                    html = gentab_formats.build_page(fmt, data, self._sources())
+                    title = data["title"]
+                else:
+                    self.progress.emit("Las pestañas no tienen enlaces. Construyendo resumen local.")
+                    html = self._build_local_summary_html()
             else:
-                model_name = "local"
+                client = LLMClient(self.llm_config)
+                model_name = self._model_name()
+                if gentab_formats.uses_llm_json(fmt):
+                    html, raw_content, prompt_tokens, max_tokens, title = self._generate_from_template(client, fmt)
+                else:
+                    html, raw_content, prompt_tokens, max_tokens = self._generate_free_html(client)
+            generation_time = time.time() - start_time
+            html = self._inject_source_links(html)
+            # A-006: toda GenTab (del LLM, de una plantilla o de los fallbacks locales) pasa por la CSP
+            html = apply_gentab_csp(html)
             logger.info(
-                "GenTab ready | html_len=%s | model=%s | prompt_tokens~%s | max_tokens=%s",
-                len(html or ""), model_name, prompt_tokens, safe_max_tokens,
+                "GenTab ready | format=%s | html_len=%s | model=%s | prompt_tokens~%s | max_tokens=%s",
+                fmt, len(html or ""), model_name, prompt_tokens, max_tokens,
             )
             self.progress.emit("GenTab generada exitosamente")
 
@@ -348,7 +400,7 @@ class GenTabWorker(QThread):
 
             result = GenTabResult(
                 id=gen_id,
-                title=self._generate_title(raw_content),
+                title=title or self._generate_title(raw_content),
                 html=html,
                 prompt=self.prompt,
                 source_tabs=[{"url": tc.url, "title": tc.title, "domain": tc.domain}
@@ -373,19 +425,78 @@ class GenTabWorker(QThread):
             self.error.emit("Timeout: el servidor tardó demasiado en responder.")
         except Exception as e:
             self.error.emit(f"Error inesperado: {str(e)}")
+
+    def _generate_from_template(self, client, fmt):
+        """El modelo extrae los datos en JSON y la plantilla del formato monta la página."""
+        request, history = gentab_formats.split_request(self.prompt)
+        history = history[-self._MAX_HISTORY_CHARS:]
+        system_prompt = gentab_formats.json_system_prompt(fmt)
+        source_list = self._source_list()
+        user_prompt, prompt_tokens, max_tokens = self._fit_prompt(
+            client, system_prompt,
+            lambda ctx: gentab_formats.json_user_prompt(fmt, request, history, ctx, source_list),
+            self._MIN_OUTPUT_TOKENS_JSON)
+        messages = [{"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}]
+        self.progress.emit(f"Extrayendo datos (max {max_tokens} tokens de salida)...")
+        raw = client.chat(messages, max_tokens=max_tokens, temperature=self.temperature)
+        data = gentab_formats.normalize(fmt, gentab_formats.parse_json_object(raw), len(self.tab_contexts))
+        if data is None:
+            # Segundo intento más determinista: los modelos pequeños a veces rompen el JSON
+            self.progress.emit("La respuesta no tenía datos válidos. Reintentando...")
+            messages.append({"role": "assistant", "content": (raw or "")[:2000]})
+            messages.append({"role": "user", "content":
+                             "That was not a valid JSON object with the required fields. "
+                             "Return ONLY the JSON object, following the OUTPUT FORMAT exactly."})
+            raw = client.chat(messages, max_tokens=max_tokens, temperature=min(self.temperature, 0.2))
+            data = gentab_formats.normalize(fmt, gentab_formats.parse_json_object(raw), len(self.tab_contexts))
+        if data is None:
+            self.progress.emit("El modelo no devolvió datos utilizables. Construyendo resumen local.")
+            return self._build_local_summary_html(), raw or "", prompt_tokens, max_tokens, ""
+        title = data.get("title") or gentab_formats.format_label(fmt)
+        data["title"] = title
+        return gentab_formats.build_page(fmt, data, self._sources()), raw, prompt_tokens, max_tokens, title
+
+    def _generate_free_html(self, client):
+        """Petición libre: el modelo escribe la página completa."""
+        system_prompt = self._build_system_prompt()
+        user_prompt, prompt_tokens, max_tokens = self._fit_prompt(
+            client, system_prompt, self._build_user_prompt, self._MIN_OUTPUT_TOKENS)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        self.progress.emit(f"Generando aplicación (max {max_tokens} tokens de salida)...")
+        raw_content = client.chat(messages, max_tokens=max_tokens, temperature=self.temperature)
+        html = self._extract_html(raw_content)
+        if not html:
+            html = self._build_fallback_html(raw_content or "No se pudo generar contenido.")
+            self.progress.emit("Respuesta sin HTML válido. Usando fallback de texto.")
+        if self._is_html_visually_empty(html):
+            self.progress.emit("HTML vacío. Construyendo resumen interactivo local.")
+            html = self._build_local_summary_html()
+        return html, raw_content, prompt_tokens, max_tokens
+
+    def _source_list(self) -> str:
+        # Numeración seguida (TAB 1, 2, 3...): es la que usa "src" en los formatos con plantilla
+        return '\n'.join(
+            f"TAB {n}: {tc.title} — {tc.url}"
+            for n, tc in enumerate(self.tab_contexts[:10], start=1)
+        )
+
     def _build_context(self, max_total_chars: Optional[int] = None) -> str:
         sections = []
         total = 0
         limit = max_total_chars if max_total_chars is not None else ContentExtractor.MAX_TOTAL_CONTEXT
         per_tab = limit // max(len(self.tab_contexts), 1)
-        for tc in self.tab_contexts:
+        for n, tc in enumerate(self.tab_contexts, start=1):
             if total >= limit:
                 break
             remaining = limit - total
             chunk_limit = min(per_tab, ContentExtractor.MAX_CONTENT_PER_TAB, remaining)
             chunk = tc.content[:chunk_limit]
             sections.append(
-                f"--- TAB {tc.index + 1} ---\n"
+                f"--- TAB {n} ---\n"
                 f"Title: {tc.title}\n"
                 f"URL: {tc.url}\n"
                 f"Domain: {tc.domain}\n"
@@ -402,68 +513,42 @@ RULES (non-negotiable):
 - ALL CSS inside <style>, ALL JS inside <script>. No external CDN links.
 - Use ONLY real URLs from the data for links — never invent URLs.
 
-BUILD STRATEGY (follow this order):
-1. Read the raw tab data and extract structured items: titles, descriptions, prices, dates, URLs, key facts.
-2. Put ALL extracted data in a JS const array at the top of your <script> (one object per item/article/result).
-3. Write a render() function that loops over the array and creates HTML cards/rows for each item.
-4. Call render() on load. Add a search <input> that filters items and re-renders.
+BUILD STRATEGY:
+1. Read the TASK and choose the layout that fits it: a table, a chart drawn with CSS or inline SVG, a quiz, a checklist, a calculator, a planner, an article... Do NOT default to a grid of cards unless the task asks for cards.
+2. Extract the real data the task needs from the tabs (names, figures, prices, dates, facts) and put it in a JS const DATA at the top of your <script>.
+3. Render DATA with JavaScript in that layout and add the interactions the task implies (sorting, filtering, toggles, inputs...).
 
 VISUAL STYLE (DUAL THEME — mandatory):
 - Use CSS variables in :root for ALL colors. Define TWO sets:
   - Dark (default): :root { --bg:#0f0f23; --card:#1a1a3e; --text:#e2e8f0; --muted:#94a3b8; --accent:#6366f1; --accent2:#818cf8; --border:rgba(99,102,241,0.3); --card-shadow:rgba(0,0,0,0.25); --body-bg:radial-gradient(ellipse at 20% 0%,#1e1b4b,#0f0f23 60%); }
   - Light: [data-theme="light"] { --bg:#f8fafc; --card:#ffffff; --text:#1e293b; --muted:#64748b; --accent:#4f46e5; --accent2:#6366f1; --border:rgba(99,102,241,0.2); --card-shadow:rgba(0,0,0,0.08); --body-bg:linear-gradient(135deg,#eef2ff,#f8fafc 60%); }
-- body { background:var(--body-bg); color:var(--text); }
-- Cards: background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin:8px; transition:transform .15s; box-shadow:0 4px 16px var(--card-shadow);
-- Card hover: transform:translateY(-3px); border-color:var(--accent);
-- Layout: CSS grid, 2-3 columns on wide screens, 1 column on mobile
-- Font: system-ui
+- body { background:var(--body-bg); color:var(--text); font-family:system-ui; }
+- Responsive: it must work from 360px to wide screens.
+- No emoji anywhere.
 - REQUIRED: Add a floating theme toggle button in the top-right corner:
-  <button id="themeToggle" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'dark':'light'" style="position:fixed;top:12px;right:12px;z-index:99999;background:var(--card);border:1px solid var(--border);border-radius:50%;width:36px;height:36px;cursor:pointer;font-size:18px;color:var(--text);display:flex;align-items:center;justify-content:center;"></button>
+  <button id="themeToggle" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'dark':'light'" style="position:fixed;top:12px;right:12px;z-index:99999;background:var(--card);border:1px solid var(--border);border-radius:50%;width:36px;height:36px;cursor:pointer;color:var(--text);"></button>
 
 SOURCE ATTRIBUTION (required):
-- Each card/item MUST include a small "Source: [domain]" label that links to the original URL.
-- At the end of the page, add a "Sources" section listing all source URLs with their titles.
+- Link each piece of data to the URL of the tab it comes from.
+- At the end of the page, add a "Fuentes" section listing all source URLs with their titles.
 
-IMPORTANT: Prioritize DATA RICHNESS over visual complexity. Fill every card with real content from the tabs. An app with 10 filled cards is far better than a pretty empty shell."""
+IMPORTANT: Prioritize DATA RICHNESS over visual complexity. Fill the page with real content from the tabs."""
 
     def _build_user_prompt(self, context: str) -> str:
-        request = (self.prompt or "").strip()
-        if len(request) > 800:
-            request = request[:800] + "..."
-        source_list = '\n'.join(
-            f"Tab{tc.index + 1}: {tc.title} — {tc.url}"
-            for tc in self.tab_contexts[:10]
-        )
+        request, history = gentab_formats.split_request(self.prompt)
+        if len(request) > 1500:
+            request = request[:1500] + "..."
+        history = history[-self._MAX_HISTORY_CHARS:]
+        history_block = f"PREVIOUS CONVERSATION (only for context):\n{history}\n\n" if history else ""
         return f"""TASK: {request}
 
-SOURCE URLs (use only these, do not invent):
-{source_list}
+{history_block}SOURCE URLs (use only these, do not invent):
+{self._source_list()}
 
 TAB CONTENT TO PROCESS:
 {context}
 
-OUTPUT: A single HTML document. Follow this structure EXACTLY:
-<!DOCTYPE html><html lang="es"><head>...</head>
-<body>
-  <!-- header with title and search input -->
-  <!-- card grid -->
-<script>
-const DATA = [
-  // ← Fill this array with ALL items/articles/results extracted from the tab content above.
-  // Each object: {{ title, description, url, tag, date, price, source_url, source_domain }}
-  // MUST include source_url and source_domain from the original tab for each item.
-  // Extract AT LEAST 5 items. If the tab has a list, extract every list item.
-];
-function render(items) {{
-  // Loop over items, create card elements, append to grid
-  // Each card MUST show: <a class="source" href="${{d.source_url}}">${{d.source_domain}}</a>
-}}
-render(DATA);
-document.getElementById('search').oninput = e => render(DATA.filter(d => JSON.stringify(d).toLowerCase().includes(e.target.value.toLowerCase())));
-</script>
-</body></html>
-
-After the card grid, include a <footer> section titled "Fuentes" listing all source URLs as links.
+OUTPUT: A single HTML document (<!DOCTYPE html> ... </html>) that does exactly what the TASK asks, with a header, the content in the layout that fits the TASK, and a <footer> titled "Fuentes" listing all source URLs as links.
 
 Start writing now. Output ONLY the HTML, starting with <!DOCTYPE html>."""
 
@@ -880,6 +965,7 @@ class GenTabEngine(QObject):
                 )
                 tab_context.content = content
                 tab_context.content_length = len(content)
+                tab_context.links = ContentExtractor.extract_links(html, tab_context.url)
             except Exception as e:
                 tab_context.content = f"[Error extracting: {e}]"
                 tab_context.content_length = 0
@@ -893,7 +979,8 @@ class GenTabEngine(QObject):
                         tab_contexts: List[TabContext],
                         temperature: float = 0.7,
                         max_tokens: int = 1200,
-                        llm_config: Optional[LLMConfig] = None):
+                        llm_config: Optional[LLMConfig] = None,
+                        output_format: Optional[str] = None):
         """Inicia la generación de una GenTab en un hilo de trabajo."""
         if self._worker and self._worker.isRunning():
             self.gentab_error.emit("Ya hay una generación en curso.")
@@ -908,6 +995,8 @@ class GenTabEngine(QObject):
             server_url, prompt, valid, temperature, max_tokens,
             llm_config=llm_config, parent=self,
         )
+        # None = deducirlo de la petición (gentab_formats.detect_format)
+        worker.output_format = output_format
         self._worker = worker
         worker.progress.connect(self.gentab_progress.emit)
         worker.result_ready.connect(self._on_generation_complete)

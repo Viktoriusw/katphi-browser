@@ -1,5 +1,19 @@
 # Cambios
 
+## 3.6.1 — Asistente con plugins, Containers y Katphi Sync
+
+- El asistente de navegación (gratuito) puede usar los plugins Scraping, SEO Analyzer
+  y Katphi Office desde el chat: detectar patrones y exportar datos, analizar el SEO de
+  la página y crear informes (PDF, Word, HTML, Excel, Markdown, JSON o CSV), crear hojas
+  de cálculo y leer documentos abiertos. Solo usa los plugins que el usuario tiene
+  instalados con su licencia.
+- Puntos de extensión de pestañas para plugins (`tab_manager.extensions`): perfil de
+  WebEngine propio por pestaña que se conserva en la sesión, al duplicar y al reabrir,
+  herencia en ventanas emergentes, filtro de navegación, menús y decoración de la
+  pestaña. Los usan los nuevos plugins premium Containers y Katphi Sync.
+- El gestor de plugins reconoce Containers y Katphi Sync.
+- GenTab: seis formatos de plantilla distintos.
+
 ## 3.6.0-2 — Actualización legal: códecs patentados
 
 Se aclara la postura del proyecto respecto a H.264, AAC y HEVC. Katphi Browser no

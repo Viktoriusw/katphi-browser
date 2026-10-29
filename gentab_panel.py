@@ -30,6 +30,7 @@ from llm_provider_widgets import (
     refresh_anthropic_models,
 )
 from gentab_engine import GenTabEngine, TabContext, GenTabResult, GenTabStatus, apply_gentab_csp
+import gentab_formats
 
 
 class TabContextCard(QFrame):
@@ -308,7 +309,15 @@ class GenTabPanel(BasePanel):
         self.prompt_input.setMinimumHeight(60)
         self.prompt_input.setMaximumHeight(100)
         self.prompt_input.setAcceptRichText(False)
+        self.prompt_input.textChanged.connect(self._update_format_hint)
         input_layout.addWidget(self.prompt_input)
+
+        # Formato que se usará: lo elige la acción rápida o se deduce de lo escrito
+        self.format_hint = QLabel()
+        self.format_hint.setObjectName("formatHint")
+        self.format_hint.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        input_layout.addWidget(self.format_hint)
+        self._quick_format = None  # (texto de la acción rápida, formato)
 
         buttons_row = QHBoxLayout()
 
@@ -321,13 +330,11 @@ class GenTabPanel(BasePanel):
 
         self.quick_actions = QComboBox()
         self.quick_actions.setObjectName("quickActions")
-        self.quick_actions.addItem("Acciones rápidas...")
-        self.quick_actions.addItem("Comparar contenido de pestañas")
-        self.quick_actions.addItem("Resumir todas las pestañas")
-        self.quick_actions.addItem("Crear mapa de información")
-        self.quick_actions.addItem("Generar tarjetas de estudio")
-        self.quick_actions.addItem("Dashboard de datos")
-        self.quick_actions.addItem("Mapa de enlaces y relaciones")
+        self.quick_actions.addItem("Formatos...")
+        for fmt, info in gentab_formats.FORMATS.items():
+            self.quick_actions.addItem(info["label"], fmt)
+            self.quick_actions.setItemData(self.quick_actions.count() - 1,
+                                           info["description"], Qt.ToolTipRole)
         self.quick_actions.currentIndexChanged.connect(self._on_quick_action)
         buttons_row.addWidget(self.quick_actions)
 
@@ -886,8 +893,10 @@ class GenTabPanel(BasePanel):
         cfg.max_tokens = max_tokens
 
         self.engine.generate_gentab(
-            self.server_url, prompt, selected, temperature, max_tokens, llm_config=cfg
+            self.server_url, prompt, selected, temperature, max_tokens, llm_config=cfg,
+            output_format=self._format_for(prompt),
         )
+        self._quick_format = None
     # ========================================================================
     # Signal Handlers
     # ========================================================================
@@ -924,18 +933,29 @@ class GenTabPanel(BasePanel):
     def _on_tab_toggled(self, index: int, checked: bool):
         pass
     def _on_quick_action(self, idx: int):
-        if idx <= 0:
+        fmt = self.quick_actions.itemData(idx)
+        if idx <= 0 or fmt not in gentab_formats.FORMATS:
             return
-        prompts = {
-            1: "Create a sortable comparison TABLE with one row per tab/item. Extract name, key features, pros/cons from each tab. Add column sort buttons and a search filter. Use real source URLs for links.",
-            2: "Create expandable SUMMARY CARDS for each tab. Extract: title, 3-5 key points as bullet list, main conclusion. Add expand/collapse toggle per card and a search box. Link each card to its real source URL.",
-            3: "Create an interactive MIND MAP showing topics from each tab as connected nodes. Use SVG or CSS positioned elements. Clicking a node shows a detail panel with extracted key info and link to source.",
-            4: "Create interactive FLASHCARDS from the tab content. Extract question-answer pairs from the data. Each card has a front (question) and back (answer) with a flip animation on click. Add navigation arrows.",
-            5: "Create a DATA DASHBOARD with: item count, domain distribution as horizontal bars, key metrics extracted from content. Use CSS-animated progress bars and counters. Each section links to source tabs.",
-            6: "Create a LINK DIRECTORY showing all real destination URLs found in the tabs, grouped by domain. Show link text, URL, and source tab. Add filter by domain and search. Make each link clickable.",
-        }
-        self.prompt_input.setPlainText(prompts.get(idx, ""))
+        task = gentab_formats.FORMATS[fmt]["task"]
+        self._quick_format = (task, fmt)
+        self.prompt_input.setPlainText(task)
         self.quick_actions.setCurrentIndex(0)
+    def _format_for(self, prompt: str):
+        """Formato de la acción rápida si el texto no se ha cambiado; si no, el deducido."""
+        if self._quick_format and self._quick_format[0] == prompt:
+            return self._quick_format[1]
+        return gentab_formats.detect_format(prompt)
+    def _update_format_hint(self):
+        prompt = self.prompt_input.toPlainText().strip()
+        if not prompt:
+            self.format_hint.setText("")
+            return
+        fmt = self._format_for(prompt)
+        if fmt == gentab_formats.FORMAT_FREE:
+            self.format_hint.setText("Formato: página libre (la IA elige el diseño)")
+        else:
+            self.format_hint.setText(f"Formato: {gentab_formats.format_label(fmt)}"
+                                     f" — {gentab_formats.FORMATS[fmt]['description']}")
     def _on_url_changed(self, text):
         self.server_url = text.strip()
         self.llm_config.local_url = self.server_url

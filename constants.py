@@ -28,7 +28,7 @@ def is_private_mode() -> bool:
 
 APP_NAME = "Katphi"
 APP_TITLE = "Katphi Browser"
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.6.1"
 APP_VENDOR = "Katphi"
 APP_ORGANIZATION = "Katphi"
 

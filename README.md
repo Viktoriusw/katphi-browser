@@ -6,7 +6,7 @@
 
 <p align="center">
   Navegador de escritorio con IA integrada, privacidad y sistema de plugins.<br>
-  Versión <strong>3.6.0</strong> · Windows · Linux · Licencia MIT
+  Versión <strong>3.6.1</strong> · Windows · Linux · Licencia MIT
 </p>
 
 <p align="center">

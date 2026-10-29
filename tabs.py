@@ -80,6 +80,119 @@ def apply_profile_storage(profile_manager):
     return True
 
 
+class TabExtensions:
+    """Puntos de extensión de las pestañas para plugins (Containers, Sync...).
+
+    Cada lista guarda callables que el plugin registra al inicializarse y
+    quita en shutdown(). Un fallo en un callable se registra y se ignora:
+    un plugin nunca puede romper la creación o el menú de una pestaña.
+
+    - profile_resolver(extra) -> QWebEngineProfile | None
+        Perfil para una pestaña cuyo extra lleva "profile_key" (sesión
+        restaurada, pestaña duplicada o reabierta). Al registrar uno se
+        resuelven las pestañas que esperaban su perfil.
+    - tab_setup_hook(browser, profile)
+        Tras configurar la página y antes de cargar la URL.
+    - navigation_filter(browser, url, nav_type) -> bool
+        Navegación del marco principal; True la cancela. Si el filtro abre o
+        cierra pestañas debe hacerlo diferido (QTimer.singleShot): se llama
+        desde dentro de QWebEnginePage.acceptNavigationRequest.
+    - tab_menu_provider(menu, index, browser)
+        Añade acciones (con su propio triggered) al menú de la pestaña.
+    - page_menu_provider(menu, browser, link_url)
+        Igual para el menú contextual de la página; link_url es un QUrl
+        (vacío si no se hizo clic sobre un enlace).
+    - tab_decorator(index, browser) -> dict | None
+        {"prefix": str, "color": "#rrggbb", "tooltip": str} para la pestaña.
+    """
+
+    KINDS = ("profile_resolver", "tab_setup_hook", "navigation_filter",
+             "tab_menu_provider", "page_menu_provider", "tab_decorator")
+
+    def __init__(self, tab_manager=None):
+        self._tab_manager = tab_manager
+        self._callbacks = {kind: [] for kind in self.KINDS}
+
+    def register(self, kind, callback):
+        if kind not in self._callbacks:
+            raise ValueError(f"Tipo de extensión desconocido: {kind}")
+        if callback not in self._callbacks[kind]:
+            self._callbacks[kind].append(callback)
+        tm = self._tab_manager
+        if tm is not None:
+            if kind == "profile_resolver":
+                tm.resolve_pending_tabs()
+            elif kind == "tab_decorator":
+                tm.refresh_all_tab_appearances()
+
+    def unregister(self, kind, callback):
+        try:
+            self._callbacks.get(kind, []).remove(callback)
+        except ValueError:
+            return
+        if kind == "tab_decorator" and self._tab_manager is not None:
+            self._tab_manager.refresh_all_tab_appearances()
+
+    def callbacks(self, kind):
+        return list(self._callbacks.get(kind, []))
+
+    def _call_all(self, kind, *args):
+        results = []
+        for callback in self.callbacks(kind):
+            try:
+                results.append(callback(*args))
+            except Exception as e:
+                print(f"[TabExtensions] Error en {kind} {callback!r}: {e}")
+        return results
+
+    def resolve_profile(self, extra):
+        for profile in self._call_all("profile_resolver", dict(extra or {})):
+            if profile is not None:
+                return profile
+        return None
+
+    def setup_tab(self, browser, profile):
+        self._call_all("tab_setup_hook", browser, profile)
+
+    def filter_navigation(self, browser, url, nav_type):
+        return any(self._call_all("navigation_filter", browser, url, nav_type))
+
+    def populate_tab_menu(self, menu, index, browser):
+        self._call_all("tab_menu_provider", menu, index, browser)
+
+    def populate_page_menu(self, menu, browser, link_url):
+        self._call_all("page_menu_provider", menu, browser, link_url)
+
+    def decorate_tab(self, index, browser):
+        decoration = {}
+        for result in self._call_all("tab_decorator", index, browser):
+            if isinstance(result, dict):
+                decoration.update(result)
+        return decoration
+
+
+class KatphiWebPage(QWebEnginePage):
+    """Página de las pestañas: pasa las navegaciones del marco principal por
+    los navigation_filter de los plugins (TabExtensions)."""
+
+    def __init__(self, profile, tab_view, tab_manager):
+        super().__init__(profile, tab_view)
+        # La vista de la pestaña, no la de pantalla completa (la página se
+        # presta a otra vista mientras dura la pantalla completa)
+        self._tab_view = tab_view
+        self._tab_manager = tab_manager
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        tm = self._tab_manager
+        if is_main_frame and tm is not None:
+            try:
+                if tm.extensions.filter_navigation(self._tab_view, url, nav_type):
+                    return False
+            except Exception as e:
+                print(f"[KatphiWebPage] Error en filtros de navegación: {e}")
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+
 class _NewTabButton(QPushButton):
     """Botón '+' que se posiciona justo después de la última pestaña."""
 
@@ -203,6 +316,11 @@ class BrowserView(QWebEngineView):
         super().__init__(parent)
         self._tab_manager = tab_manager
         self._fullscreen_window = None
+        # Datos de la pestaña que se guardan con la sesión (p. ej. el
+        # contenedor: {"profile_key": "container:<id>"}); los fija add_new_tab
+        self.tab_extra = {}
+        # URL que espera a que un plugin resuelva el perfil de la pestaña
+        self.pending_url = None
 
     def setup_fullscreen(self):
         """Permite requestFullscreen(); sin esto las webs dan "Fullscreen is not supported"."""
@@ -226,8 +344,13 @@ class BrowserView(QWebEngineView):
     def createWindow(self, window_type):
         # Clic central / Ctrl+clic → segundo plano; el resto en primer plano
         background = window_type == QWebEnginePage.WebWindowType.WebBrowserBackgroundTab
-        # Qt carga la URL destino en la vista devuelta
-        return self._tab_manager.add_new_tab("about:blank", focus=not background, load=False)
+        # Qt carga la URL destino en la vista devuelta. La pestaña nueva usa
+        # el perfil de la que la abre (Qt lo exige para window.opener, y así
+        # un enlace de un contenedor sigue en su contenedor)
+        return self._tab_manager.add_new_tab(
+            "about:blank", focus=not background, load=False,
+            profile=self.page().profile(),
+            extra=self._tab_manager.inherited_extra(self))
 
 
 class BrowserTabBar(QTabBar):
@@ -444,6 +567,9 @@ class TabManager:
         # Diccionario para trackear conexiones de señales y prevenir memory leaks
         self._signal_connections = {}
 
+        # Puntos de extensión para plugins (perfiles por pestaña, menús...)
+        self.extensions = TabExtensions(self)
+
         # Conectar botón '+' del tab bar a add_new_tab
         self._tab_bar.new_tab_requested.connect(self.add_new_tab)
 
@@ -509,9 +635,140 @@ class TabManager:
                 browser.page().runJavaScript(js)
         except Exception as e:
             print(f"Error injecting dark scrollbar CSS: {e}")
-    def add_new_tab(self, url=None, focus=True, load=True):
+    def inherited_extra(self, browser):
+        """Datos de la pestaña que hereda una pestaña abierta desde ella."""
+        extra = getattr(browser, "tab_extra", None) or {}
+        return {"profile_key": extra["profile_key"]} if extra.get("profile_key") else {}
+
+    def tab_url(self, browser):
+        """URL de la pestaña para sesión/duplicar/reabrir (la pendiente si espera perfil)."""
+        pending = getattr(browser, "pending_url", None)
+        if pending:
+            return pending
+        return browser.url().toString()
+
+    def _attach_page(self, browser, profile=None):
+        """Crea la página de la vista con su perfil y la configura (User-Agent,
+        privacidad, contraseñas, descargas, plugins) antes de cargar nada.
+        Devuelve el perfil usado."""
+        private = _is_private_mode()
+        if private:
+            # A-001: en la ventana privada la página usa siempre el perfil
+            # off-the-record compartido
+            profile = get_private_profile()
+        elif profile is None:
+            profile = QWebEngineProfile.defaultProfile()
+        # Página explícita: la implícita de QWebEngineView se destruye al
+        # pasarla a la vista de pantalla completa y devolverla. Es hija de la
+        # vista y se destruye con ella.
+        browser.setPage(KatphiWebPage(profile, browser, self))
+        # katphi-app:// (aplicaciones de plugins, p. ej. Katphi Office)
+        app_scheme.install_on_profile(profile)
+
+        # IMPORTANTE: Configurar el perfil ANTES de establecer la URL
+        # para que la primera petición HTTP use el User-Agent correcto
+
+        # Las rutas de almacenamiento del perfil se fijan una sola vez al
+        # arrancar (apply_profile_storage): cambiarlas aquí, con otras
+        # páginas ya vivas en el mismo perfil, mezclaba datos de perfiles.
+        if private:
+            profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
+            profile.setHttpCacheType(QWebEngineProfile.MemoryHttpCache)
+        elif profile is QWebEngineProfile.defaultProfile():
+            # Los perfiles de plugins (contenedores) fijan los suyos
+            profile.setPersistentCookiesPolicy(QWebEngineProfile.AllowPersistentCookies)
+            profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
+
+        # Configurar User-Agent del perfil (MÉTODO CORRECTO DE QT)
+        if hasattr(self.parent, 'network_interceptor') and self.parent.network_interceptor:
+            try:
+                # MÉTODO 1: User-Agent del perfil (navigator.userAgent, cabecera
+                # HTTP y Client Hints coherentes)
+                self.parent.network_interceptor.apply_to_profile(profile)
+                print(f"[UA-PROFILE] User-Agent set on profile: {self.parent.network_interceptor.user_agent_type}")
+
+                # MÉTODO 2: Configurar interceptor de red (afecta a headers HTTP)
+                profile.setUrlRequestInterceptor(self.parent.network_interceptor)
+                print(f"[UA-INTERCEPTOR] HTTP headers interceptor configured")
+            except Exception as e:
+                print(f"[WARNING] Could not configure User-Agent: {e}")
+        if hasattr(self.parent, 'privacy_manager') and self.parent.privacy_manager:
+            try:
+                self.parent.privacy_manager.apply_privacy_settings(browser)
+            except Exception as priv_ex:
+                print(f"[WARNING] apply_privacy_settings on new tab: {priv_ex}")
+        browser.setup_fullscreen()
+        # Aviso de vídeos H.264/AAC no reproducibles (se desactiva solo si
+        # el motor web tiene esos códecs)
+        try:
+            import media_support
+            media_support.install_scripts(profile)
+        except Exception as media_ex:
+            print(f"[WARNING] media_support on new tab: {media_ex}")
+        # Configurar gestor de contraseñas ANTES de cargar la URL
+        # para que los scripts estén registrados en la primera carga.
+        # En modo privado no se capturan ni autorrellenan contraseñas.
+        if not private and hasattr(self.parent, 'password_manager'):
+            self.parent.password_manager.setup_browser(browser)
+        # A-008: downloadRequested se conecta una sola vez por perfil
+        # (connect_profile es idempotente); antes se conectaba por pestaña
+        if hasattr(self.parent, 'navigation_manager'):
+            dm = getattr(self.parent.navigation_manager, 'download_manager', None)
+            if dm is not None and hasattr(dm, 'connect_profile'):
+                dm.connect_profile(profile)
+            else:
+                self.parent.navigation_manager.setup_downloads(browser)
+        # Plugins: último ajuste de la pestaña antes de cargar (p. ej. el
+        # User-Agent propio de un contenedor)
+        self.extensions.setup_tab(browser, profile)
+        return profile
+
+    def _show_pending_placeholder(self, browser, url):
+        """Pestaña que espera el perfil de un plugin: no se carga la URL en el
+        perfil por defecto (mezclaría cookies); se muestra un aviso."""
+        from html import escape
+        safe = escape(url or "", quote=True)
+        browser.setHtml(
+            "<html><head><meta charset='utf-8'><title>Pestaña en espera</title></head>"
+            "<body style='font-family:sans-serif;padding:40px;color:#888'>"
+            "<h2>Esta pestaña pertenece a un contenedor</h2>"
+            "<p>Se abrirá en cuanto el plugin que la gestiona esté disponible.</p>"
+            f"<p>Abrirla sin contenedor: <a href='{safe}'>{safe}</a></p>"
+            "</body></html>")
+
+    def resolve_pending_tabs(self):
+        """Abre en su perfil las pestañas que esperaban a un profile_resolver."""
+        for i in range(self.tabs.count()):
+            browser = self.tabs.widget(i)
+            url = getattr(browser, "pending_url", None)
+            if not url:
+                continue
+            if browser.url().scheme() not in ("", "about", "data"):
+                # El usuario la abrió sin contenedor desde el aviso
+                browser.pending_url = None
+                browser.tab_extra.pop("profile_key", None)
+                continue
+            profile = self.extensions.resolve_profile(browser.tab_extra)
+            if profile is None:
+                continue
+            old_page = browser.page()
+            if hasattr(self.parent, 'password_manager'):
+                self.parent.password_manager.cleanup_browser(browser)
+            self._attach_page(browser, profile)
+            if old_page is not None:
+                old_page.deleteLater()
+            browser.pending_url = None
+            browser.setUrl(QUrl(url))
+
+    def add_new_tab(self, url=None, focus=True, load=True, profile=None, extra=None):
         """Creates a new tab and returns it (focus=False la abre en segundo plano;
-        load=False no carga la URL: la usa createWindow, que navega la vista él mismo)"""
+        load=False no carga la URL: la usa createWindow, que navega la vista él mismo).
+
+        profile: perfil de WebEngine de la pestaña (por defecto, el del navegador).
+        extra: datos de la pestaña que se guardan con la sesión; si lleva
+        "profile_key" y no se pasa profile, lo resuelven los plugins
+        (TabExtensions.profile_resolver) y, mientras no haya ninguno, la
+        pestaña queda en espera sin cargar la URL."""
 
         try:
             # Si no se proporciona URL, usar la página de inicio configurada
@@ -537,68 +794,17 @@ class TabManager:
             # Crear el navegador
             browser = BrowserView(self)
             private = _is_private_mode()
-
-            # A-001: en la ventana privada la página usa el perfil off-the-record
-            # compartido (la página es hija de la vista y se destruye con ella)
-            if private:
-                browser.setPage(QWebEnginePage(get_private_profile(), browser))
-            else:
-                # Página explícita (mismo perfil por defecto): la implícita de
-                # QWebEngineView se destruye al pasarla a la vista de pantalla
-                # completa y devolverla
-                browser.setPage(QWebEnginePage(QWebEngineProfile.defaultProfile(), browser))
-
-            # IMPORTANTE: Configurar el perfil ANTES de establecer la URL
-            # para que la primera petición HTTP use el User-Agent correcto
-
-            # Configurar el perfil con datos aislados por usuario
-            profile = browser.page().profile()
-            # katphi-app:// (aplicaciones de plugins, p. ej. Katphi Office)
-            app_scheme.install_on_profile(profile)
-
-            # Las rutas de almacenamiento del perfil se fijan una sola vez al
-            # arrancar (apply_profile_storage): cambiarlas aquí, con otras
-            # páginas ya vivas en el mismo perfil, mezclaba datos de perfiles.
-            if private:
-                profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
-                profile.setHttpCacheType(QWebEngineProfile.MemoryHttpCache)
-            if not private:
-                profile.setPersistentCookiesPolicy(QWebEngineProfile.AllowPersistentCookies)
-                profile.setHttpCacheType(QWebEngineProfile.DiskHttpCache)
-
-            # Configurar User-Agent del perfil (MÉTODO CORRECTO DE QT)
-            if hasattr(self.parent, 'network_interceptor') and self.parent.network_interceptor:
-                try:
-                    # MÉTODO 1: User-Agent del perfil (navigator.userAgent, cabecera
-                    # HTTP y Client Hints coherentes)
-                    self.parent.network_interceptor.apply_to_profile(profile)
-                    print(f"[UA-PROFILE] User-Agent set on profile: {self.parent.network_interceptor.user_agent_type}")
-
-                    # MÉTODO 2: Configurar interceptor de red (afecta a headers HTTP)
-                    profile.setUrlRequestInterceptor(self.parent.network_interceptor)
-                    print(f"[UA-INTERCEPTOR] HTTP headers interceptor configured")
-                except Exception as e:
-                    print(f"[WARNING] Could not configure User-Agent: {e}")
-            if hasattr(self.parent, 'privacy_manager') and self.parent.privacy_manager:
-                try:
-                    self.parent.privacy_manager.apply_privacy_settings(browser)
-                except Exception as priv_ex:
-                    print(f"[WARNING] apply_privacy_settings on new tab: {priv_ex}")
-            browser.setup_fullscreen()
-            # Aviso de vídeos H.264/AAC no reproducibles (se desactiva solo si
-            # el motor web tiene esos códecs)
-            try:
-                import media_support
-                media_support.install_scripts(profile)
-            except Exception as media_ex:
-                print(f"[WARNING] media_support on new tab: {media_ex}")
-            # Configurar gestor de contraseñas ANTES de cargar la URL
-            # para que los scripts estén registrados en la primera carga.
-            # En modo privado no se capturan ni autorrellenan contraseñas.
-            if not private and hasattr(self.parent, 'password_manager'):
-                self.parent.password_manager.setup_browser(browser)
+            browser.tab_extra = {} if private else dict(extra or {})
+            pending = False
+            if not private and profile is None and browser.tab_extra.get("profile_key"):
+                profile = self.extensions.resolve_profile(browser.tab_extra)
+                pending = profile is None
+            profile = self._attach_page(browser, None if pending else profile)
             # Establecer la URL - se cargará con el User-Agent y scripts listos
-            if load:
+            if pending and url and url != "about:blank":
+                browser.pending_url = url
+                self._show_pending_placeholder(browser, url)
+            elif load:
                 browser.setUrl(QUrl(url))
 
             # Conectar señales y guardar referencias para desconectar después
@@ -646,16 +852,6 @@ class TabManager:
             browser.customContextMenuRequested.connect(context_menu)
             self._signal_connections[browser_id]['customContextMenuRequested'] = context_menu
 
-            # Configurar descargas
-
-            # A-008: downloadRequested se conecta una sola vez por perfil
-            # (connect_profile es idempotente); antes se conectaba por pestaña
-            if hasattr(self.parent, 'navigation_manager'):
-                dm = getattr(self.parent.navigation_manager, 'download_manager', None)
-                if dm is not None and hasattr(dm, 'connect_profile'):
-                    dm.connect_profile(profile)
-                else:
-                    self.parent.navigation_manager.setup_downloads(browser)
             # Configurar inyección de UserScripts
 
             if hasattr(self.parent, 'userscript_manager'):
@@ -783,6 +979,14 @@ class TabManager:
                     label = f"● {label}"
                     # Aplicar color del grupo al tab bar
                     self._apply_group_color_to_tab(index, group.color)
+                # Decoración de plugins (p. ej. el color del contenedor)
+                decoration = self.extensions.decorate_tab(index, browser)
+                if decoration.get("prefix"):
+                    label = f"{decoration['prefix']} {label}"
+                from PySide6.QtGui import QColor
+                color = decoration.get("color")
+                self.tabs.tabBar().setTabTextColor(index, QColor(color) if color else QColor())
+                self.tabs.setTabToolTip(index, decoration.get("tooltip", ""))
                 self.tabs.setTabText(index, label)
                 # El título de la ventana sí conserva el título completo.
                 if self.tabs.currentWidget() == browser:
@@ -877,9 +1081,10 @@ class TabManager:
                         print(f"[TabManager] on_close de la aplicación falló: {veto_ex}")
                 if tab_widget and hasattr(tab_widget, 'url') and not app_info:
                     tab_data = {
-                        'url': tab_widget.url().toString(),
+                        'url': self.tab_url(tab_widget),
                         'title': self.tabs.tabText(index),
-                        'icon': self.tabs.tabIcon(index)
+                        'icon': self.tabs.tabIcon(index),
+                        'extra': dict(getattr(tab_widget, 'tab_extra', None) or {})
                     }
 
                     # Agregar al stack de pestañas cerradas
@@ -931,6 +1136,17 @@ class TabManager:
 
             save_bookmark = menu.addAction("Save as Bookmark")
             inspect_action = menu.addAction("Inspect (Inspeccionar)")
+
+            # Acciones de plugins; el enlace bajo el cursor sale de la última
+            # petición de menú contextual de la vista
+            link_url = QUrl()
+            try:
+                request = browser.lastContextMenuRequest()
+                if request is not None:
+                    link_url = request.linkUrl()
+            except Exception:
+                pass
+            self.extensions.populate_page_menu(menu, browser, link_url)
 
             action = menu.exec(browser.mapToGlobal(pos))
 
@@ -1055,9 +1271,11 @@ class TabManager:
             # Las aplicaciones de plugins no se restauran (su URL es de un solo uso)
             if app_scheme.is_app_url(browser.url()) or self.app_tab_info(browser):
                 continue
-            url = browser.url().toString()
-
-            session.append({"url": url})
+            entry = {"url": self.tab_url(browser)}
+            extra = getattr(browser, "tab_extra", None)
+            if extra:
+                entry["extra"] = dict(extra)
+            session.append(entry)
         try:
             with open(self.SESSION_FILE, "w", encoding="utf-8") as f:
                 json.dump(session, f, ensure_ascii=False, indent=2)
@@ -1104,7 +1322,8 @@ class TabManager:
                 # Si no hay URL guardada, usar None para que add_new_tab use el motor predeterminado
                 if not url or url == "about:blank":
                     url = None
-                self.add_new_tab(url)
+                extra = tab_data.get("extra")
+                self.add_new_tab(url, extra=extra if isinstance(extra, dict) else None)
             print(f"Session restored with {len(session)} tabs.")
 
             return True
@@ -1229,6 +1448,9 @@ class TabManager:
                 split_view_enabled = False
         split_view_action.setEnabled(bool(split_view_enabled))
 
+        # Acciones de plugins (cada una con su propio triggered)
+        self.extensions.populate_tab_menu(menu, index, tab_widget)
+
         # Ejecutar menú
 
         action = menu.exec(self.tabs.tabBar().mapToGlobal(pos))
@@ -1309,7 +1531,7 @@ class TabManager:
         tab_data = self.closed_tabs_stack.pop()
 
         # Crear nueva pestaña con la URL guardada
-        new_tab = self.add_new_tab(tab_data['url'])
+        new_tab = self.add_new_tab(tab_data['url'], extra=tab_data.get('extra'))
 
         # Restaurar icono si es posible
         if tab_data.get('icon'):
@@ -1327,9 +1549,13 @@ class TabManager:
         current_tab = self.tabs.widget(index)
         if not current_tab or not hasattr(current_tab, 'url'):
             return None
-        # Crear nueva pestaña con la misma URL
-        url = current_tab.url().toString()
-        new_tab = self.add_new_tab(url)
+        # Crear nueva pestaña con la misma URL, el mismo perfil y sus datos
+        url = self.tab_url(current_tab)
+        pending = bool(getattr(current_tab, 'pending_url', None))
+        new_tab = self.add_new_tab(
+            url,
+            profile=None if pending else current_tab.page().profile(),
+            extra=getattr(current_tab, 'tab_extra', None))
 
         print(f"Pestaña duplicada: {url}")
         return new_tab
