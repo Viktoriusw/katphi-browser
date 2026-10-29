@@ -1,4 +1,4 @@
-# Guía de instalación — Katphi Browser 3.5.2
+# Guía de instalación — Katphi Browser 3.6.0
 
 Esta guía explica cómo ejecutar Katphi Browser desde el código fuente y cómo
 compilar los paquetes. Si solo quieres usar el navegador, descarga la versión
@@ -164,6 +164,9 @@ Resultado: `dist\Katphi Browser\`. Distribuye **toda la carpeta**, no solo el `.
 
 ```bash
 pip install pyinstaller pyinstaller-hooks-contrib
+# FFmpeg de Qt Multimedia sin H.264/HEVC/VVC/AAC (necesita gcc, make, nasm,
+# libssl-dev y zlib1g-dev; unos minutos)
+PYTHON="$(command -v python)" tools/build_ffmpeg_sin_patentes.sh
 pyinstaller katphi_linux.spec --noconfirm
 ```
 
@@ -172,7 +175,11 @@ Resultado: `dist/katphi-browser/`, listo para empaquetar como `.deb` (en
 en `~/.local/share/Katphi`.
 
 Ambos builds empaquetan `config.example.yaml` como configuración y se detienen si
-contiene una dirección local o privada, o si `plugins/` contiene plugins de pago.
+contiene una dirección local o privada, si `plugins/` contiene plugins de pago o
+si el Qt WebEngine (o, en Linux, el FFmpeg de Qt Multimedia) del entorno incluye
+H.264/AAC: los paquetes oficiales nunca llevan códecs patentados (ver
+[AVISO_LEGAL.md](AVISO_LEGAL.md)). En Windows el FFmpeg de Qt Multimedia no se
+empaqueta y se usa Media Foundation.
 
 ---
 
@@ -222,6 +229,18 @@ Usa siempre un entorno virtual (`python3 -m venv venv`) en lugar del Python del 
 - Si Tor está activado pero no está instalado, desactívalo (`tor.enabled: false`)
   o instala Tor.
 
+### Algunos vídeos no se reproducen (H.264/AAC)
+
+Es lo esperado: el Qt WebEngine de PySide6 no incluye H.264, AAC ni HEVC, y Katphi
+Browser no distribuye binarios con esos códecs porque están sujetos a patentes.
+YouTube y los vídeos VP9/AV1/Opus funcionan. Cuando un vídeo falla por eso, Katphi
+ofrece abrirlo en el navegador del sistema o en mpv/VLC; no hace falta nada más.
+
+Como opción avanzada, y bajo tu exclusiva responsabilidad, puedes compilar tu propio
+Qt WebEngine con esos códecs para uso local (README, sección «Vídeo H.264/AAC»). Tú
+serías el único responsable de las licencias de patentes que se deriven de su uso o
+distribución; el mantenedor de Katphi Browser no asume ninguna.
+
 ### Puerto en uso al arrancar
 
 Katphi abre un socket local para comunicarse entre instancias. Cierra otras
@@ -231,4 +250,6 @@ ventanas de Katphi Browser que sigan abiertas.
 
 ## Licencia
 
-Katphi Browser se distribuye bajo la licencia [MIT](LICENSE).
+Katphi Browser se distribuye bajo la licencia [MIT](LICENSE). La licencia no cubre
+los códecs H.264, AAC ni HEVC, que Katphi Browser no distribuye; ver
+[AVISO_LEGAL.md](AVISO_LEGAL.md).

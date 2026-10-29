@@ -444,6 +444,35 @@ class UnifiedPluginManager(QObject):
                 "trial_days": 7
             },
 
+            "office_suite": {
+                "name": "Katphi Office",
+                "free_features": [],
+                "premium_features": ["pdf_edit", "pdf_sign", "pdf_pages", "sheets_edit",
+                                     "docs_edit", "slides_edit", "convert_legacy", "ai_assist"],
+                "trial_days": 7
+            },
+
+            "katphi_tv": {
+                "name": "Katphi TV",
+                "free_features": [],
+                "premium_features": ["watch", "broadcast", "room_chat"],
+                "trial_days": 7
+            },
+
+            "katphi_chat": {
+                "name": "Katphi Chat",
+                "free_features": [],
+                "premium_features": ["messaging", "groups", "channels", "vault"],
+                "trial_days": 7
+            },
+
+            "katphi_files": {
+                "name": "Katphi Files",
+                "free_features": [],
+                "premium_features": ["send_files", "receive_files"],
+                "trial_days": 7
+            },
+
             "ai_assistant": {
 
                 "name": "Asistente de IA",

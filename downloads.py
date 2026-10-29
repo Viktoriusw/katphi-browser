@@ -220,18 +220,30 @@ class DownloadManager(QObject):
 
             if not suggested_name:
                 suggested_name = "download"
-            # Show dialog to select location
 
-            file_path, _ = QFileDialog.getSaveFileName(
+            # Si un plugin sabe abrir el archivo (p. ej. Katphi Office), se
+            # ofrece abrirlo directamente además de guardarlo
+            open_handler = None
+            choice = self._ask_open_with_plugin(download, suggested_name)
+            if choice == "cancel":
+                download.cancel()
+                return
+            if choice is not None:
+                open_handler = choice
+                file_path = self._auto_download_path(suggested_name)
+            else:
+                # Show dialog to select location
 
-                self.parent,
+                file_path, _ = QFileDialog.getSaveFileName(
 
-                "Save File",
+                    self.parent,
 
-                os.path.expanduser(f"~/Downloads/{suggested_name}"),
+                    "Save File",
 
-                "All Files (*.*)"
-            )
+                    os.path.expanduser(f"~/Downloads/{suggested_name}"),
+
+                    "All Files (*.*)"
+                )
 
             if file_path:
                 # Configure the download
@@ -246,6 +258,9 @@ class DownloadManager(QObject):
 
                     lambda state: self.download_state_changed(download, state)
                 )
+
+                if open_handler is not None:
+                    self._open_after_download[id(download)] = (open_handler, file_path)
 
                 # Start the download
 
@@ -268,17 +283,87 @@ class DownloadManager(QObject):
             print(f"Error handling download: {str(e)}")
 
             self.download_failed.emit(str(e))
+    # -----------------------------------------------------------------
+    # Abrir con un plugin (registro file_handlers)
+    # -----------------------------------------------------------------
+
+    @property
+    def _open_after_download(self) -> dict:
+        if not hasattr(self, "_open_after_map"):
+            self._open_after_map = {}
+        return self._open_after_map
+
+    def _ask_open_with_plugin(self, download, suggested_name):
+        """Manejador elegido para abrir, None para "Guardar" o "cancel"."""
+        try:
+            import file_handlers
+            handler = file_handlers.find(suggested_name, download.mimeType())
+        except Exception:
+            return None
+        if handler is None:
+            return None
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(self.parent)
+        box.setWindowTitle("Descarga")
+        box.setText(f"¿Qué quieres hacer con «{suggested_name}»?")
+        open_btn = box.addButton(f"Abrir en {handler.label}", QMessageBox.AcceptRole)
+        save_btn = box.addButton("Guardar…", QMessageBox.ActionRole)
+        box.addButton("Cancelar", QMessageBox.RejectRole)
+        box.setDefaultButton(open_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is open_btn:
+            return handler
+        if clicked is save_btn:
+            return None
+        return "cancel"
+
+    @staticmethod
+    def _auto_download_path(suggested_name: str) -> str:
+        """Ruta sin pisar archivos: Descargas o, en la ventana privada, temporal."""
+        import tempfile
+        try:
+            from constants import is_private_mode
+            private = bool(is_private_mode())
+        except Exception:
+            private = False
+        if private:
+            folder = tempfile.mkdtemp(prefix="katphi-private-")
+        else:
+            folder = QStandardPaths.writableLocation(QStandardPaths.DownloadLocation) \
+                or os.path.expanduser("~/Downloads")
+            os.makedirs(folder, exist_ok=True)
+        name = os.path.basename(suggested_name) or "download"
+        base, ext = os.path.splitext(name)
+        path, n = os.path.join(folder, name), 1
+        while os.path.exists(path):
+            path = os.path.join(folder, f"{base} ({n}){ext}")
+            n += 1
+        return path
+
     def download_state_changed(self, download, state):
         """Handles download state changes"""
 
         try:
+            pending_open = self._open_after_download.get(id(download))
+            if pending_open and state == QWebEngineDownloadRequest.DownloadCompleted:
+                self._open_after_download.pop(id(download), None)
+                handler, path = pending_open
+                try:
+                    handler.open_callback(path)
+                except Exception as open_ex:
+                    print(f"[Downloads] {handler.plugin_id} no pudo abrir {path}: {open_ex}")
+            elif pending_open and state in (QWebEngineDownloadRequest.DownloadCancelled,
+                                            QWebEngineDownloadRequest.DownloadInterrupted):
+                self._open_after_download.pop(id(download), None)
             if download in self.downloads:
                 if state == QWebEngineDownloadRequest.DownloadCompleted:
                     self.downloads[download]['progress_bar'].setValue(100)
 
                     self.download_completed.emit(self.downloads[download]['path'])
 
-                    self.show_download_confirmation(self.downloads[download]['path'])
+                    if not pending_open:
+                        self.show_download_confirmation(self.downloads[download]['path'])
 
                     # Clean up after a time
 

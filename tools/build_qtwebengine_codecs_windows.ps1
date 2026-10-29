@@ -16,8 +16,13 @@
 # descargan solos en -WorkDir. Tarda de 3 a 8 horas según la CPU.
 # Conviene excluir -WorkDir del antivirus (Windows Defender) o tardará el doble.
 #
-# Licencias: H.264/AAC están cubiertos por patentes; distribuir binarios con
-# estos decodificadores puede requerir licencias (ver Qt WebEngine Features).
+# AVISO LEGAL: H.264, AAC y HEVC están sujetos a patentes (licencias de Via
+# Licensing Alliance). Este script es solo para compilar en tu propio equipo y
+# bajo tu exclusiva responsabilidad; el mantenedor de Katphi Browser no
+# distribuye binarios con estos códecs ni asume responsabilidad alguna por el
+# uso de este script o de lo que genere. Ver AVISO_LEGAL.md. Antes de compilar
+# o instalar pide escribir SI (o $env:KATPHI_ACEPTO_AVISO_CODECS='SI' sin
+# consola interactiva). Los .spec oficiales se niegan a empaquetar el resultado.
 #
 # Uso (PowerShell):
 #   tools\build_qtwebengine_codecs_windows.ps1                          # compila e instala en el PySide6 de "python"
@@ -69,6 +74,7 @@ $Tools = Join-Path $WorkDir 'tools'
 $Venv = Join-Path $WorkDir 'tools-venv'
 $VPy = Join-Path $Venv 'Scripts\python.exe'
 $Backup = Join-Path $PySideDir '.webengine-original'
+$LegalNotice = Join-Path $PySideDir 'AVISO_LEGAL_CODECS.txt'
 
 $NodeVersion = 'v22.11.0'
 $Downloads = @{
@@ -78,6 +84,25 @@ $Downloads = @{
                  sha = '413d9f5562c39c2fcac1e48b3e2155838680a0aec1ddcb95b23cb2f092962dcc' }
     bison   = @{ url = 'https://github.com/lexxmark/winflexbison/releases/download/v2.5.25/win_flex_bison-2.5.25.zip'
                  sha = '8d324b62be33604b2c45ad1dd34ab93d722534448f55a16ca7292de32b6ac135' }
+}
+
+function Confirm-LegalNotice {
+    Write-Host '=================================================================='
+    Write-Host ' AVISO LEGAL: H.264, AAC y HEVC están sujetos a patentes.'
+    Write-Host ' Al compilar o instalar con este script, TÚ eres el único'
+    Write-Host ' responsable de cumplir con las obligaciones de licencia'
+    Write-Host ' aplicables (Via Licensing Alliance, https://www.via-la.com/).'
+    Write-Host ' El mantenedor de Katphi Browser no asume ninguna responsabilidad.'
+    Write-Host ' Si redistribuyes el resultado necesitarás esas licencias.'
+    Write-Host '=================================================================='
+    $confirm = $env:KATPHI_ACEPTO_AVISO_CODECS
+    if (-not $confirm -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+        $confirm = Read-Host "¿Entiendes y aceptas esta responsabilidad? (escribe 'SI' para continuar)"
+    }
+    if ($confirm -cne 'SI') {
+        Write-Host 'Compilación cancelada.'
+        exit 1
+    }
 }
 
 Write-Host "PySide6 / Qt $QtVersion en $PySideDir"
@@ -240,6 +265,18 @@ function Install-IntoPySide6 {
     Copy-Item -Force $proc $dstProc
     Copy-Item -Force (Join-Path $res '*') $dstRes -Recurse
     Copy-Item -Force (Join-Path $locales '*.pak') $dstLocales
+    Set-Content -Path $LegalNotice -Encoding UTF8 -Value @'
+Este Qt WebEngine NO es el de PySide6 ni forma parte de ninguna versión oficial
+de Katphi Browser: lo ha compilado el usuario de este equipo con
+tools\build_qtwebengine_codecs_windows.ps1 e incluye H.264/AAC, códecs sujetos
+a patentes (Via Licensing Alliance, https://www.via-la.com/).
+
+El usuario es el único responsable de cumplir las obligaciones de licencia que
+se deriven de su uso o distribución. El mantenedor de Katphi Browser no asume
+ninguna responsabilidad. Si redistribuyes binarios que lo incluyan necesitarás
+las licencias correspondientes. Para volver al original de PySide6:
+tools\build_qtwebengine_codecs_windows.ps1 restore
+'@
     Write-Host "Instalado. Comprueba: $Python tools\check_codecs.py"
 }
 
@@ -248,6 +285,7 @@ function Restore-Original {
     Copy-Item -Force (Join-Path $Backup 'Qt6WebEngineCore.dll'), (Join-Path $Backup 'QtWebEngineProcess.exe') $PySideDir
     Copy-Item -Force (Join-Path $Backup 'resources\*') (Join-Path $PySideDir 'resources') -Recurse
     Copy-Item -Force (Join-Path $Backup 'qtwebengine_locales\*') (Join-Path $PySideDir 'translations\qtwebengine_locales')
+    Remove-Item -Force $LegalNotice -ErrorAction SilentlyContinue
     Write-Host "Restaurado el Qt WebEngine original de PySide6."
 }
 
@@ -257,13 +295,14 @@ function Test-Built {
 
 switch ($Action) {
     'all' {
-        # build_windows.bat recrea venv_build en cada build: si la compilación
-        # ya está hecha solo se reinstala (segundos en vez de horas)
+        Confirm-LegalNotice
+        # Si la compilación ya está hecha solo se reinstala (segundos en vez
+        # de horas)
         if (-not (Test-Built)) { Get-Tools; Get-Sources; Invoke-Build }
         Install-IntoPySide6
     }
-    'build'        { Get-Tools; Get-Sources; Invoke-Build }
-    'install-only' { Install-IntoPySide6 }
+    'build'        { Confirm-LegalNotice; Get-Tools; Get-Sources; Invoke-Build }
+    'install-only' { Confirm-LegalNotice; Install-IntoPySide6 }
     'restore'      { Restore-Original }
 }
 exit 0

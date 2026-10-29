@@ -16,6 +16,8 @@ from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngin
 
 from tab_groups import TabGroupManager
 
+import app_scheme
+
 
 def _is_private_mode() -> bool:
     """True si este proceso es una ventana privada (--private)."""
@@ -551,6 +553,8 @@ class TabManager:
 
             # Configurar el perfil con datos aislados por usuario
             profile = browser.page().profile()
+            # katphi-app:// (aplicaciones de plugins, p. ej. Katphi Office)
+            app_scheme.install_on_profile(profile)
 
             # Las rutas de almacenamiento del perfil se fijan una sola vez al
             # arrancar (apply_profile_storage): cambiarlas aquí, con otras
@@ -607,7 +611,10 @@ class TabManager:
             url_changed_slots = [url_changed_1]
             # En modo privado no se registra historial
             if not private:
-                url_changed_2 = self.history_manager.record_history
+                def url_changed_2(url, _record=self.history_manager.record_history):
+                    # Las aplicaciones de plugins no van al historial
+                    if not app_scheme.is_app_url(url):
+                        _record(url)
                 browser.urlChanged.connect(url_changed_2)
                 url_changed_slots.append(url_changed_2)
             self._signal_connections[browser_id]['urlChanged'] = url_changed_slots
@@ -707,6 +714,54 @@ class TabManager:
         label = (fallback_title or "").strip()
         return label or "Nueva pestaña"
 
+    @staticmethod
+    def app_tab_info(browser):
+        """Datos de una pestaña de aplicación (add_app_tab) o None."""
+        return getattr(browser, "_katphi_app_tab", None)
+
+    def display_url(self, browser) -> str:
+        """Texto de la barra de URL: el título en las pestañas de aplicación."""
+        info = self.app_tab_info(browser)
+        if info and app_scheme.is_app_url(browser.url()):
+            return info.get("display") or info.get("title") or ""
+        return browser.url().toString()
+
+    def add_app_tab(self, url, title, icon=None, on_close=None, display=None,
+                    focus=True, before_load=None):
+        """Pestaña con una aplicación de plugin (katphi-app://...).
+
+        title: texto fijo de la pestaña; display: lo que muestra la barra de
+        URL (p. ej. la ruta del archivo); on_close(): devuelve False para
+        impedir el cierre (cambios sin guardar); before_load(browser): se
+        llama antes de cargar la URL (p. ej. para instalar un QWebChannel). No
+        va al historial ni a la sesión guardada.
+        """
+        browser = self.add_new_tab("about:blank", focus=focus, load=False)
+        if browser is None:
+            return None
+        browser._katphi_app_tab = {"title": title, "on_close": on_close,
+                                   "display": display or title}
+        if before_load is not None:
+            before_load(browser)
+        browser.setUrl(QUrl(url))
+        index = self.tabs.indexOf(browser)
+        if index != -1:
+            self.tabs.setTabText(index, title if len(title) <= 30 else title[:27] + "...")
+            self.tabs.setTabToolTip(index, display or title)
+            if icon is not None:
+                self.tabs.setTabIcon(index, icon)
+        return browser
+
+    def set_app_tab_title(self, browser, title, display=None):
+        """Cambia el título (p. ej. "* informe.docx" con cambios sin guardar)."""
+        info = self.app_tab_info(browser)
+        if info is None:
+            return
+        info["title"] = title
+        if display is not None:
+            info["display"] = display
+        self.update_tab_title(title, browser)
+
     def update_tab_title(self, title, browser):
         try:
             index = self.tabs.indexOf(browser)
@@ -715,6 +770,10 @@ class TabManager:
                 # El texto de la pestaña es el nombre del sitio (host), no el
                 # título completo de la página.
                 label = self._site_name_for_tab(browser, title)
+                app_info = self.app_tab_info(browser)
+                if app_info:
+                    label = app_info.get("title") or label
+                    title = label
                 if len(label) > 30:
                     label = label[:27] + "..."
                 # Agregar indicador visual si la pestaña pertenece a un grupo
@@ -809,7 +868,14 @@ class TabManager:
             if self.tabs.count() > 1:
                 # Guardar información de la pestaña antes de cerrarla
                 tab_widget = self.tabs.widget(index)
-                if tab_widget and hasattr(tab_widget, 'url'):
+                app_info = self.app_tab_info(tab_widget) if tab_widget else None
+                if app_info and app_info.get("on_close"):
+                    try:
+                        if app_info["on_close"]() is False:
+                            return   # el plugin impide el cierre (cambios sin guardar)
+                    except Exception as veto_ex:
+                        print(f"[TabManager] on_close de la aplicación falló: {veto_ex}")
+                if tab_widget and hasattr(tab_widget, 'url') and not app_info:
                     tab_data = {
                         'url': tab_widget.url().toString(),
                         'title': self.tabs.tabText(index),
@@ -925,7 +991,7 @@ class TabManager:
                 # Actualizar la barra de URL si está disponible
 
                 if hasattr(self.parent, 'url_bar'):
-                    self.parent.url_bar.setText(url.toString())
+                    self.parent.url_bar.setText(self.display_url(sender_browser))
                     print(f"[URL_CHANGED] ✓ URL bar actualizada a: {url.toString()}")
                 if hasattr(self.parent, 'tabs'):
                     if current_browser:
@@ -950,7 +1016,7 @@ class TabManager:
                 if hasattr(self.parent, 'devtools_dock'):
                     self.parent.devtools_dock.set_browser(current_browser)
                 if hasattr(self.parent, 'url_bar'):
-                    self.parent.url_bar.setText(current_browser.url().toString())
+                    self.parent.url_bar.setText(self.display_url(current_browser))
                 self.update_tab_title(current_browser.page().title(), current_browser)
 
                 # Sincronizar con el módulo de scraping si está disponible
@@ -986,6 +1052,9 @@ class TabManager:
         for i in range(self.tabs.count()):
             browser = self.tabs.widget(i)
 
+            # Las aplicaciones de plugins no se restauran (su URL es de un solo uso)
+            if app_scheme.is_app_url(browser.url()) or self.app_tab_info(browser):
+                continue
             url = browser.url().toString()
 
             session.append({"url": url})
@@ -1363,7 +1432,7 @@ class TabManager:
         if not ok or not hasattr(self.parent, 'userscript_manager'):
             return
         url = browser.url().toString()
-        if not url or url == 'about:blank':
+        if not url or url == 'about:blank' or app_scheme.is_app_url(browser.url()):
             return
         # Obtener scripts que coinciden con la URL
         scripts = self.parent.userscript_manager.get_scripts_for_url(url)

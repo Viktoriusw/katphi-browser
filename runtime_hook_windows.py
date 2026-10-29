@@ -27,6 +27,10 @@ if getattr(sys, 'frozen', False):
     if os.path.isdir(resources_path):
         os.environ.setdefault('QTWEBENGINE_RESOURCES_PATH', resources_path)
 
+    # El paquete no lleva el FFmpeg de Qt (trae H.264/AAC, ver AVISO_LEGAL.md):
+    # Qt Multimedia usa Media Foundation, con los códecs del propio Windows
+    os.environ.setdefault('QT_MEDIA_BACKEND', 'windows')
+
     # Añadir base_dir al PATH para que las DLLs se encuentren
     os.environ['PATH'] = base_dir + os.pathsep + os.environ.get('PATH', '')
 

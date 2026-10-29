@@ -18,13 +18,61 @@ pyside6_datas += collect_data_files('PySide6.QtWebEngine')
 # Binarios de PySide6 (DLLs, QtWebEngineProcess.exe, etc.)
 pyside6_binaries = collect_dynamic_libs('PySide6')
 
-# Fuera la copia de seguridad que deja tools/build_qtwebengine_codecs.sh
-# (Qt/.webengine-original): son ~220 MB del WebEngine sin codecs
-def _sin_backup_webengine(entries):
-    return [e for e in entries if '.webengine-original' not in e[0]]
+# ── Sin códecs patentados (H.264/AAC/HEVC) ─────────────────────────────────
+# Katphi no distribuye binarios con códecs patentados (ver AVISO_LEGAL.md):
+# si el PySide6 de este entorno lleva el Qt WebEngine que compilan
+# tools/build_qtwebengine_codecs*.{sh,ps1}, el build se detiene. Se detecta
+# por la copia de seguridad y el aviso que dejan esos scripts y por el
+# codificador OpenH264, que solo existe en un Qt WebEngine con códecs.
+import mmap as _mmap
+import PySide6 as _pyside6
 
-pyside6_datas = _sin_backup_webengine(pyside6_datas)
-pyside6_binaries = _sin_backup_webengine(pyside6_binaries)
+def _webengine_con_codecs():
+    base = os.path.dirname(_pyside6.__file__)
+    for marca in (os.path.join(base, '.webengine-original'),
+                  os.path.join(base, 'Qt', '.webengine-original'),
+                  os.path.join(base, 'AVISO_LEGAL_CODECS.txt'),
+                  os.path.join(base, 'Qt', 'AVISO_LEGAL_CODECS.txt')):
+        if os.path.exists(marca):
+            return marca
+    for lib in (os.path.join(base, 'Qt6WebEngineCore.dll'),
+                os.path.join(base, 'Qt', 'lib', 'libQt6WebEngineCore.so.6')):
+        if os.path.isfile(lib):
+            with open(lib, 'rb') as _f, _mmap.mmap(_f.fileno(), 0, access=_mmap.ACCESS_READ) as _m:
+                if _m.find(b'CWelsH264SVCEncoder') != -1:
+                    return lib
+    return None
+
+_codecs = _webengine_con_codecs()
+if _codecs:
+    raise SystemExit(
+        "El Qt WebEngine de este entorno incluye H.264/AAC (" + _codecs + ").\n"
+        "Los builds oficiales no pueden llevar códecs patentados: usa un entorno con\n"
+        "el PySide6 de pip o ejecuta tools/build_qtwebengine_codecs.sh restore.")
+
+# Qt Multimedia trae su propio FFmpeg con H.264/HEVC/AAC: el paquete solo
+# puede llevar el que compila tools/build_ffmpeg_sin_patentes.sh. Se
+# comprueba cargándolo; si no carga (el de Qt depende de VA-API) se aborta.
+import ctypes as _ctypes
+_QT_LIB = os.path.realpath(os.path.join(os.path.dirname(_pyside6.__file__), 'Qt', 'lib'))
+
+def _ffmpeg_con_patentes():
+    try:
+        for _l in ('libavutil.so.59', 'libswresample.so.5', 'libavcodec.so.61'):
+            _lib = _ctypes.CDLL(os.path.join(_QT_LIB, _l), mode=_ctypes.RTLD_GLOBAL)
+    except OSError as _e:
+        return f"no se puede comprobar: {_e}"
+    _dec = _lib.avcodec_find_decoder_by_name
+    _dec.restype = _ctypes.c_void_p
+    _found = [n for n in ('h264', 'hevc', 'vvc', 'aac', 'aac_fixed', 'aac_latm') if _dec(n.encode())]
+    return ', '.join(_found) or None
+
+if os.path.isfile(os.path.join(_QT_LIB, 'libavcodec.so.61')):
+    _ff = _ffmpeg_con_patentes()
+    if _ff:
+        raise SystemExit(
+            "El FFmpeg de Qt Multimedia no vale para un build oficial (" + _ff + ").\n"
+            "Instala el FFmpeg recortado: PYTHON=<python del entorno> tools/build_ffmpeg_sin_patentes.sh")
 
 # Hidden imports de PySide6
 pyside6_hiddenimports = [
@@ -47,6 +95,8 @@ pyside6_hiddenimports = [
     'PySide6.QtMultimedia',
     'PySide6.QtMultimediaWidgets',
     'PySide6.QtTextToSpeech',
+    # Katphi Office (plugins cargados en tiempo de ejecución): imprimir PDF
+    'PySide6.QtPdf',
 ]
 
 # ── config.yaml de distribución ────────────────────────────────────────────
@@ -86,7 +136,7 @@ project_datas = [
 ]
 
 # Edición gratuita: el paquete solo puede llevar los plugins gratuitos.
-_FREE_PLUGINS = {'themes', 'split_view', 'voice_control'}
+_FREE_PLUGINS = {'themes', 'split_view', 'voice_control', 'office_viewer'}
 _bundled = {d for d in os.listdir('plugins')
             if os.path.isdir(os.path.join('plugins', d)) and d != '__pycache__'}
 if _bundled - _FREE_PLUGINS:
@@ -94,6 +144,11 @@ if _bundled - _FREE_PLUGINS:
 
 # ── Hidden imports del proyecto ─────────────────────────────────────────────
 app_hiddenimports = [
+    # Núcleo 3.6: esquema katphi-app:// y manejadores de archivo para plugins
+    'app_scheme',
+    'file_handlers',
+    # Informe de error anónimo (panel de logs)
+    'bug_report',
     # Stdlib usados por reflexión
     'importlib.util',
     'importlib.metadata',
@@ -119,6 +174,18 @@ app_hiddenimports = [
     # Usados solo por plugins (se empaquetan como datos y PyInstaller no los analiza)
     'wave',          # voice_control
     'array',         # voice_control
+    'struct',        # katphi_tv
+    'socket',
+    'ipaddress',
+    'argparse',
+    'signal',
+    'itertools',
+    'collections',
+    'html',
+    'cryptography.hazmat.primitives.asymmetric.ed25519',
+    'cryptography.hazmat.primitives.asymmetric.x25519',
+    'cryptography.hazmat.primitives.ciphers.aead',
+    'cryptography.hazmat.primitives.kdf.hkdf',
     'typing',
     'pathlib',
     're',
@@ -210,6 +277,14 @@ a = Analysis(
     win_private_assemblies=False,
     noarchive=False,
 )
+
+# Ningún libavcodec que no sea el comprobado arriba (otro paquete podría
+# arrastrar el del sistema, que sí trae H.264/AAC)
+_ajenos = sorted({src for _n, src, _t in a.binaries
+                  if os.path.basename(_n).startswith('libavcodec')
+                  and os.path.realpath(os.path.dirname(src)) != _QT_LIB})
+if _ajenos:
+    raise SystemExit(f"Se empaquetaría un libavcodec no comprobado: {_ajenos}")
 
 pyz = PYZ(a.pure)
 

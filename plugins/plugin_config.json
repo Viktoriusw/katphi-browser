@@ -13,6 +13,10 @@
     "enabled": true,
     "config": {}
   },
+  "office_viewer": {
+    "enabled": true,
+    "config": {}
+  },
   "themes": {
     "enabled": true,
     "config": {

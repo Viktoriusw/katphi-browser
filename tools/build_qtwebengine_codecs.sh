@@ -17,9 +17,13 @@
 # gperf se descargan como .deb con `apt-get download` y se extraen en local.
 # Solo para Debian/Ubuntu; en otras distros instala esos paquetes de desarrollo.
 #
-# Licencias: H.264/AAC/HEVC están cubiertos por patentes. Distribuir binarios
-# con estos decodificadores puede requerir licencias (Qt lo avisa en su
-# documentación de Qt WebEngine Features); revísalo antes de publicar builds.
+# AVISO LEGAL: H.264, AAC y HEVC están sujetos a patentes (licencias de Via
+# Licensing Alliance). Este script es solo para compilar en tu propio equipo y
+# bajo tu exclusiva responsabilidad; el mantenedor de Katphi Browser no
+# distribuye binarios con estos códecs ni asume responsabilidad alguna por el
+# uso de este script o de lo que genere. Ver AVISO_LEGAL.md. Antes de compilar
+# o instalar pide escribir SI (o KATPHI_ACEPTO_AVISO_CODECS=SI sin terminal).
+# Los .spec oficiales se niegan a empaquetar el resultado.
 #
 # Uso:
 #   tools/build_qtwebengine_codecs.sh                 # compila e instala en el PySide6 de python3
@@ -45,6 +49,29 @@ SRC="$WORKDIR/qtwebengine-everywhere-src-$QT_VERSION"
 BUILD="$WORKDIR/build"
 DEVROOT="$WORKDIR/devroot"
 BACKUP="$PYSIDE_QT/.webengine-original"
+
+LEGAL_NOTICE="$PYSIDE_QT/AVISO_LEGAL_CODECS.txt"
+
+confirm_legal_notice() {
+    cat <<'AVISO'
+==================================================================
+ AVISO LEGAL: H.264, AAC y HEVC están sujetos a patentes.
+ Al compilar o instalar con este script, TÚ eres el único
+ responsable de cumplir con las obligaciones de licencia
+ aplicables (Via Licensing Alliance, https://www.via-la.com/).
+ El mantenedor de Katphi Browser no asume ninguna responsabilidad.
+ Si redistribuyes el resultado necesitarás esas licencias.
+==================================================================
+AVISO
+    local confirm="${KATPHI_ACEPTO_AVISO_CODECS:-}"
+    if [ -z "$confirm" ] && [ -t 0 ]; then
+        read -r -p "¿Entiendes y aceptas esta responsabilidad? (escribe 'SI' para continuar): " confirm
+    fi
+    if [ "$confirm" != "SI" ]; then
+        echo "Compilación cancelada."
+        exit 1
+    fi
+}
 
 echo "PySide6 / Qt $QT_VERSION en $PYSIDE_QT"
 echo "Directorio de trabajo: $WORKDIR ($JOBS hilos)"
@@ -165,6 +192,18 @@ install_into_pyside6() {
     if [ -d "$out/translations/qtwebengine_locales" ]; then
         cp -f "$out"/translations/qtwebengine_locales/*.pak "$PYSIDE_QT/translations/qtwebengine_locales/" 2>/dev/null || true
     fi
+    cat > "$LEGAL_NOTICE" <<'AVISO'
+Este Qt WebEngine NO es el de PySide6 ni forma parte de ninguna versión oficial
+de Katphi Browser: lo ha compilado el usuario de este equipo con
+tools/build_qtwebengine_codecs.sh e incluye H.264/AAC/HEVC, códecs sujetos a
+patentes (Via Licensing Alliance, https://www.via-la.com/).
+
+El usuario es el único responsable de cumplir las obligaciones de licencia que
+se deriven de su uso o distribución. El mantenedor de Katphi Browser no asume
+ninguna responsabilidad. Si redistribuyes binarios que lo incluyan necesitarás
+las licencias correspondientes. Para volver al original de PySide6:
+tools/build_qtwebengine_codecs.sh restore
+AVISO
     echo "Instalado. Comprueba: $PYTHON tools/check_codecs.py"
 }
 
@@ -173,13 +212,14 @@ restore_original() {
     cp -f "$BACKUP/lib/libQt6WebEngineCore.so.6" "$PYSIDE_QT/lib/"
     cp -f "$BACKUP/libexec/QtWebEngineProcess" "$PYSIDE_QT/libexec/"
     cp -a "$BACKUP/resources/." "$PYSIDE_QT/resources/"
+    rm -f "$LEGAL_NOTICE"
     echo "Restaurado el Qt WebEngine original de PySide6."
 }
 
 case "$ACTION" in
-    all)          fetch_sources; fetch_dev_packages; configure_and_build; install_into_pyside6 ;;
-    build)        fetch_sources; fetch_dev_packages; configure_and_build ;;
-    install-only) install_into_pyside6 ;;
+    all)          confirm_legal_notice; fetch_sources; fetch_dev_packages; configure_and_build; install_into_pyside6 ;;
+    build)        confirm_legal_notice; fetch_sources; fetch_dev_packages; configure_and_build ;;
+    install-only) confirm_legal_notice; install_into_pyside6 ;;
     restore)      restore_original ;;
     *)            echo "Uso: $0 [all|build|install-only|restore]"; exit 2 ;;
 esac

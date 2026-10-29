@@ -7,7 +7,7 @@ Ejecutar con el mismo Python que usa Katphi:
 
 Si "H.264 + AAC" sale NO, ese Qt WebEngine está compilado sin códecs
 propietarios y los vídeos de casi todas las webs (salvo YouTube) no se
-reproducirán. Ver tools/build_qtwebengine_codecs.sh.
+reproducirán. Es lo normal en la versión oficial (ver AVISO_LEGAL.md).
 Código de salida: 0 si hay H.264/AAC, 1 si no.
 """
 import json

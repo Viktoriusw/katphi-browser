@@ -67,6 +67,63 @@
       "icon": "icons/tor_off.png",
       "type": "native"
     },
+    "katphi_tv": {
+      "name": "Katphi TV",
+      "version": "1.1.0",
+      "author": "Katphi Team",
+      "description": "Televisión en directo P2P sobre Tor sin servidor central: emite con OBS y mira las salas de otros usuarios.",
+      "premium": true,
+      "category": "network",
+      "tags": ["streaming", "p2p", "obs", "live", "tor"],
+      "features": ["Directorio de salas descentralizado", "Emisión desde OBS", "Malla P2P de vídeo", "Chat de sala con moderación"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "3.5.0",
+        "dependencies": ["cryptography"]
+      },
+      "permissions": ["network_access", "ui_modification", "clipboard"],
+      "icon": "katphi_tv_icon.svg",
+      "download_url": "https://api.katphi.com/api/plugins/katphi_tv/download",
+      "info_url": "https://api.katphi.com/api/plugins/katphi_tv/info"
+    },
+    "katphi_chat": {
+      "name": "Katphi Chat",
+      "version": "1.1.0",
+      "author": "Katphi Team",
+      "description": "Mensajería P2P sobre Tor cifrada de extremo a extremo (chats, grupos, canales) y bóveda cifrada en tu disco.",
+      "premium": true,
+      "category": "communication",
+      "tags": ["chat", "p2p", "tor", "vault", "encryption"],
+      "features": ["Chats, grupos y canales", "Cifrado de extremo a extremo", "Buzón para usuarios desconectados", "Bóveda cifrada con tamaño a elegir"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "3.5.0",
+        "dependencies": ["cryptography"]
+      },
+      "permissions": ["network_access", "ui_modification", "clipboard"],
+      "icon": "katphi_chat_icon.svg",
+      "download_url": "https://api.katphi.com/api/plugins/katphi_chat/download",
+      "info_url": "https://api.katphi.com/api/plugins/katphi_chat/info"
+    },
+    "katphi_files": {
+      "name": "Katphi Files",
+      "version": "1.1.0",
+      "author": "Katphi Team",
+      "description": "Envío de archivos P2P sobre Tor, cifrado, verificado y reanudable.",
+      "premium": true,
+      "category": "network",
+      "tags": ["files", "p2p", "tor", "transfer"],
+      "features": ["Ofertas cifradas a cualquier usuario", "Descarga verificada y reanudable", "Integración con Katphi Chat y su bóveda"],
+      "trial_days": 7,
+      "requirements": {
+        "min_browser_version": "3.5.0",
+        "dependencies": ["cryptography"]
+      },
+      "permissions": ["network_access", "ui_modification", "clipboard"],
+      "icon": "katphi_files_icon.svg",
+      "download_url": "https://api.katphi.com/api/plugins/katphi_files/download",
+      "info_url": "https://api.katphi.com/api/plugins/katphi_files/info"
+    },
     "themes": {
       "name": "Advanced Theme System",
       "version": "1.0.0",

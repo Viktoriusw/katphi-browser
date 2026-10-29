@@ -3,12 +3,13 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                               QDialog, QMessageBox, QCheckBox, QGroupBox,
                               QApplication, QTableWidget, QTableWidgetItem,
                               QHeaderView, QDialogButtonBox, QFrame,
-                              QGraphicsOpacityEffect)
+                              QGraphicsOpacityEffect, QMenu)
 from PySide6.QtCore import (Qt, QSettings, Signal, QUrl, QObject, Slot,
                             QTimer, QPropertyAnimation, QEasingCurve,
-                            QFile, QIODevice)
+                            QFile, QIODevice, QPoint)
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWebChannel import QWebChannel
+import html
 import json
 import logging
 from cryptography.fernet import Fernet, InvalidToken
@@ -35,9 +36,18 @@ except Exception:  # pragma: no cover - PySide6 sin WebEngine
 UNDECRYPTABLE_LABEL = "[no descifrable]"
 
 # Límites del payload que llega desde JS por el canal
-_MAX_PAYLOAD_LEN  = 8192
+_MAX_PAYLOAD_LEN  = 16384
 _MAX_USERNAME_LEN = 512
 _MAX_PASSWORD_LEN = 4096
+
+# Tipos de formulario que distingue el script de captura y modos de relleno
+_CRED_KINDS = ("login", "signup", "change")
+_FILL_MODES = ("full", "username", "password")
+
+# Segundos que se espera a saber si el login ha funcionado, y que se recuerda
+# el usuario del paso 1 de un login multipaso
+_PENDING_TTL       = 120
+_STEP_USERNAME_TTL = 600
 
 # Llavero del sistema (opcional): servicio y entrada para la clave Fernet
 _KEYRING_SERVICE = "Katphi"
@@ -180,6 +190,17 @@ except ImportError:
             }
 
 
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "[::1]", "::1")
+
+
+def _is_insecure_origin(origin: str) -> bool:
+    """http:// que no es la propia máquina (la contraseña viaja en claro)."""
+    if not origin.startswith("http://"):
+        return False
+    host = (urlparse(origin).hostname or "").lower()
+    return host not in _LOCAL_HOSTS and not host.endswith(".localhost")
+
+
 def _normalize_origin(url_str: str) -> str:
     """Normalize a URL to its origin (scheme://host[:port])."""
     try:
@@ -210,13 +231,23 @@ class CredentialReceiver(QObject):
     partir de la URL real del browser (origin_getter).
     """
 
-    credential_received = Signal(str, str, str)  # origin, username, password
-    autofill_requested  = Signal(str, str)       # origin, usuario ya escrito
+    credential_received = Signal(str, object)  # origin, {username, password, old_password, kind}
+    username_captured   = Signal(str, str)     # origin, usuario (paso 1 de un login multipaso)
+    login_outcome       = Signal(str, str)     # origin, "success"
+    page_ready          = Signal(str, str, bool)  # origin, id de documento, ¿pide login?
+    autofill_requested  = Signal(str, object)  # origin, {username, hidden_user, mode, auto, rect}
 
-    def __init__(self, parent=None, origin_getter=None):
+    def __init__(self, parent=None, origin_getter=None, flags_getter=None):
         super().__init__(parent)
         self._origin_getter = origin_getter
+        # origin -> {"has": bool, "auto": bool}; lo da PasswordManager
+        self._flags_getter = flags_getter
         self._last_fill_request = 0.0
+
+    @staticmethod
+    def _doc_id(data) -> str:
+        doc = data.get("doc", "")
+        return doc if isinstance(doc, str) and len(doc) <= 64 else ""
 
     def _current_origin(self) -> str:
         """Origen (solo http/https) de la URL actual del browser propietario."""
@@ -254,23 +285,99 @@ class CredentialReceiver(QObject):
                 return
             username = data.get("username", "")
             password = data.get("password", "")
-            if not isinstance(username, str) or not isinstance(password, str):
+            old_password = data.get("old_password", "") or ""
+            kind = data.get("kind", "login")
+            if not all(isinstance(v, str) for v in (username, password, old_password)):
                 return
-            if (not username or not password or len(username) > _MAX_USERNAME_LEN
-                    or len(password) > _MAX_PASSWORD_LEN):
+            # Usuario vacío permitido: paso 2 de un login multipaso o cambio de
+            # contraseña (Python lo resuelve)
+            if (not password or len(username) > _MAX_USERNAME_LEN
+                    or len(password) > _MAX_PASSWORD_LEN
+                    or len(old_password) > _MAX_PASSWORD_LEN):
                 return
+            if kind not in _CRED_KINDS:
+                kind = "login"
             # El campo "origin" del payload se ignora a propósito
             origin = self._current_origin()
             if not origin:
                 return
-            logger.info("[PasswordManager] Credential received via WebChannel: %s", origin)
-            self.credential_received.emit(origin, username, password)
+            logger.info("[PasswordManager] Credential received via WebChannel: %s (%s)",
+                        origin, kind)
+            self.credential_received.emit(origin, {
+                "username": username, "password": password,
+                "old_password": old_password, "kind": kind,
+                "doc": self._doc_id(data)})
         except Exception as exc:
             logger.error("[PasswordManager] Error parsing credential payload: %s", exc)
 
     @Slot(str)
+    def onUsername(self, json_str: str) -> None:
+        """Formulario con solo el usuario enviado (paso 1 de un login multipaso)."""
+        try:
+            data = self._parse_payload(json_str)
+            if data is None:
+                return
+            username = data.get("username", "")
+            if not isinstance(username, str) or not username or len(username) > _MAX_USERNAME_LEN:
+                return
+            origin = self._current_origin()
+            if origin:
+                self.username_captured.emit(origin, username)
+        except Exception as exc:
+            logger.error("[PasswordManager] Error parsing username payload: %s", exc)
+
+    @Slot(str, result=str)
+    def hello(self, json_str: str) -> str:
+        """Documento nuevo conectado al canal: ¿hay credenciales y relleno automático?"""
+        flags = {"has": False, "auto": False}
+        try:
+            origin = self._current_origin()
+            if origin and self._flags_getter is not None:
+                got = self._flags_getter(origin) or {}
+                flags = {"has": bool(got.get("has")), "auto": bool(got.get("auto"))}
+        except Exception as exc:
+            logger.error("[PasswordManager] Error in hello: %s", exc)
+        return json.dumps(flags)
+
+    @Slot(str)
+    def onPageReady(self, json_str: str) -> None:
+        """Un segundo después de cargar: id del documento y si muestra un login vacío."""
+        try:
+            data = self._parse_payload(json_str)
+            if data is None:
+                return
+            doc = self._doc_id(data)
+            origin = self._current_origin()
+            if origin and doc:
+                self.page_ready.emit(origin, doc, data.get("login_form") is True)
+        except Exception as exc:
+            logger.error("[PasswordManager] Error parsing page-ready payload: %s", exc)
+
+    @Slot(str)
+    def onLoginOutcome(self, json_str: str) -> None:
+        """La página indica que el formulario de login ha desaparecido (SPA)."""
+        try:
+            data = self._parse_payload(json_str)
+            if data is None or data.get("result") != "success":
+                return
+            origin = self._current_origin()
+            if origin:
+                self.login_outcome.emit(origin, "success")
+        except Exception as exc:
+            logger.error("[PasswordManager] Error parsing login outcome: %s", exc)
+
+    @staticmethod
+    def _parse_rect(value):
+        """[x, y, ancho, alto] del campo en píxeles CSS, o None."""
+        if not isinstance(value, list) or len(value) != 4:
+            return None
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
+            return None
+        return [max(-1e5, min(1e5, float(v))) for v in value]
+
+    @Slot(str)
     def requestAutofill(self, json_str: str) -> None:
-        """El usuario ha pulsado (o tabulado a) un campo de login: pedir relleno."""
+        """Campo de login pulsado/tabulado, o formulario visible al cargar (auto)."""
         try:
             now = time.monotonic()
             if now - self._last_fill_request < 0.5:
@@ -279,12 +386,17 @@ class CredentialReceiver(QObject):
             data = self._parse_payload(json_str)
             if data is None:
                 return
-            typed = data.get("username", "")
-            if not isinstance(typed, str) or len(typed) > _MAX_USERNAME_LEN:
-                typed = ""
+            info = {}
+            for key in ("username", "hidden_user"):
+                v = data.get(key, "")
+                info[key] = v if isinstance(v, str) and len(v) <= _MAX_USERNAME_LEN else ""
+            mode = data.get("mode", "full")
+            info["mode"] = mode if mode in _FILL_MODES else "full"
+            info["auto"] = data.get("auto") is True
+            info["rect"] = self._parse_rect(data.get("rect"))
             origin = self._current_origin()
             if origin:
-                self.autofill_requested.emit(origin, typed)
+                self.autofill_requested.emit(origin, info)
         except Exception as exc:
             logger.error("[PasswordManager] Error en la petición de autorrelleno: %s", exc)
 
@@ -298,14 +410,17 @@ class PasswordSaveBanner(QFrame):
 
     accepted  = Signal()
     dismissed = Signal()
+    never     = Signal()   # "Never for this site" (persistente)
+    timed_out = Signal()   # se cerró solo: no cuenta como "Not now"
 
     def __init__(self, url: str, username: str, password: str,
-                 is_update: bool = False, parent=None):
+                 is_update: bool = False, parent=None, insecure: bool = False):
         super().__init__(parent)
         self.url       = url
         self.username  = username
         self.password  = password
         self.is_update = is_update
+        self.insecure  = insecure
         self.setObjectName("passwordSaveBanner")
         self.setFrameShape(QFrame.NoFrame)
         self.setFixedHeight(48)
@@ -314,7 +429,7 @@ class PasswordSaveBanner(QFrame):
         self._auto_timer = QTimer(self)
         self._auto_timer.setSingleShot(True)
         self._auto_timer.setInterval(15_000)
-        self._auto_timer.timeout.connect(self._on_dismiss)
+        self._auto_timer.timeout.connect(self._on_timeout)
         self._auto_timer.start()
 
     def _build_ui(self):
@@ -333,7 +448,10 @@ class PasswordSaveBanner(QFrame):
 
         action = "Update" if self.is_update else "Save"
         origin = _normalize_origin(self.url)
-        lbl = QLabel(f"{action} password for <b>{self.username}</b> on {origin}?")
+        text = f"{action} password for <b>{html.escape(self.username)}</b> on {html.escape(origin)}?"
+        if self.insecure:
+            text += " <i>(not secure connection: it can be intercepted)</i>"
+        lbl = QLabel(text)
         lbl.setTextFormat(Qt.RichText)
         layout.addWidget(lbl, 1)
 
@@ -348,6 +466,13 @@ class PasswordSaveBanner(QFrame):
         dismiss_btn.setCursor(Qt.PointingHandCursor)
         dismiss_btn.clicked.connect(self._on_dismiss)
         layout.addWidget(dismiss_btn)
+
+        if not self.is_update:
+            never_btn = QPushButton("Never for this site")
+            never_btn.setFixedHeight(30)
+            never_btn.setCursor(Qt.PointingHandCursor)
+            never_btn.clicked.connect(self._on_never)
+            layout.addWidget(never_btn)
 
     def _apply_style(self):
         self.setStyleSheet("""
@@ -382,6 +507,15 @@ class PasswordSaveBanner(QFrame):
         self.dismissed.emit()
         self._animate_out()
 
+    def _on_never(self):
+        self._auto_timer.stop()
+        self.never.emit()
+        self._animate_out()
+
+    def _on_timeout(self):
+        self.timed_out.emit()
+        self._animate_out()
+
     def _animate_out(self):
         try:
             anim = QPropertyAnimation(self, b"maximumHeight", self)
@@ -399,58 +533,117 @@ class PasswordSaveBanner(QFrame):
 # JS capture script
 #
 # Communication path:
-#   form submit / button click / Enter key
-#     → emitCred()
+#   form submit / submit-like button click / Enter key
+#     → tryCapture()
 #       → window.__katphi.onCredential(json)   [QWebChannel slot call]
 #         → CredentialReceiver.onCredential()      [Python main thread]
 #
-# Covers:
-#   1. Native <form> submit events (traditional sites)
-#   2. Click on ANY button-like element: <button> (any type), role="button",
-#      <input type="submit|button">, <a> — handles React/Vue modal buttons
-#      that never fire a native submit event.
-#   3. Enter key in any <input> field within a login container.
+# Guardado provisional (como Chrome/Firefox): la captura NO muestra el banner.
+# Python la guarda como pendiente y solo la ofrece si el login funciona:
+#   - el campo de contraseña desaparece de la página (SPA) → onLoginOutcome
+#   - o la pestaña navega y en la página nueva no hay un formulario de login
+#     vacío (si reaparece, el login ha fallado y se descarta).
+#
+# Botones: <button>, role="button", <input type="submit|button"> y <a> sin
+# href de navegación. Se ignoran "olvidé mi contraseña", "cancelar", el icono
+# de mostrar/ocultar contraseña y similares.
+#
+# Tipos de formulario (por número de campos y autocomplete):
+#   login  → 1 contraseña
+#   signup → new-password, o 2 contraseñas iguales (se guarda la nueva)
+#   change → current-password + new-password, o actual + nueva (+ repetir)
+# Login multipaso (Google, Microsoft): un formulario con solo el usuario envía
+# onUsername; Python lo recuerda para el paso de la contraseña. También se lee
+# el campo oculto autocomplete="username" que muchos sitios dejan en el paso 2.
 #
 # Containers searched (in priority order):
 #   <form> → [role="dialog|alertdialog"] → class/id patterns for modal/login
 #   → document.body as last resort.
 #
 # Debounce: 400 ms prevents duplicate emits when click + submit both fire.
-# Pending cred: if the WebChannel isn't connected yet at emit time, the
-# credential is stored and sent as soon as the channel is ready.
+# Si el WebChannel aún no está conectado, las llamadas se encolan.
 #
 # Este script se ejecuta en el ApplicationWorld (mundo aislado): la página no
 # puede llamar a window.__katphi ni ver qt.webChannelTransport. El origen no
 # se envía (Python lo calcula a partir de la URL real del browser).
 #
-# Autorrelleno (A-005): al cargar, Python solo indica si hay credenciales
-# guardadas (window.__katphiHasCreds). Cuando el usuario hace clic o llega con
-# Tab a un campo de usuario o contraseña (evento isTrusted, no sintetizable
-# por la página), se pide el relleno a Python, que responde llamando a
-# window.__katphiFill() en este mismo mundo con UNA sola credencial.
+# Inyección: QWebEngineScript en DocumentReady y en todos los frames (no
+# depende de loadFinished). Qt solo instala qt.webChannelTransport en el frame
+# principal, así que los iframes hablan con Python a través del script del
+# frame principal (window.top.__katphiRelay, mismo mundo aislado). Solo los
+# iframes del MISMO origen que la pestaña: desde otro origen, acceder a
+# window.top lanza SecurityError y el script queda inerte (si no, Python les
+# atribuiría el origen de la pestaña).
+#
+# Al conectar el canal, hello() devuelve si hay credenciales guardadas
+# (__katphiHasCreds) y si se permite rellenar sin gesto (__katphiAutoAllowed:
+# una sola cuenta y https). onPageReady (con un id de documento) permite a
+# Python saber si tras enviar el login la página nueva vuelve a pedirlo.
+#
+# Autorrelleno con gesto: se pide cuando el usuario hace clic o llega con Tab
+# a un campo de login (evento isTrusted, no sintetizable por la página). Con
+# varias cuentas (o en http) Python muestra un menú para elegir. Python
+# responde llamando a window.__katphiFill() en el frame principal con UNA sola
+# credencial, que la pasa al frame que hizo la petición.
 # ---------------------------------------------------------------------------
 
 _CAPTURE_JS = r'''
 (function() {
     if (window.__katphiCapture) return;
-    window.__katphiCapture = true;
-    window.__katphi         = null;
-    window.__scrapalioCredPend = null;
-    window.__katphiLastEmit = 0;
-    window.__katphiHasCreds = false;
-    window.__katphiLastFill = 0;
-    window.__katphiFillTarget = null;
+    var isTop = window === window.top;
+    var T = window.top;   // estado compartido y canal: en el frame principal
+    try { void T.location.href; } catch(e) { return; }   // iframe de otro origen
+    window.__katphiCapture     = true;
+    // Id de este documento: distingue la página del envío de la siguiente
+    var DOC = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    if (isTop) {
+        window.__katphi            = null;
+        window.__katphiQueue       = [];
+        window.__katphiHasCreds    = false;
+        window.__katphiAutoAllowed = false;
+        window.__katphiAutoDone    = false;
+        window.__katphiFillFrame   = null;
+    }
+    window.__katphiLastEmit    = 0;
+    window.__katphiLastFill    = 0;
+    window.__katphiFillTarget  = null;
+    window.__katphiWatch       = null;
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
+    function acTokens(inp) {
+        return (inp.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/);
+    }
+
+    function hasTok(inp, tok) { return acTokens(inp).indexOf(tok) !== -1; }
+
+    function inputs(root) {
+        return root ? Array.prototype.slice.call(root.querySelectorAll('input')) : [];
+    }
+
+    function isVisible(el) {
+        if (!el || !el.isConnected || el.type === 'hidden') return false;
+        if (!el.getClientRects().length || !el.offsetWidth || !el.offsetHeight) return false;
+        var s = window.getComputedStyle(el);
+        return s.visibility !== 'hidden' && s.display !== 'none';
+    }
+
+    function isPasswordField(inp) {
+        if (!inp || inp.tagName !== 'INPUT') return false;
+        var t = (inp.type || '').toLowerCase();
+        if (t === 'password') return true;
+        // "Mostrar contraseña" activado: type=text pero conserva el autocomplete
+        return t === 'text' &&
+               (hasTok(inp, 'current-password') || hasTok(inp, 'new-password'));
+    }
+
     function isUsernameField(inp) {
-        if (!inp || inp.type === 'hidden') return false;
-        var t  = (inp.type          || '').toLowerCase();
-        var ac = (inp.autocomplete  || '').toLowerCase();
-        if (t === 'password' || t === 'submit' || t === 'button' ||
-            t === 'checkbox' || t === 'radio'  || t === 'file') return false;
+        if (!inp || inp.type === 'hidden' || isPasswordField(inp)) return false;
+        var t  = (inp.type || '').toLowerCase();
+        if (t === 'submit' || t === 'button' || t === 'checkbox' ||
+            t === 'radio'  || t === 'file') return false;
         if (t === 'email') return true;
-        if (ac === 'username' || ac === 'email' || ac === 'tel') return true;
+        if (hasTok(inp, 'username') || hasTok(inp, 'email') || hasTok(inp, 'tel')) return true;
         var attrs = [(inp.name  || ''), (inp.id   || ''),
                      (inp.placeholder || ''),
                      (inp.getAttribute('aria-label') || '')].join(' ').toLowerCase();
@@ -462,34 +655,75 @@ _CAPTURE_JS = r'''
         return false;
     }
 
-    function findPasswordField(root) {
-        var inputs = root.querySelectorAll('input');
-        for (var i = 0; i < inputs.length; i++) {
-            var t  = (inputs[i].type         || '').toLowerCase();
-            var ac = (inputs[i].autocomplete || '').toLowerCase();
-            if (t === 'password' ||
-                ac === 'current-password' ||
-                ac === 'new-password') return inputs[i];
+    // Más estricto: para rellenar sin gesto un formulario de solo usuario
+    // (no un campo de newsletter cualquiera)
+    function isLoginUsername(inp) {
+        if (!isUsernameField(inp)) return false;
+        if (hasTok(inp, 'username') || hasTok(inp, 'webauthn')) return true;
+        return /identifier|login|user/.test(((inp.name || '') + ' ' + (inp.id || '')).toLowerCase());
+    }
+
+    // Campos de contraseña visibles o con valor (los ocultos y vacíos suelen
+    // ser trampas anti-bot)
+    function passwordFields(root, needVisible) {
+        return inputs(root).filter(function(i) {
+            return isPasswordField(i) && (isVisible(i) || (!needVisible && !!i.value));
+        });
+    }
+
+    function findUsername(root, pw) {
+        var all = inputs(root);
+        var start = pw ? all.indexOf(pw) : all.length;
+        for (var j = start - 1; j >= 0; j--) {
+            if (isUsernameField(all[j]) && isVisible(all[j])) return all[j];
+        }
+        for (var k = 0; k < all.length; k++) {
+            if (isUsernameField(all[k]) && isVisible(all[k])) return all[k];
         }
         return null;
     }
 
-    function findFormFields(root) {
-        var fields = { username: null, password: null };
-        var pw = findPasswordField(root);
-        if (!pw) return fields;
-        fields.password = pw;
-        var all = Array.prototype.slice.call(root.querySelectorAll('input'));
-        var pi  = all.indexOf(pw);
-        for (var j = pi - 1; j >= 0; j--) {
-            if (isUsernameField(all[j])) { fields.username = all[j]; break; }
+    // Paso 2 de un login multipaso: el usuario suele ir en un campo oculto
+    function hiddenUsername(root) {
+        var all = inputs(root).concat(inputs(document));
+        for (var i = 0; i < all.length; i++) {
+            if (all[i].value && hasTok(all[i], 'username') && !isPasswordField(all[i]))
+                return all[i].value;
         }
-        if (!fields.username) {
-            for (var k = 0; k < all.length; k++) {
-                if (isUsernameField(all[k])) { fields.username = all[k]; break; }
-            }
+        return '';
+    }
+
+    // Clasifica el formulario y extrae la credencial a guardar
+    function analyze(root) {
+        var pws = passwordFields(root, false).filter(function(i) { return !!i.value; });
+        if (!pws.length || pws.length > 3) return null;
+        var news = pws.filter(function(i) { return hasTok(i, 'new-password'); });
+        var curs = pws.filter(function(i) { return hasTok(i, 'current-password'); });
+        var kind = 'login', pass = '', old = '', field = pws[0];
+        if (news.length) {
+            if (news.length > 1 && news[0].value !== news[1].value) return null;
+            pass = news[0].value; field = news[0];
+            if (curs.length) { kind = 'change'; old = curs[0].value; }
+            else kind = 'signup';
+        } else if (pws.length === 1) {
+            pass = pws[0].value;
+        } else if (pws.length === 2) {
+            if (pws[0].value === pws[1].value) { kind = 'signup'; pass = pws[0].value; }
+            else { kind = 'change'; old = pws[0].value; pass = pws[1].value; field = pws[1]; }
+        } else {
+            if (pws[1].value !== pws[2].value) return null;   // la repetición no coincide
+            kind = 'change'; old = pws[0].value; pass = pws[1].value; field = pws[1];
         }
-        return fields;
+        var u = findUsername(root, pws[0]);
+        return { kind: kind, password: pass, old_password: old, field: field,
+                 username: (u && u.value) || hiddenUsername(root) };
+    }
+
+    // Formulario con solo usuario (paso 1 de un login multipaso)
+    function loneUsername(root) {
+        if (passwordFields(root, true).length) return '';
+        var u = findUsername(root, null);
+        return (u && u.value) ? u.value : '';
     }
 
     function findContainer(el) {
@@ -521,40 +755,138 @@ _CAPTURE_JS = r'''
         return null;
     }
 
+    var SKIP_BTN = /forgot|olvid|recuper|reset|restablec|recover|cancel|mostrar|ocultar|show|hide|ver contrase/i;
+
+    // ¿Es un botón que envía el login? (no "olvidé mi contraseña", no el ojo)
+    function isSubmitLike(btn) {
+        var text = (btn.innerText || btn.value || '').trim();
+        var label = text + ' ' + (btn.getAttribute('aria-label') || '') + ' ' +
+                    (btn.getAttribute('title') || '');
+        if (SKIP_BTN.test(label)) return false;
+        if (btn.tagName === 'A') {
+            var href = (btn.getAttribute('href') || '').trim().toLowerCase();
+            if (href && href.charAt(0) !== '#' && href.indexOf('javascript:') !== 0) return false;
+        }
+        if (!text && !(btn.tagName === 'BUTTON' && btn.type === 'submit')) {
+            // Icono sin texto junto al campo: el botón de mostrar contraseña
+            var p = btn.parentElement;
+            for (var i = 0; i < 2 && p; i++, p = p.parentElement) {
+                if (passwordFields(p, true).length) return false;
+            }
+        }
+        return true;
+    }
+
     // ── Emit ─────────────────────────────────────────────────────────────
 
-    function emitCred(user, pass) {
-        var now = Date.now();
-        if (now - window.__katphiLastEmit < 400) return;   // debounce
-        window.__katphiLastEmit = now;
-        var payload = JSON.stringify({ username: user, password: pass });
+    // fillFn: en requestAutofill, función que rellena el frame que pregunta
+    function call(name, payload, fillFn) {
+        if (!isTop) {
+            var tries = 0;
+            (function relay() {
+                try {
+                    if (T.__katphiRelay) { T.__katphiRelay(name, payload, fillFn || null); return; }
+                } catch(e) { return; }
+                if (++tries < 20) setTimeout(relay, 250);   // el top aún no ha cargado
+            })();
+            return;
+        }
+        if (name === 'requestAutofill') window.__katphiFillFrame = fillFn || null;
         if (window.__katphi) {
-            try { window.__katphi.onCredential(payload); } catch(e) {}
-        } else {
-            // Channel not ready yet; store and send when it connects
-            window.__scrapalioCredPend = payload;
+            try { window.__katphi[name](payload); } catch(e) {}
+        } else if (window.__katphiQueue.length < 10) {
+            // Channel not ready yet; send when it connects
+            window.__katphiQueue.push([name, payload, fillFn]);
         }
     }
 
-    function tryCapture(container) {
-        var f = findFormFields(container);
-        if (f.username && f.password && f.username.value && f.password.value) {
-            emitCred(f.username.value, f.password.value);
+    if (isTop) window.__katphiRelay = call;
+
+    function debounced() {
+        var now = Date.now();
+        if (now - window.__katphiLastEmit < 400) return false;
+        window.__katphiLastEmit = now;
+        return true;
+    }
+
+    // Documentos de la pestaña accesibles (frame principal + iframes del mismo origen)
+    function allDocs() {
+        var out = [], stack = [T];
+        while (stack.length && out.length < 50) {
+            var w = stack.pop();
+            try { var d = w.document; void d.documentElement; out.push(d); }
+            catch(e) { continue; }
+            for (var i = 0; i < w.frames.length; i++) stack.push(w.frames[i]);
         }
+        return out;
+    }
+
+    function loginFormShown() {
+        var docs = allDocs();
+        for (var d = 0; d < docs.length; d++) {
+            var all = inputs(docs[d]);
+            for (var i = 0; i < all.length; i++) {
+                var el = all[i];
+                if (isPasswordField(el) && isVisible(el) && !el.value &&
+                    !hasTok(el, 'new-password')) return true;
+            }
+        }
+        return false;
+    }
+    if (isTop) window.__katphiLoginFormShown = loginFormShown;
+
+    // Login de una SPA: el campo desaparece sin navegar. Si en su lugar
+    // aparece otro formulario de login vacío (re-render tras un error), no.
+    function watchOutcome(field) {
+        if (window.__katphiWatch) clearInterval(window.__katphiWatch);
+        var n = 0, gone = 0;
+        window.__katphiWatch = setInterval(function() {
+            n++;
+            gone = (isVisible(field) || loginFormShown()) ? 0 : gone + 1;
+            if (gone >= 2 || n >= 40) {
+                clearInterval(window.__katphiWatch);
+                window.__katphiWatch = null;
+                if (gone >= 2) call('onLoginOutcome', JSON.stringify({ result: 'success' }));
+            }
+        }, 500);
+    }
+
+    function tryCapture(container) {
+        var a = analyze(container);
+        if (a) {
+            if (!debounced()) return;
+            call('onCredential', JSON.stringify({
+                username: a.username, password: a.password,
+                old_password: a.old_password, kind: a.kind, doc: DOC
+            }));
+            watchOutcome(a.field);
+            return;
+        }
+        var u = loneUsername(container);
+        if (u && debounced()) call('onUsername', JSON.stringify({ username: u }));
     }
 
     // ── Connect to QWebChannel ───────────────────────────────────────────
     // qt.webChannelTransport is injected by Qt when page.setWebChannel() was called.
 
-    if (typeof QWebChannel !== 'undefined' &&
+    if (isTop && typeof QWebChannel !== 'undefined' &&
         typeof qt !== 'undefined' && qt.webChannelTransport) {
         new QWebChannel(qt.webChannelTransport, function(channel) {
             window.__katphi = channel.objects.credReceiver;
-            if (window.__scrapalioCredPend) {
-                try { window.__katphi.onCredential(window.__scrapalioCredPend); }
-                catch(e) {}
-                window.__scrapalioCredPend = null;
-            }
+            window.__katphi.hello(JSON.stringify({ doc: DOC }), function(res) {
+                try {
+                    var r = JSON.parse(res);
+                    window.__katphiHasCreds    = !!r.has;
+                    window.__katphiAutoAllowed = !!r.auto;
+                } catch(e) {}
+            });
+            var q = window.__katphiQueue;
+            window.__katphiQueue = [];
+            for (var i = 0; i < q.length; i++) call(q[i][0], q[i][1], q[i][2]);
+            // Margen para que la página pinte su formulario (SPA)
+            setTimeout(function() {
+                call('onPageReady', JSON.stringify({ doc: DOC, login_form: loginFormShown() }));
+            }, 1000);
         });
     }
 
@@ -568,11 +900,11 @@ _CAPTURE_JS = r'''
         } catch(ex) {}
     }, true);
 
-    // 2. Click on any button-like element (React/Vue modals, type="button")
+    // 2. Click on a submit-like element (React/Vue modals, type="button")
     document.addEventListener('click', function(e) {
         try {
             var btn = findButtonAncestor(e.target);
-            if (btn) tryCapture(findContainer(btn));
+            if (btn && isSubmitLike(btn)) tryCapture(findContainer(btn));
         } catch(ex) {}
     }, true);
 
@@ -585,24 +917,65 @@ _CAPTURE_JS = r'''
         } catch(ex) {}
     }, true);
 
-    // ── Autorrelleno con gesto del usuario ───────────────────────────────
+    // ── Autorrelleno ─────────────────────────────────────────────────────
+
+    // Qué campos se pueden rellenar. Nunca un new-password (registro).
+    function fillPlan(root) {
+        var pws = passwordFields(root, true);
+        var pw = null, kind = 'login';
+        if (pws.length === 1 && !hasTok(pws[0], 'new-password')) {
+            pw = pws[0];
+        } else if (pws.length > 1) {
+            var curs = pws.filter(function(i) { return hasTok(i, 'current-password'); });
+            if (curs.length !== 1) return null;
+            pw = curs[0]; kind = 'change';
+        } else if (pws.length) {
+            return null;
+        }
+        var user = kind === 'change' ? null : findUsername(root, pw);
+        if (!pw && !user) return null;
+        return { pw: pw, user: user, kind: kind,
+                 mode: pw ? (user ? 'full' : 'password') : 'username' };
+    }
+
+    // Rectángulo del campo en coordenadas del frame principal (para el menú)
+    function viewportRect(el) {
+        var r = el.getBoundingClientRect(), x = r.left, y = r.top, w = window;
+        try {
+            while (w !== w.top && w.frameElement) {
+                var fe = w.frameElement, fr = fe.getBoundingClientRect();
+                x += fr.left + fe.clientLeft;
+                y += fr.top + fe.clientTop;
+                w = w.parent;
+            }
+        } catch(e) {}
+        return [x, y, r.width, r.height];
+    }
+
+    function requestFill(c, p, t, auto) {
+        window.__katphiFillTarget = c;
+        call('requestAutofill', JSON.stringify({
+            username: p.user ? (p.user.value || '') : '',
+            hidden_user: p.user ? '' : hiddenUsername(c),
+            mode: p.mode,
+            auto: !!auto,
+            rect: viewportRect(t)
+        }), isTop ? null : doFill);
+    }
 
     function maybeRequestFill(e) {
         try {
-            if (!e.isTrusted || !window.__katphiHasCreds || !window.__katphi) return;
+            if (!e.isTrusted || !T.__katphiHasCreds || !T.__katphi) return;
             var t = e.target;
             if (!t || t.tagName !== 'INPUT') return;
             var c = findContainer(t);
-            var f = findFormFields(c);
-            if (!f.password || f.password.value) return;
-            if (t !== f.password && t !== f.username) return;
+            var p = fillPlan(c);
+            if (!p || (t !== p.pw && t !== p.user)) return;
+            if (p.pw && p.pw.value) return;
             var now = Date.now();
             if (now - window.__katphiLastFill < 1000) return;
             window.__katphiLastFill = now;
-            window.__katphiFillTarget = c;
-            window.__katphi.requestAutofill(JSON.stringify({
-                username: f.username ? (f.username.value || '') : ''
-            }));
+            requestFill(c, p, t, false);
         } catch(ex) {}
     }
 
@@ -610,6 +983,36 @@ _CAPTURE_JS = r'''
     document.addEventListener('keyup', function(e) {
         if (e.key === 'Tab') maybeRequestFill(e);
     }, true);
+
+    // Relleno al cargar (una sola cuenta): primer formulario de login visible
+    function tryAuto() {
+        try {
+            if (T.__katphiAutoDone || !T.__katphiAutoAllowed || !T.__katphi) return;
+            var all = inputs(document);
+            for (var i = 0; i < all.length; i++) {
+                var el = all[i];
+                if (!isVisible(el) || !(isPasswordField(el) || isLoginUsername(el))) continue;
+                var c = findContainer(el), p = fillPlan(c);
+                if (!p || p.kind !== 'login') continue;
+                if (p.mode === 'username' && !isLoginUsername(p.user)) continue;
+                T.__katphiAutoDone = true;
+                if ((p.pw && p.pw.value) || (p.mode === 'username' && p.user.value)) return;
+                requestFill(c, p, p.pw || p.user, true);
+                return;
+            }
+        } catch(ex) {}
+    }
+
+    // Los flags llegan con hello() y los formularios de las SPA aparecen
+    // tarde: se reintenta unos segundos (en cada frame)
+    (function startAuto() {
+        var n = 0;
+        var iv = setInterval(function() {
+            n++;
+            tryAuto();
+            if (T.__katphiAutoDone || n >= 20) clearInterval(iv);
+        }, 500);
+    })();
 
     function setVal(el, v) {
         try {
@@ -620,22 +1023,47 @@ _CAPTURE_JS = r'''
         el.dispatchEvent(new Event('change', {bubbles: true}));
     }
 
-    // Python la llama con una única credencial y el origen esperado
-    window.__katphiFill = function(cred, expectedOrigin) {
+    // Rellena este frame con una única credencial si su origen es el
+    // esperado. Sin password (cred.password vacío) solo se rellena el usuario.
+    function doFill(cred, expectedOrigin) {
         try {
-            // Misma normalización que _normalize_origin() en Python
-            var port = window.location.port;
-            var here = window.location.protocol + '//' + window.location.hostname +
+            // Origen del documento (también en iframes srcdoc/about:blank, que
+            // lo heredan); misma forma que _normalize_origin() en Python
+            var here = window.origin;
+            if (!here || here === 'null') {
+                var port = window.location.port;
+                here = window.location.protocol + '//' + window.location.hostname +
                        ((port && port !== '80' && port !== '443') ? ':' + port : '');
+            }
             if (!cred || here !== expectedOrigin) return false;
             var c = window.__katphiFillTarget || document.body;
             window.__katphiFillTarget = null;
-            var f = findFormFields(c);
-            if (!f.password || f.password.value) return false;
-            if (f.username && cred.username && !f.username.value) setVal(f.username, cred.username);
-            if (cred.password) setVal(f.password, cred.password);
-            return true;
+            var p = fillPlan(c);
+            if (!p) return false;
+            var done = false;
+            if (p.user && cred.username) {
+                var v = (p.user.value || '').toLowerCase();
+                // El usuario está escribiendo otra cuenta: no se toca nada
+                if (v && cred.username.toLowerCase().indexOf(v) !== 0) return false;
+                if (p.user.value !== cred.username) setVal(p.user, cred.username);
+                done = true;
+            }
+            if (p.pw && cred.password && !p.pw.value) {
+                setVal(p.pw, cred.password);
+                done = true;
+            }
+            return done;
         } catch(ex) { return false; }
+    }
+
+    // Python la llama en el frame principal; se rellena el frame que hizo la
+    // petición (ownFrame: desde la llave de la barra de URL, el principal)
+    if (isTop) window.__katphiFill = function(cred, expectedOrigin, ownFrame) {
+        var f = ownFrame ? null : window.__katphiFillFrame;
+        window.__katphiFillFrame = null;
+        if (ownFrame) window.__katphiFillTarget = null;
+        try { return f ? f(cred, expectedOrigin) : doFill(cred, expectedOrigin); }
+        catch(ex) { return false; }
     };
 })();
 '''
@@ -669,6 +1097,14 @@ class PasswordManager(QWidget):
         self._browser_connections: dict = {}   # browser_id → {"signals": [...], "receiver": ..., "channel": ...}
         self._dismissed_origins:   set  = set()
         self._active_banner              = None
+        self._pending:        dict       = {}  # browser_id → captura provisional (espera al login)
+        self._step_usernames: dict       = {}  # browser_id → (origin, usuario, t) del paso 1
+        self._account_menu               = None
+        self._unsaved:        dict       = {}  # browser_id → credencial ofrecida y no guardada
+        self._script_name                = "katphi-passwords"
+        self._url_bar                    = None
+        self._key_action                 = None
+        self._current_browser_getter     = None
         self._notified: set              = set()
         self.init_ui()
         # El cifrado va antes que cualquier lectura o escritura de la BD
@@ -714,6 +1150,7 @@ class PasswordManager(QWidget):
             ("Edit",     self.edit_password),
             ("Remove",   self.remove_password),
             ("Generate", self.show_generator),
+            ("Exceptions", self.show_never_save_sites),
         ]:
             btn = QPushButton(label)
             btn.clicked.connect(slot)
@@ -752,9 +1189,18 @@ class PasswordManager(QWidget):
                 )
             '''
 
+    # Sitios marcados con "Never for this site" (no se ofrece guardar)
+    _CREATE_NEVER_SQL = '''
+                CREATE TABLE IF NOT EXISTS never_save (
+                    origin     TEXT PRIMARY KEY,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            '''
+
     def _open_database(self):
         conn = sqlite3.connect(self.db_path)
         conn.execute(self._CREATE_TABLE_SQL)
+        conn.execute(self._CREATE_NEVER_SQL)
         conn.execute("SELECT COUNT(*) FROM passwords").fetchone()
         conn.commit()
         return conn
@@ -829,6 +1275,7 @@ class PasswordManager(QWidget):
                     "current key (the key may have been lost or changed). They are "
                     f"marked {UNDECRYPTABLE_LABEL} and will not be autofilled.",
                     key="undecryptable")
+            self.refresh_key_icon()
         except Exception as e:
             logger.error("[PasswordManager] Error loading passwords: %s", e)
 
@@ -1437,16 +1884,21 @@ class PasswordManager(QWidget):
     def clear_all_passwords(self) -> bool:
         """Delete every stored credential. Called from 'Clear browsing data'.
 
-        Borra de la BD real (self.db_path) y hace VACUUM para que las filas
-        borradas no queden en páginas libres del archivo.
+        Borra de la BD real (self.db_path), también la lista de sitios "Never
+        for this site", y hace VACUUM para que las filas borradas no queden en
+        páginas libres del archivo.
         """
         try:
             if self.conn is not None:
                 self.conn.execute("DELETE FROM passwords")
+                self.conn.execute(self._CREATE_NEVER_SQL)
+                self.conn.execute("DELETE FROM never_save")
                 self.conn.commit()
             conn = sqlite3.connect(self.db_path)
             try:
                 conn.execute("DELETE FROM passwords")
+                conn.execute(self._CREATE_NEVER_SQL)
+                conn.execute("DELETE FROM never_save")
                 conn.commit()
                 conn.execute("VACUUM")
             finally:
@@ -1457,6 +1909,97 @@ class PasswordManager(QWidget):
         except Exception as e:
             logger.error("[PasswordManager] Error clearing all passwords: %s", e)
             return False
+
+    # -----------------------------------------------------------------
+    # "Never for this site"
+    # -----------------------------------------------------------------
+
+    def is_never_save(self, origin: str) -> bool:
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                row = conn.execute(
+                    "SELECT 1 FROM never_save WHERE origin=?", (origin,)).fetchone()
+            finally:
+                conn.close()
+            return row is not None
+        except Exception as e:
+            logger.error("[PasswordManager] Error checking never-save list: %s", e)
+            return False
+
+    def add_never_save(self, origin: str) -> bool:
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                conn.execute(self._CREATE_NEVER_SQL)
+                conn.execute("INSERT OR IGNORE INTO never_save (origin) VALUES (?)", (origin,))
+                conn.commit()
+            finally:
+                conn.close()
+            logger.info("[PasswordManager] Never save passwords for %s", origin)
+            return True
+        except Exception as e:
+            logger.error("[PasswordManager] Error adding never-save origin: %s", e)
+            return False
+
+    def remove_never_save(self, origin: str) -> bool:
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                conn.execute("DELETE FROM never_save WHERE origin=?", (origin,))
+                conn.commit()
+            finally:
+                conn.close()
+            return True
+        except Exception as e:
+            logger.error("[PasswordManager] Error removing never-save origin: %s", e)
+            return False
+
+    def get_never_save_origins(self) -> list:
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                rows = conn.execute("SELECT origin FROM never_save ORDER BY origin").fetchall()
+            finally:
+                conn.close()
+            return [r[0] for r in rows]
+        except Exception as e:
+            logger.error("[PasswordManager] Error reading never-save list: %s", e)
+            return []
+
+    def show_never_save_sites(self):
+        """Diálogo con los sitios en los que nunca se ofrece guardar."""
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Never save passwords for")
+            dialog.setMinimumSize(420, 300)
+            layout = QVBoxLayout(dialog)
+            sites = QListWidget()
+            sites.addItems(self.get_never_save_origins())
+            layout.addWidget(sites)
+            empty = QLabel("No sites. They are added with \"Never for this site\" "
+                           "when Katphi offers to save a password.")
+            empty.setWordWrap(True)
+            empty.setVisible(sites.count() == 0)
+            layout.addWidget(empty)
+
+            def remove_selected():
+                item = sites.currentItem()
+                if item is None:
+                    return
+                if self.remove_never_save(item.text()):
+                    sites.takeItem(sites.row(item))
+                    empty.setVisible(sites.count() == 0)
+
+            btn_row = QHBoxLayout()
+            remove_btn = QPushButton("Remove"); remove_btn.clicked.connect(remove_selected)
+            close_btn  = QPushButton("Close");  close_btn.clicked.connect(dialog.accept)
+            btn_row.addWidget(remove_btn)
+            btn_row.addWidget(close_btn)
+            layout.addLayout(btn_row)
+            dialog.exec()
+        except Exception as e:
+            logger.error("[PasswordManager] Error showing never-save sites: %s", e)
 
     # -----------------------------------------------------------------
     # Credential comparison
@@ -1478,11 +2021,19 @@ class PasswordManager(QWidget):
     # Banner logic
     # -----------------------------------------------------------------
 
-    def _on_credentials_captured(self, origin: str, username: str, password: str):
+    def _on_credentials_captured(self, origin: str, username: str, password: str,
+                                 browser=None, old_password: str = "",
+                                 kind: str = "login", doc: str = ""):
+        """Credencial enviada por un formulario.
+
+        Sin browser (entrada heredada) se ofrece guardar en el acto. Con
+        browser la captura queda pendiente hasta saber si el login ha
+        funcionado (_confirm_pending / _on_page_ready).
+        """
         try:
             if _is_private_mode():
                 return  # ventana privada: no se guardan credenciales
-            if not username or not password:
+            if not password:
                 return
             if self.fernet is None:
                 self._require_fernet()
@@ -1490,17 +2041,89 @@ class PasswordManager(QWidget):
             if origin in self._dismissed_origins:
                 logger.debug("[PasswordManager] Origin dismissed, skipping: %s", origin)
                 return
+            if self.is_never_save(origin):
+                logger.debug("[PasswordManager] Never-save origin, skipping: %s", origin)
+                return
+            if browser is not None:
+                # Un envío nuevo sustituye al que estuviera pendiente
+                self._pending.pop(id(browser), None)
+                username = self._resolve_username(browser, origin, username,
+                                                  old_password, kind)
+            if not username:
+                logger.debug("[PasswordManager] No username for %s (%s), skipping", origin, kind)
+                return
             action, _ = self.compare_credentials(origin, username, password)
-            logger.info("[PasswordManager] Action=%s for %s", action, origin)
+            logger.info("[PasswordManager] Action=%s for %s (%s)", action, origin, kind)
             if action == "same":
                 return
-            self._show_save_banner(origin, username, password,
-                                   is_update=(action == "update"))
+            if browser is None:
+                self._show_save_banner(origin, username, password,
+                                       is_update=(action == "update"))
+                return
+            self._pending[id(browser)] = {
+                "origin": origin, "username": username, "password": password,
+                "is_update": action == "update", "t": time.monotonic(), "doc": doc}
         except Exception as e:
             logger.error("[PasswordManager] Error handling captured credentials: %s", e)
 
+    def _resolve_username(self, browser, origin: str, username: str,
+                          old_password: str, kind: str) -> str:
+        """Usuario de una captura que no lo trae (multipaso o cambio de contraseña)."""
+        if username:
+            return username
+        if kind == "change":
+            creds = self.get_credentials_for_origin(origin)
+            if old_password:
+                for c in creds:
+                    if c["password"] == old_password:
+                        return c["username"]
+            return creds[0]["username"] if len(creds) == 1 else ""
+        step = self._step_username(browser, origin)
+        if step:
+            return step
+        if kind == "login":
+            creds = self.get_credentials_for_origin(origin)
+            if len(creds) == 1:
+                return creds[0]["username"]
+        return ""
+
+    def _remember_step_username(self, browser, origin: str, username: str):
+        if username and len(username) <= _MAX_USERNAME_LEN:
+            self._step_usernames[id(browser)] = (origin, username, time.monotonic())
+
+    def _step_username(self, browser, origin: str) -> str:
+        """Usuario del paso 1 de un login multipaso en esta pestaña, si es reciente."""
+        step = self._step_usernames.get(id(browser))
+        if step and step[0] == origin and time.monotonic() - step[2] <= _STEP_USERNAME_TTL:
+            return step[1]
+        return ""
+
+    def _confirm_pending(self, browser):
+        """El login ha funcionado: ofrecer guardar la captura pendiente."""
+        pend = self._pending.pop(id(browser), None)
+        if not pend or time.monotonic() - pend["t"] > _PENDING_TTL:
+            return
+        self._show_save_banner(pend["origin"], pend["username"], pend["password"],
+                               is_update=pend["is_update"], browser=browser)
+
+    def _on_page_ready(self, browser, origin: str, doc: str, login_form: bool):
+        """Documento nuevo tras un envío: si vuelve a pedir el login, falló."""
+        bid = id(browser)
+        pend = self._pending.get(bid)
+        if not pend or not doc or doc == pend.get("doc"):
+            return   # sin captura pendiente, o es la misma página del envío
+        if time.monotonic() - pend["t"] > _PENDING_TTL:
+            self._pending.pop(bid, None)
+            return
+        if login_form:
+            logger.info("[PasswordManager] Login form shown again on %s: "
+                        "login failed, credential discarded", origin)
+            self._pending.pop(bid, None)
+        else:
+            self._confirm_pending(browser)
+
     def _show_save_banner(self, origin: str, username: str, password: str,
-                          is_update: bool):
+                          is_update: bool, browser=None):
         try:
             if self._active_banner is not None:
                 try:
@@ -1511,12 +2134,7 @@ class PasswordManager(QWidget):
 
             main_win = self._find_main_window()
             if main_win is None:
-                if is_update:
-                    self.update_password(origin, username, password)
-                    self.password_updated.emit(origin, username)
-                else:
-                    self.save_password(origin, username, password)
-                    self.password_saved.emit(origin, username)
+                self._store_credential(origin, username, password, is_update)
                 logger.warning(
                     "[PasswordManager] Main window not found; credential for %s "
                     "saved silently (no banner)", origin)
@@ -1527,28 +2145,57 @@ class PasswordManager(QWidget):
                 "update" if is_update else "save", origin)
 
             banner = PasswordSaveBanner(origin, username, password,
-                                        is_update=is_update, parent=None)
+                                        is_update=is_update, parent=None,
+                                        insecure=_is_insecure_origin(origin))
             self._active_banner = banner
+            bid = id(browser) if browser is not None else None
+
+            def keep_unsaved():
+                # La llave de la barra de URL lo vuelve a ofrecer en esta pestaña
+                if bid is not None:
+                    self._unsaved[bid] = {
+                        "origin": origin, "username": username, "password": password,
+                        "is_update": is_update, "t": time.monotonic()}
+                    self.refresh_key_icon()
 
             def on_accepted():
-                if is_update:
-                    self.update_password(origin, username, password)
-                    self.password_updated.emit(origin, username)
-                else:
-                    self.save_password(origin, username, password)
-                    self.password_saved.emit(origin, username)
+                if bid is not None:
+                    self._unsaved.pop(bid, None)
+                self._store_credential(origin, username, password, is_update)
                 self._active_banner = None
 
             def on_dismissed():
                 logger.info("[PasswordManager] Banner dismissed for %s", origin)
                 self._dismissed_origins.add(origin)
                 self._active_banner = None
+                keep_unsaved()
+
+            def on_never():
+                if bid is not None:
+                    self._unsaved.pop(bid, None)
+                self.add_never_save(origin)
+                self._active_banner = None
+
+            def on_timed_out():
+                self._active_banner = None
+                keep_unsaved()
 
             banner.accepted.connect(on_accepted)
             banner.dismissed.connect(on_dismissed)
+            banner.never.connect(on_never)
+            banner.timed_out.connect(on_timed_out)
             self._insert_banner_in_layout(main_win, banner)
         except Exception as e:
             logger.error("[PasswordManager] Error showing save banner: %s", e)
+
+    def _store_credential(self, origin: str, username: str, password: str,
+                          is_update: bool):
+        if is_update:
+            self.update_password(origin, username, password)
+            self.password_updated.emit(origin, username)
+        else:
+            self.save_password(origin, username, password)
+            self.password_saved.emit(origin, username)
 
     def _find_main_window(self):
         widget = self.parent
@@ -1626,12 +2273,21 @@ class PasswordManager(QWidget):
     def cleanup_browser(self, browser):
         try:
             browser_id = id(browser)
+            self._pending.pop(browser_id, None)
+            self._step_usernames.pop(browser_id, None)
+            self._unsaved.pop(browser_id, None)
             if browser_id in self._browser_connections:
                 entry = self._browser_connections.pop(browser_id)
                 for signal, slot in entry.get("signals", []):
                     try:
                         signal.disconnect(slot)
                     except (RuntimeError, TypeError):
+                        pass
+                script = entry.pop("script", None)
+                if script is not None:
+                    try:
+                        browser.page().scripts().remove(script)
+                    except (RuntimeError, AttributeError):
                         pass
                 # Drop Python references so QObjects can be cleaned up
                 entry.pop("receiver", None)
@@ -1647,12 +2303,16 @@ class PasswordManager(QWidget):
     #   1. CredentialReceiver (QObject) exposed to JS as "credReceiver"
     #   2. QWebChannel set on the page in the ApplicationWorld → injects
     #      qt.webChannelTransport only in that isolated world
-    #   3. On each loadFinished: inject qwebchannel.js + _CAPTURE_JS together
-    #      in the same ApplicationWorld, then tell it whether there are creds
+    #   3. qwebchannel.js + _CAPTURE_JS as a QWebEngineScript (DocumentReady,
+    #      ApplicationWorld, all frames; same-origin iframes relay through the
+    #      main frame). hello() tells it whether there are creds and whether it
+    #      may fill without a gesture (one account, https)
     #   4. JS calls window.__katphi.onCredential(json) → Python slot fires
-    #      (origin computed in Python from browser.url())
+    #      (origin computed in Python from browser.url()) → pending until the
+    #      login succeeds (onLoginOutcome, or onPageReady of the next document)
     #   5. Trusted click/Tab on a login field → requestAutofill → Python
-    #      injects ONE credential via window.__katphiFill() (isolated world)
+    #      injects ONE credential via window.__katphiFill() (isolated world),
+    #      or shows a menu to choose when there are several accounts
     # -----------------------------------------------------------------
 
     @staticmethod
@@ -1670,6 +2330,17 @@ class PasswordManager(QWidget):
             "[PasswordManager] Could not load qwebchannel.js from Qt resources — "
             "credential capture will NOT work. Check PySide6.QtWebChannel is installed.")
         return ""
+
+    def _make_script(self):
+        """QWebEngineScript con qwebchannel.js + captura, en todos los frames."""
+        from PySide6.QtWebEngineCore import QWebEngineScript
+        script = QWebEngineScript()
+        script.setName(self._script_name)
+        script.setSourceCode((PasswordManager._qwebchannel_js or "") + "\n" + _CAPTURE_JS)
+        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+        script.setWorldId(_APP_WORLD)
+        script.setRunsOnSubFrames(True)
+        return script
 
     def setup_browser(self, browser):
         """Install QWebChannel and credential capture script for this browser tab."""
@@ -1689,6 +2360,10 @@ class PasswordManager(QWidget):
             # imported, which happens at module level — so this is safe here.
             if not PasswordManager._qwebchannel_js:
                 PasswordManager._qwebchannel_js = self._load_qwebchannel_js()
+            if not PasswordManager._qwebchannel_js:
+                logger.warning(
+                    "[PasswordManager] qwebchannel.js empty — capture-only mode "
+                    "(no WebChannel)")
 
             # Create receiver + channel, register on current page.
             # IMPORTANT: keep strong Python references to both objects in
@@ -1696,65 +2371,68 @@ class PasswordManager(QWidget):
             # parent-child ownership is set, which silently breaks the @Slot.
             # El origen lo calcula el receiver con la URL real de este browser.
             receiver = CredentialReceiver(
-                browser, origin_getter=lambda b=browser: b.url().toString())
-            channel  = QWebChannel(browser.page())
+                browser, origin_getter=lambda b=browser: b.url().toString(),
+                flags_getter=self._page_flags)
+            page = browser.page()
+            channel  = QWebChannel(page)
             channel.registerObject("credReceiver", receiver)
             # Mundo aislado: el JS de la página no ve qt.webChannelTransport
-            browser.page().setWebChannel(channel, _APP_WORLD)
+            page.setWebChannel(channel, _APP_WORLD)
+
+            # Se inyecta en cada documento (y sus iframes) al estar listo el
+            # DOM, sin depender de loadFinished
+            script = self._make_script()
+            for old in page.scripts().find(self._script_name):
+                page.scripts().remove(old)
+            page.scripts().insert(script)
+            if browser.url().scheme() in ("http", "https"):
+                # Documento ya cargado antes de configurar la pestaña
+                page.runJavaScript(script.sourceCode(), _APP_WORLD)
             logger.info(
                 "[PasswordManager] WebChannel configured (browser %s)", browser_id)
 
             signals = []
 
-            def on_cred(origin, username, password):
-                self._on_credentials_captured(origin, username, password)
+            def on_cred(origin, info, b=browser):
+                self._on_credentials_captured(
+                    origin, info.get("username", ""), info.get("password", ""),
+                    browser=b, old_password=info.get("old_password", ""),
+                    kind=info.get("kind", "login"), doc=info.get("doc", ""))
 
             receiver.credential_received.connect(on_cred)
             signals.append((receiver.credential_received, on_cred))
 
-            def on_fill_request(origin, typed, b=browser):
-                self._fill_on_request(b, origin, typed)
+            def on_username(origin, username, b=browser):
+                self._remember_step_username(b, origin, username)
+
+            receiver.username_captured.connect(on_username)
+            signals.append((receiver.username_captured, on_username))
+
+            def on_outcome(origin, result, b=browser):
+                pend = self._pending.get(id(b))
+                if result == "success" and pend and pend["origin"] == origin:
+                    self._confirm_pending(b)
+
+            receiver.login_outcome.connect(on_outcome)
+            signals.append((receiver.login_outcome, on_outcome))
+
+            def on_page_ready(origin, doc, login_form, b=browser):
+                self._on_page_ready(b, origin, doc, login_form)
+
+            receiver.page_ready.connect(on_page_ready)
+            signals.append((receiver.page_ready, on_page_ready))
+
+            def on_fill_request(origin, info, b=browser):
+                self._fill_on_request(b, origin, info)
 
             receiver.autofill_requested.connect(on_fill_request)
             signals.append((receiver.autofill_requested, on_fill_request))
 
-            qwc_js = PasswordManager._qwebchannel_js
+            def on_url_changed(url, b=browser):
+                self._on_url_changed(b, url.toString())
 
-            def on_load_finished(ok, b=browser):
-                if not ok:
-                    return
-                logger.debug("[PasswordManager] Page loaded, injecting scripts")
-                if qwc_js:
-                    b.page().runJavaScript(qwc_js + "\n" + _CAPTURE_JS, _APP_WORLD)
-                else:
-                    logger.warning(
-                        "[PasswordManager] qwebchannel.js empty — falling back "
-                        "to capture-only mode (no WebChannel)")
-                    b.page().runJavaScript(_CAPTURE_JS, _APP_WORLD)
-
-                # Verify JS state 800 ms after injection to help diagnose issues
-                def _verify():
-                    try:
-                        b.page().runJavaScript(
-                            "JSON.stringify({"
-                            "  qwc: typeof QWebChannel !== 'undefined',"
-                            "  qt:  typeof qt !== 'undefined',"
-                            "  tr:  !!(typeof qt !== 'undefined' && qt.webChannelTransport),"
-                            "  ch:  !!(window.__katphi),"
-                            "  cap: !!(window.__katphiCapture)"
-                            "})",
-                            _APP_WORLD,
-                            lambda r: logger.debug(
-                                "[PasswordManager] JS state after inject: %s", r)
-                        )
-                    except Exception:
-                        pass
-                QTimer.singleShot(800, _verify)
-
-                self._attempt_autofill(b)
-
-            browser.loadFinished.connect(on_load_finished)
-            signals.append((browser.loadFinished, on_load_finished))
+            browser.urlChanged.connect(on_url_changed)
+            signals.append((browser.urlChanged, on_url_changed))
 
             # Store receiver + channel alongside signal pairs so their Python
             # wrappers cannot be garbage-collected while the tab is open.
@@ -1762,59 +2440,289 @@ class PasswordManager(QWidget):
                 "signals":  signals,
                 "receiver": receiver,
                 "channel":  channel,
+                "script":   script,
             }
         except Exception as e:
             logger.error("[PasswordManager] Error setting up browser: %s", e)
 
-    def _attempt_autofill(self, browser):
-        """Al cargar: solo marca (en el mundo aislado) si hay credenciales.
+    def _page_credentials(self, origin: str) -> list:
+        """Credenciales para la página: las del origen o, en https sin ninguna,
+        las guardadas para la versión http del mismo sitio (como Chrome)."""
+        creds = self.get_credentials_for_origin(origin)
+        if not creds and origin.startswith("https://"):
+            creds = self.get_credentials_for_origin("http://" + origin[len("https://"):])
+        return creds
 
-        No se rellena nada ni se envía ninguna contraseña a la página hasta
-        que el usuario pulsa o tabula a un campo de login (ver _fill_on_request).
-        """
-        try:
-            url = browser.url().toString()
-            if urlparse(url).scheme.lower() not in ("http", "https"):
-                return
-            origin = _normalize_origin(url)
-            has = self.has_credentials_for_origin(origin)
-            browser.page().runJavaScript(
-                "window.__katphiHasCreds = " + ("true" if has else "false") + ";",
-                _APP_WORLD)
-            if has:
-                logger.debug("[PasswordManager] Autofill available for %s", origin)
-        except Exception as e:
-            logger.error("[PasswordManager] Error in autofill: %s", e)
+    def _page_flags(self, origin: str) -> dict:
+        """Para hello(): ¿hay credenciales? ¿se puede rellenar sin gesto?"""
+        if _is_private_mode():
+            return {"has": False, "auto": False}
+        creds = self._page_credentials(origin)
+        return {"has": bool(creds), "auto": self._auto_fill_allowed(origin, creds)}
 
     @staticmethod
-    def _choose_credential(creds: list, typed: str):
-        """Elige UNA credencial: la del usuario ya escrito o, si no, la más reciente."""
-        if not creds:
-            return None
-        if typed:
-            for c in creds:
-                if c["username"] == typed:
-                    return c
-            return None  # el usuario está escribiendo otra cuenta: no se rellena
-        return creds[0]  # get_credentials_for_origin ya ordena por más reciente
+    def _auto_fill_allowed(origin: str, creds: list) -> bool:
+        """Relleno sin gesto: una sola cuenta, https y fuera del modo privado."""
+        return len(creds) == 1 and origin.startswith("https://") and not _is_private_mode()
 
-    def _fill_on_request(self, browser, origin: str, typed: str):
-        """Respuesta a un gesto del usuario: inyecta una sola credencial."""
+    @staticmethod
+    def _candidates(creds: list, mode: str, typed: str, known: str = "") -> list:
+        """Cuentas que se pueden ofrecer para el campo pulsado.
+
+        - password (paso 2 o solo contraseña): la del usuario conocido, o todas.
+        - full/username: la del usuario ya escrito; si es parcial, las que
+          empiezan por él; si no hay nada escrito, todas. En modo username con
+          el usuario ya completo no hay nada que rellenar.
+        """
+        if mode == "password":
+            if known:
+                return [c for c in creds if c["username"] == known]
+            return list(creds)
+        if typed:
+            exact = [c for c in creds if c["username"] == typed]
+            if exact:
+                return [] if mode == "username" else exact
+            low = typed.lower()
+            return [c for c in creds if c["username"].lower().startswith(low)]
+        return list(creds)
+
+    def _fill_on_request(self, browser, origin: str, info: dict):
+        """Petición de relleno: inyecta una credencial o muestra el selector."""
         try:
             if _is_private_mode() or not origin:
                 return
             # La página pudo navegar entre la petición y la respuesta
             if _normalize_origin(browser.url().toString()) != origin:
                 return
-            cred = self._choose_credential(self.get_credentials_for_origin(origin), typed)
-            if cred is None:
+            creds = self._page_credentials(origin)
+            if not creds:
                 return
-            # Host en punycode, como lo ve location.hostname en JS
-            js_origin = _normalize_origin(bytes(browser.url().toEncoded()).decode("ascii", "replace"))
-            js = ("window.__katphiFill && window.__katphiFill("
-                  + json.dumps({"username": cred["username"], "password": cred["password"]})
-                  + ", " + json.dumps(js_origin) + ");")
-            browser.page().runJavaScript(js, _APP_WORLD)
-            logger.info("[PasswordManager] Autofill on user gesture for %s", origin)
+            mode = info.get("mode", "full")
+            typed = info.get("username") or ""
+            if info.get("auto"):
+                if not self._auto_fill_allowed(origin, creds):
+                    return
+                if typed and typed != creds[0]["username"]:
+                    return
+                self._inject_fill(browser, origin, creds[0], mode)
+                return
+            known = ""
+            if mode == "password":
+                known = info.get("hidden_user") or self._step_username(browser, origin)
+            cands = self._candidates(creds, mode, typed, known)
+            # En http la contraseña viaja en claro: siempre se pregunta, con aviso
+            if len(cands) == 1 and not _is_insecure_origin(origin):
+                self._inject_fill(browser, origin, cands[0], mode)
+            elif cands:
+                self._show_account_menu(browser, origin, cands, mode, info.get("rect"))
         except Exception as e:
             logger.error("[PasswordManager] Error filling credential: %s", e)
+
+    def _inject_fill(self, browser, origin: str, cred: dict, mode: str,
+                     own_frame: bool = False):
+        """Envía UNA credencial al mundo aislado (sin contraseña en modo username).
+
+        own_frame: rellenar el frame principal aunque la última petición
+        viniera de un iframe (relleno desde la llave de la barra de URL).
+        """
+        # Host en punycode, como lo ve location.hostname en JS
+        js_origin = _normalize_origin(bytes(browser.url().toEncoded()).decode("ascii", "replace"))
+        payload = {"username": cred["username"],
+                   "password": "" if mode == "username" else cred["password"]}
+        js = ("window.__katphiFill && window.__katphiFill("
+              + json.dumps(payload) + ", " + json.dumps(js_origin)
+              + (", true" if own_frame else "") + ");")
+        browser.page().runJavaScript(js, _APP_WORLD)
+        if mode == "username":
+            # Para rellenar la contraseña en el paso 2 del login
+            self._remember_step_username(browser, origin, cred["username"])
+        logger.info("[PasswordManager] Autofill (%s) for %s", mode, origin)
+
+    def _show_account_menu(self, browser, origin: str, cands: list, mode: str, rect):
+        """Menú bajo el campo para elegir cuenta (sin contraseñas en memoria)."""
+        if self._account_menu is not None:
+            try:
+                self._account_menu.close()
+            except RuntimeError:
+                pass
+        menu = QMenu(browser)
+        if _is_insecure_origin(origin):
+            warn = menu.addAction("Not secure connection (http): the password can be intercepted")
+            warn.setEnabled(False)
+            menu.addSeparator()
+        for c in cands:
+            act = menu.addAction(c["username"].replace("&", "&&"))
+            act.triggered.connect(
+                lambda _=False, u=c["username"]: self._fill_selected(browser, origin, u, mode))
+        menu.aboutToHide.connect(menu.deleteLater)
+        try:
+            zoom = float(browser.zoomFactor())
+        except Exception:
+            zoom = 1.0
+        pos = QPoint(0, 0)
+        if rect:
+            pos = QPoint(int(rect[0] * zoom), int((rect[1] + rect[3]) * zoom))
+        self._account_menu = menu
+        menu.popup(browser.mapToGlobal(pos))
+
+    def _fill_selected(self, browser, origin: str, username: str, mode: str):
+        """Cuenta elegida en el menú: se vuelve a leer de la BD y se rellena."""
+        try:
+            self._account_menu = None
+            if _is_private_mode() or _normalize_origin(browser.url().toString()) != origin:
+                return
+            for c in self._page_credentials(origin):
+                if c["username"] == username:
+                    self._inject_fill(browser, origin, c, mode)
+                    return
+        except Exception as e:
+            logger.error("[PasswordManager] Error filling selected account: %s", e)
+
+    # -----------------------------------------------------------------
+    # Llave en la barra de URL
+    # -----------------------------------------------------------------
+
+    def attach_url_bar(self, url_bar, current_browser_getter):
+        """Añade a la barra de URL la llave de contraseñas de la pestaña actual."""
+        try:
+            from PySide6.QtWidgets import QLineEdit
+            self._url_bar = url_bar
+            self._current_browser_getter = current_browser_getter
+            icon = None
+            try:
+                from ui.core.strip_icons import build_nav_icon
+                from PySide6.QtCore import QSize
+                icon = build_nav_icon("key", None, QSize(16, 16))
+            except Exception:
+                pass
+            if icon is None:
+                from PySide6.QtGui import QIcon
+                icon = QIcon()
+            self._key_action = url_bar.addAction(icon, QLineEdit.TrailingPosition)
+            self._key_action.setVisible(False)
+            self._key_action.triggered.connect(self._show_key_menu)
+            self.refresh_key_icon()
+        except Exception as e:
+            logger.error("[PasswordManager] Error attaching key icon: %s", e)
+
+    def _current_browser(self):
+        try:
+            return self._current_browser_getter() if self._current_browser_getter else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _browser_origin(browser) -> str:
+        try:
+            url = browser.url().toString()
+        except Exception:
+            return ""
+        if urlparse(url).scheme.lower() not in ("http", "https"):
+            return ""
+        return _normalize_origin(url)
+
+    def _unsaved_for(self, browser, origin: str):
+        entry = self._unsaved.get(id(browser))
+        if not entry:
+            return None
+        if entry["origin"] != origin or time.monotonic() - entry["t"] > _PENDING_TTL * 5:
+            self._unsaved.pop(id(browser), None)
+            return None
+        return entry
+
+    def _on_url_changed(self, browser, url: str):
+        # La credencial sin guardar solo se ofrece mientras se siga en su sitio
+        entry = self._unsaved.get(id(browser))
+        if entry and _normalize_origin(url) != entry["origin"]:
+            self._unsaved.pop(id(browser), None)
+        if browser is self._current_browser():
+            self.refresh_key_icon()
+
+    def refresh_key_icon(self):
+        """Muestra la llave si la pestaña actual tiene cuentas o algo por guardar."""
+        action = self._key_action
+        if action is None:
+            return
+        try:
+            visible, tip = False, ""
+            browser = self._current_browser()
+            origin = self._browser_origin(browser) if browser is not None else ""
+            if origin and not _is_private_mode():
+                unsaved = self._unsaved_for(browser, origin)
+                n = len(self._page_credentials(origin))
+                visible = bool(n or unsaved)
+                tip = (f"Saved passwords for this site: {n}" if n else "Passwords")
+                if unsaved:
+                    tip += " - click to save the password you just used"
+            action.setVisible(visible)
+            action.setToolTip(tip)
+        except RuntimeError:
+            self._key_action = None   # la barra de URL ya no existe
+        except Exception as e:
+            logger.error("[PasswordManager] Error refreshing key icon: %s", e)
+
+    def _build_key_menu(self, browser, origin: str):
+        """Menú de la llave: cuentas del sitio, guardar lo pendiente, gestionar."""
+        menu = QMenu(self._url_bar)
+        if _is_insecure_origin(origin):
+            warn = menu.addAction("Not secure connection (http): passwords can be intercepted")
+            warn.setEnabled(False)
+            menu.addSeparator()
+        creds = self._page_credentials(origin)
+        if creds:
+            head = menu.addAction("Fill in:")
+            head.setEnabled(False)
+            for c in creds:
+                act = menu.addAction(c["username"].replace("&", "&&"))
+                act.triggered.connect(
+                    lambda _=False, u=c["username"]: self._fill_from_key(browser, origin, u))
+        unsaved = self._unsaved_for(browser, origin)
+        if unsaved:
+            if creds:
+                menu.addSeparator()
+            verb = "Update" if unsaved["is_update"] else "Save"
+            act = menu.addAction(f"{verb} password for {unsaved['username']}".replace("&", "&&"))
+            act.triggered.connect(lambda _=False, b=browser: self._save_unsaved(b))
+        menu.addSeparator()
+        manage = menu.addAction("Manage passwords")
+        manage.triggered.connect(self._open_manager_panel)
+        return menu
+
+    def _show_key_menu(self):
+        try:
+            browser = self._current_browser()
+            origin = self._browser_origin(browser) if browser is not None else ""
+            if not origin or self._url_bar is None:
+                return
+            menu = self._build_key_menu(browser, origin)
+            menu.aboutToHide.connect(menu.deleteLater)
+            bar = self._url_bar
+            x = max(0, bar.width() - menu.sizeHint().width())
+            menu.popup(bar.mapToGlobal(QPoint(x, bar.height())))
+        except Exception as e:
+            logger.error("[PasswordManager] Error showing key menu: %s", e)
+
+    def _fill_from_key(self, browser, origin: str, username: str):
+        if _is_private_mode() or self._browser_origin(browser) != origin:
+            return
+        for c in self._page_credentials(origin):
+            if c["username"] == username:
+                self._inject_fill(browser, origin, c, "full", own_frame=True)
+                return
+
+    def _save_unsaved(self, browser):
+        entry = self._unsaved.pop(id(browser), None)
+        if not entry:
+            return
+        self._dismissed_origins.discard(entry["origin"])
+        self._store_credential(entry["origin"], entry["username"], entry["password"],
+                               entry["is_update"])
+        self.refresh_key_icon()
+
+    def _open_manager_panel(self):
+        main_win = self._find_main_window()
+        if main_win is not None and hasattr(main_win, "toggle_password_manager"):
+            try:
+                main_win.toggle_password_manager()
+            except Exception as e:
+                logger.error("[PasswordManager] Error opening password panel: %s", e)

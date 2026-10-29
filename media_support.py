@@ -4,9 +4,11 @@ Aviso de vídeo no reproducible por falta de códecs H.264/AAC.
 El Qt WebEngine de PySide6 (pip) se compila sin códecs propietarios: no
 reproduce H.264, AAC ni HEVC. YouTube funciona porque sirve VP9/AV1 + Opus,
 pero casi todas las demás webs solo ofrecen MP4/HLS con H.264 y el vídeo
-falla sin explicación. La solución real es un Qt WebEngine compilado con
-webengine_proprietary_codecs (tools/build_qtwebengine_codecs.sh); esto es el
-plan B: detectar el fallo y ofrecer abrir el vídeo fuera del navegador.
+falla sin explicación. Katphi no distribuye binarios con códecs patentados
+(ver AVISO_LEGAL.md), así que detecta el fallo y ofrece verlo en el
+reproductor integrado (native_player.py, con los decodificadores del sistema
+operativo) o abrirlo fuera del navegador. El aviso no remite a compilar
+códecs: esa opción solo se documenta en el README y en los scripts, con su aviso legal.
 
 Detección (sin tocar nada si el motor sí tiene H.264):
   - MainWorld: envoltorio pasivo de MediaSource.isTypeSupported y
@@ -226,10 +228,13 @@ class MediaFallbackBar(QFrame):
         layout.setSpacing(8)
 
         label = QLabel(
-            "Este vídeo usa H.264/AAC, códecs que el motor web de esta "
-            "instalación no incluye.")
+            "Este vídeo usa H.264/AAC, códecs patentados que Katphi Browser "
+            "no incluye por motivos de licencia. Puedes verlo con el reproductor "
+            "de Katphi, que usa los decodificadores de tu sistema, o abrirlo fuera:")
         label.setWordWrap(True)
         layout.addWidget(label, 1)
+
+        self._add_native_player_button(layout)
 
         browser_btn = QPushButton("Abrir en el navegador del sistema")
         browser_btn.clicked.connect(self._open_in_system_browser)
@@ -257,6 +262,49 @@ class MediaFallbackBar(QFrame):
         self.show()
         self.raise_()
 
+    def _add_native_player_button(self, layout):
+        try:
+            import native_player
+        except Exception as e:
+            logger.debug("native_player no disponible: %s", e)
+            return
+        available, _reason = native_player.is_available()
+        target = self._media_src or (
+            self._page_url if native_player.accepts_page_urls() else "")
+        if available and not target:
+            return
+        btn = QPushButton("Reproducir en Katphi")
+        if available:
+            btn.setToolTip(target)
+            btn.clicked.connect(lambda _=False: self._open_native_player(target))
+        elif native_player.install_hint():
+            btn.setToolTip("Necesita libmpv del sistema")
+            btn.clicked.connect(lambda _=False: QMessageBox.information(
+                self._window, "Reproductor de Katphi",
+                "El reproductor de Katphi usa los decodificadores de vídeo de tu "
+                "sistema y aquí no están instalados.\n\n" + native_player.install_hint()))
+        else:
+            return
+        layout.addWidget(btn)
+
+    def _open_native_player(self, target):
+        if not self._confirm_leaving("el reproductor de Katphi", tor_only=True):
+            return
+        import native_player
+        try:
+            user_agent = self._view.page().profile().httpUserAgent()
+        except Exception:
+            user_agent = ""
+        try:
+            native_player.open_player(target, referrer=self._page_url,
+                                      user_agent=user_agent, title=self._view.title(),
+                                      parent=self._window)
+            self.dismiss()
+        except Exception as e:
+            logger.warning("[MEDIA] Reproductor de Katphi: %s", e)
+            QMessageBox.warning(self._window, "Reproductor de Katphi",
+                                f"No se pudo abrir el reproductor: {e}")
+
     def dismiss(self, *_):
         try:
             self._view.urlChanged.disconnect(self.dismiss)
@@ -274,8 +322,12 @@ class MediaFallbackBar(QFrame):
     def _place(self):
         self.setGeometry(0, 0, self._view.width(), self.sizeHint().height())
 
-    def _confirm_leaving(self, what):
-        """Con Tor o en ventana privada, avisar antes de sacar la URL fuera."""
+    def _confirm_leaving(self, what, tor_only=False):
+        """Con Tor o en ventana privada, avisar antes de sacar la URL fuera.
+
+        tor_only: el destino no guarda historial (reproductor integrado), así
+        que solo importa que su tráfico no pasa por Tor.
+        """
         warnings = []
         try:
             import net_proxy
@@ -285,14 +337,14 @@ class MediaFallbackBar(QFrame):
             pass
         try:
             from constants import is_private_mode
-            if is_private_mode():
+            if is_private_mode() and not tor_only:
                 warnings.append("quedará en el historial de esa aplicación")
         except Exception:
             pass
         if not warnings:
             return True
         reply = QMessageBox.question(
-            self._window, "Abrir fuera de Katphi",
+            self._window, "Reproducir sin Tor" if tor_only else "Abrir fuera de Katphi",
             f"El vídeo se abrirá en {what}: " + " y ".join(warnings) + ".\n\n¿Continuar?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         return reply == QMessageBox.Yes

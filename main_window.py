@@ -1542,6 +1542,11 @@ class MainWindow(QMainWindow):
         # Sistema de autocompletado desactivado temporalmente
         self.autocomplete_system = None
 
+        # Llave de contraseñas de la pestaña actual (dentro de la URL bar)
+        if getattr(self, "password_manager", None) is not None:
+            self.password_manager.attach_url_bar(
+                self.url_bar, lambda: self.tab_manager.tabs.currentWidget())
+
         # Indicador SSL — icono candado/advertencia antes de la URL bar
         self.ssl_indicator = SslIndicatorButton()
         self.nav_bar.addWidget(self.ssl_indicator)
@@ -4532,6 +4537,22 @@ class MainWindow(QMainWindow):
         except Exception:
             return False
 
+    def _plugin_in_dev_mode(self, plugin_id: str) -> bool:
+        """Plugin en desarrollo: solo desde el código fuente con KATPHI_DEV=1
+        (nunca en el ejecutable) y con "dev_mode": true en plugin_config.json.
+        Así se puede probar un plugin premium nuevo sin que la resincronización
+        de licencias lo descargue."""
+        try:
+            import json
+            from plugin_policy import dev_mode_allowed
+            from plugin_paths import resolve_config_file
+            if not dev_mode_allowed():
+                return False
+            with open(resolve_config_file(), "r", encoding="utf-8") as f:
+                return bool((json.load(f).get(plugin_id) or {}).get("dev_mode"))
+        except Exception:
+            return False
+
     def _gate_core_panel(self, plugin_id, panel, dock, allowed):
         """Activar/cortar un panel core (scraping/proxy) según el derecho real.
         Cuando se corta no solo se hace setEnabled(False): se intenta detener
@@ -4599,7 +4620,8 @@ class MainWindow(QMainWindow):
         #        (los realmente gratuitos se mantienen)
         if pm:
             for plugin_id in list(pm.plugins.keys()):
-                if plugin_id in entitled or self._plugin_is_free(plugin_id):
+                if (plugin_id in entitled or self._plugin_is_free(plugin_id)
+                        or self._plugin_in_dev_mode(plugin_id)):
                     continue
                 print(f"[AUTH] resync: descargando plugin sin derecho: {plugin_id}")
                 try:
@@ -4614,7 +4636,8 @@ class MainWindow(QMainWindow):
             if not mapping:
                 continue
             for plugin_id in list(mapping.keys()):
-                if plugin_id in entitled or self._plugin_is_free(plugin_id):
+                if (plugin_id in entitled or self._plugin_is_free(plugin_id)
+                        or self._plugin_in_dev_mode(plugin_id)):
                     continue
                 try:
                     obj = mapping.pop(plugin_id)
@@ -6117,29 +6140,36 @@ class MainWindow(QMainWindow):
                 browser.loadProgress.disconnect(self.status_bar.update_load_progress)
             except Exception:
                 pass
-        try:
-            page.loadStarted.disconnect()
-        except:
-            pass
-        try:
-            page.loadFinished.disconnect()
-        except:
-            pass
+        # Solo se desconectan las conexiones que hizo esta función la vez
+        # anterior: un disconnect() sin argumentos de page.loadFinished cortaba
+        # también el reenvío interno a QWebEngineView.loadFinished (y con él
+        # el gestor de contraseñas y cualquier otro receptor)
+        for _sig, _conn in getattr(self, "_statusbar_conns", []):
+            try:
+                _sig.disconnect(_conn)
+            except Exception:
+                pass
+        self._statusbar_conns = []
+
+        def _track(signal, slot):
+            self._statusbar_conns.append((signal, signal.connect(slot)))
+
         # Indicador SSL en la navbar (reemplaza la barra de estado inferior)
         if hasattr(self, "ssl_indicator"):
-            browser.urlChanged.connect(
-                lambda url: self.ssl_indicator.update_ssl(url.toString())
-            )
+            _track(browser.urlChanged,
+                   lambda url: self.ssl_indicator.update_ssl(url.toString()))
             current_url = browser.url().toString()
             if current_url:
                 self.ssl_indicator.update_ssl(current_url)
 
         # Status bar oculta — mantener señales funcionales para showMessage()
         browser.loadProgress.connect(self.status_bar.update_load_progress)
-        page.loadStarted.connect(
-            lambda: self.status_bar.update_load_status("Cargando...")
-        )
-        page.loadFinished.connect(lambda: self.status_bar.update_load_status(""))
+        _track(page.loadStarted,
+               lambda: self.status_bar.update_load_status("Cargando..."))
+        _track(page.loadFinished, lambda: self.status_bar.update_load_status(""))
+
+        if getattr(self, "password_manager", None) is not None:
+            self.password_manager.refresh_key_icon()
 
         # Actualizar zoom level
         zoom_factor = browser.zoomFactor()

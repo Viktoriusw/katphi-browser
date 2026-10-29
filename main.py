@@ -42,13 +42,17 @@ def _parse_private_flag() -> bool:
 
 
 def _startup_urls() -> list:
-    """URLs http(s) pasadas por línea de comandos (p. ej. "abrir con")."""
+    """URLs http(s) y archivos locales pasados por línea de comandos (p. ej.
+    "abrir con"). Los archivos se convierten en URL file:// absolutas."""
+    from pathlib import Path
     urls = []
     for arg in sys.argv[1:]:
         if arg == "--webEngineArgs":
             break
         if arg.lower().startswith(("http://", "https://")):
             urls.append(arg)
+        elif not arg.startswith("-") and os.path.isfile(arg):
+            urls.append(Path(arg).resolve().as_uri())
     return urls
 
 
@@ -274,9 +278,16 @@ def _instance_server_name() -> str:
 
 
 def _is_web_url(url: str) -> bool:
+    """http(s) con host, o file:// de un archivo local que existe (lo abre el
+    manejador de archivos de un plugin, p. ej. Katphi Office)."""
     from PySide6.QtCore import QUrl
     qurl = QUrl(url)
-    return qurl.isValid() and qurl.scheme().lower() in ("http", "https") and bool(qurl.host())
+    if not qurl.isValid():
+        return False
+    scheme = qurl.scheme().lower()
+    if scheme == "file":
+        return os.path.isfile(qurl.toLocalFile())
+    return scheme in ("http", "https") and bool(qurl.host())
 
 
 def _send_to_running_instance(urls: list) -> bool:
@@ -374,8 +385,25 @@ class _InstanceServer:
         sock.disconnectFromServer()
 
 
-def _open_url_in_window(window, url) -> None:
+def _open_local_file(window, url: str, retries: int = 3) -> None:
+    """file:// → manejador de archivos del plugin. Los plugins se cargan tras
+    crear la ventana: si aún no hay manejador se reintenta unos segundos y, si
+    no aparece ninguno, se abre como pestaña normal."""
+    from PySide6.QtCore import QUrl, QTimer
+    import file_handlers
+    if file_handlers.open_path(QUrl(url).toLocalFile()):
+        return
+    if retries > 0:
+        QTimer.singleShot(1500, lambda: _open_local_file(window, url, retries - 1))
+        return
+    _open_url_in_window(window, url, _local_tried=True)
+
+
+def _open_url_in_window(window, url, _local_tried=False) -> None:
     """Abre url en una pestaña nueva (url=None: solo activar la ventana)."""
+    if url and not _local_tried and str(url).lower().startswith("file:"):
+        _open_local_file(window, url)
+        return
     if url:
         tab_manager = getattr(window, "tab_manager", None)
         if tab_manager is not None and hasattr(tab_manager, "add_new_tab"):
@@ -429,6 +457,13 @@ def main():
     # QtWebEngineWidgets (vía main_window) debe importarse antes de crear la
     # QApplication.
     from main_window import MainWindow
+
+    # katphi-app:// (aplicaciones web de los plugins): antes de la QApplication
+    try:
+        import app_scheme
+        app_scheme.register_scheme()
+    except Exception as _e:
+        _logger.warning("[app_scheme] No se pudo registrar katphi-app://: %s", _e)
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)

@@ -27,6 +27,60 @@ from datetime import datetime
 from pathlib import Path
 
 
+# Ejemplo 'Ad Blocker Simple'. La 1.0 usaba [id*="ad-"] / [class*="ad-"], que
+# coinciden con "masthead-", "head-", "load-"...: en YouTube ocultaba la barra
+# superior entera (buscador incluido) y, al recorrer toda la página con un
+# console.log por elemento en cada mutación del DOM, la dejaba muy lenta.
+AD_BLOCKER_SIMPLE_VERSION = '1.1'
+AD_BLOCKER_SIMPLE_CODE = '''// ==UserScript==
+// @name         Simple Ad Blocker
+// @description  Oculta elementos de publicidad comunes
+// @version      1.1
+// @match        *://*/*
+// @run-at       document-end
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Solo nombres exactos o prefijos: un "contiene ad-" acierta en
+    // "masthead-", "header-", "download-"... y rompe páginas
+    const adSelector = [
+        '[class~="ad"]', '[class~="ads"]', '[class~="advertisement"]',
+        '[id^="ad-"]', '[id^="ads-"]', '[id^="google_ads"]', '[id^="div-gpt-ad"]',
+        'ins.adsbygoogle',
+        'iframe[src*="doubleclick"]',
+        'iframe[src*="googlesyndication"]'
+    ].join(',');
+
+    function removeAds() {
+        document.querySelectorAll(adSelector).forEach(el => {
+            // Nunca ocultar un reproductor de vídeo
+            if (el.tagName !== 'VIDEO' && !el.querySelector('video')) {
+                el.style.display = 'none';
+            }
+        });
+    }
+
+    // Ejecutar al cargar
+    removeAds();
+
+    // Observar cambios en el DOM, como mucho una pasada por segundo
+    let pending = false;
+    const observer = new MutationObserver(() => {
+        if (pending) return;
+        pending = true;
+        setTimeout(() => { pending = false; removeAds(); }, 1000);
+    });
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+})();
+'''
+
+
 class UserScriptManager(QObject):
     """Gestor de scripts de usuario"""
 
@@ -51,6 +105,48 @@ class UserScriptManager(QObject):
         # Cargar scripts de ejemplo si es primera vez
         if not self.get_all_scripts():
             self._install_example_scripts()
+        self._migrate_disable_dark_mode()
+        self._migrate_ad_blocker_simple()
+    def _migrate_ad_blocker_simple(self):
+        """Sustituye (una sola vez) el 'Ad Blocker Simple' 1.0 por la 1.1.
+
+        La 1.0 ocultaba la cabecera de YouTube y de otras webs (ver
+        AD_BLOCKER_SIMPLE_CODE). Solo se toca la copia de ejemplo sin
+        editar: si el usuario cambió el código, se respeta.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            if conn.execute('PRAGMA user_version').fetchone()[0] < 2:
+                conn.execute(
+                    "UPDATE scripts SET code = ?, version = ?, updated_at = ? "
+                    "WHERE name = 'Ad Blocker Simple' AND author IN ('Katphi', 'Scrapelio') "
+                    "AND version = '1.0' AND instr(code, '[id*=\"ad-\"]') > 0",
+                    (AD_BLOCKER_SIMPLE_CODE, AD_BLOCKER_SIMPLE_VERSION,
+                     datetime.now().isoformat())
+                )
+                conn.execute('PRAGMA user_version = 2')
+                conn.commit()
+        finally:
+            conn.close()
+    def _migrate_disable_dark_mode(self):
+        """Desactiva (una sola vez) el antiguo ejemplo 'Dark Mode Universal'.
+
+        Venía activado de serie para *://*/* y dejaba el texto ilegible
+        (fondo oscuro invertido a gris claro + texto invertido a blanco).
+        Se usa PRAGMA user_version como marca para no volver a desactivarlo
+        si el usuario lo reactiva a mano.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            if conn.execute('PRAGMA user_version').fetchone()[0] < 1:
+                conn.execute(
+                    "UPDATE scripts SET enabled = 0 "
+                    "WHERE name = 'Dark Mode Universal' AND author IN ('Katphi', 'Scrapelio')"
+                )
+                conn.execute('PRAGMA user_version = 1')
+                conn.commit()
+        finally:
+            conn.close()
     def _get_scripts_directory(self):
         """Obtiene el directorio para almacenar scripts"""
         app_data = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
@@ -330,93 +426,13 @@ class UserScriptManager(QObject):
         """Instalar scripts de ejemplo precargados"""
         examples = [
             {
-                'name': 'Dark Mode Universal',
-                'description': 'Aplica tema oscuro a todas las páginas web',
-                'author': 'Katphi',
-                'version': '1.0',
-                'match_patterns': '*://*/*',
-                'run_at': 'document-start',
-                'code': '''// ==UserScript==
-// @name         Dark Mode Universal
-// @description  Aplica tema oscuro a todas las páginas
-// @match        *://*/*
-// @run-at       document-start
-// @grant        GM_addStyle
-// ==/UserScript==
-
-(function() {
-    'use strict';
-
-    const darkModeCSS = `
-        html {
-            filter: invert(0.9) hue-rotate(180deg) !important;
-            background-color: #1a1a1a !important;
-        }
-
-        img, video, iframe, [style*="background-image"] {
-            filter: invert(1) hue-rotate(180deg) !important;
-        }
-
-        * {
-            background-color: inherit !important;
-            border-color: #444 !important;
-        }
-    `;
-
-    // Inyectar CSS
-    const style = document.createElement('style');
-    style.textContent = darkModeCSS;
-    document.documentElement.appendChild(style);
-})();
-'''
-            },
-            {
                 'name': 'Ad Blocker Simple',
                 'description': 'Oculta elementos de publicidad comunes',
                 'author': 'Katphi',
-                'version': '1.0',
+                'version': AD_BLOCKER_SIMPLE_VERSION,
                 'match_patterns': '*://*/*',
                 'run_at': 'document-end',
-                'code': '''// ==UserScript==
-// @name         Simple Ad Blocker
-// @description  Oculta elementos de publicidad comunes
-// @match        *://*/*
-// @run-at       document-end
-// @grant        none
-// ==/UserScript==
-
-(function() {
-    'use strict';
-
-    const adSelectors = [
-        '.ad', '.ads', '.advertisement', '.banner',
-        '[class*="ad-"]', '[class*="ads-"]',
-        '[id*="ad-"]', '[id*="ads-"]',
-        '[class*="sponsor"]', '[id*="sponsor"]',
-        'iframe[src*="doubleclick"]',
-        'iframe[src*="googlesyndication"]'
-    ];
-
-    function removeAds() {
-        adSelectors.forEach(selector => {
-            document.querySelectorAll(selector).forEach(el => {
-                el.style.display = 'none';
-                console.log('[Ad Blocker] Blocked:', el);
-            });
-        });
-    }
-
-    // Ejecutar al cargar
-    removeAds();
-
-    // Observar cambios en el DOM
-    const observer = new MutationObserver(removeAds);
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
-})();
-'''
+                'code': AD_BLOCKER_SIMPLE_CODE
             },
             {
                 'name': 'Auto HD YouTube',
@@ -798,7 +814,6 @@ class UserScriptDialog(QDialog):
 
         info = QLabel(
             "Los siguientes scripts de ejemplo ya están instalados y listos para usar:\n\n"
-            "• Dark Mode Universal - Tema oscuro para todas las páginas\n"
             "• Ad Blocker Simple - Bloquea publicidad común\n"
             "• Auto HD YouTube - Fuerza calidad HD en YouTube\n"
             "• Disable Right-Click Protection - Habilita click derecho\n"

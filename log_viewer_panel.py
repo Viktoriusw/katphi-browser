@@ -257,6 +257,12 @@ class LogViewerPanel(BasePanel):
         open_file_btn.clicked.connect(self._open_log_file)
         bottom.addWidget(open_file_btn)
 
+        # Informe de error anónimo: solo se envía si el usuario lo confirma
+        self._report_btn = self.create_icon_button(
+            "bug", "Informar de un error a Katphi (anónimo; revisas el contenido antes de enviarlo)",
+            self._report_bug, size=30, icon_size=16)
+        bottom.addWidget(self._report_btn)
+
         layout.addLayout(bottom)
 
         self._apply_dynamic_styles()
@@ -477,6 +483,15 @@ class LogViewerPanel(BasePanel):
             QMessageBox.information(self, "Exportar", f"Exportados {len(filtered)} registros a:\n{filename}")
         except Exception as exc:
             QMessageBox.warning(self, "Error", f"No se pudo guardar: {exc}")
+    def _report_bug(self) -> None:
+        """Diálogo de informe de error (vista previa anonimizada + consentimiento)."""
+        try:
+            import bug_report
+            bug_report.show_dialog(self)
+        except Exception as exc:
+            _log.error("No se pudo abrir el informe de error: %s", exc)
+            QMessageBox.warning(self, "Informe de error", f"No se pudo abrir el informe: {exc}")
+
     def _open_log_file(self) -> None:
         """Abre el fichero .log con el editor/visor predeterminado del sistema."""
         if not os.path.exists(LOG_FILE_PATH):

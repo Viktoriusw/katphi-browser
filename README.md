@@ -6,7 +6,7 @@
 
 <p align="center">
   Navegador de escritorio con IA integrada, privacidad y sistema de plugins.<br>
-  Versión <strong>3.5.2</strong> · Windows · Linux · Licencia MIT
+  Versión <strong>3.6.0</strong> · Windows · Linux · Licencia MIT
 </p>
 
 <p align="center">
@@ -95,19 +95,35 @@ ni HEVC, que es lo que sirven la mayoría de webs de vídeo. Cuando un vídeo no
 reproducir por eso, Katphi lo avisa y ofrece abrirlo en el navegador del sistema o en
 mpv/VLC si están instalados.
 
+**Katphi Browser no distribuye binarios que incluyan H.264, AAC ni HEVC.** La versión
+oficial descargable desde katphi.com no contiene estos códecs, precisamente para no
+incurrir en obligaciones de licencia de patentes (gestionadas por Via Licensing
+Alliance). Los scripts de compilación oficiales se niegan a empaquetar un Qt WebEngine
+que los incluya.
+
+Si necesitas reproducir contenido H.264/AAC dentro de Katphi, puedes compilar tu propia
+versión de Qt WebEngine en tu equipo con los scripts incluidos. Es una opción avanzada,
+no hace falta para usar el navegador:
+
 ```bash
 python3 tools/check_codecs.py              # ¿qué códecs tiene tu Qt WebEngine?
 tools/build_qtwebengine_codecs.sh          # Linux: compilarlo con H.264/AAC (1-4 h, ~40 GB)
 tools/build_qtwebengine_codecs.sh restore  # volver al de PySide6
 ```
 
-En Windows lo hace `build_windows.bat` (llama a
-`tools\build_qtwebengine_codecs_windows.ps1`): la primera vez compila Qt WebEngine con
-MSVC en `C:\qtwe` (3-8 h, ~100 GB; requiere Visual Studio 2022 con C++ y el
-Windows 11 SDK 10.0.26100) y en los builds siguientes solo lo reinstala.
+En Windows el equivalente es `tools\build_qtwebengine_codecs_windows.ps1` (compila con
+MSVC en `C:\qtwe`: 3-8 h, ~100 GB; requiere Visual Studio 2022 con C++ y el
+Windows 11 SDK 10.0.26100). Ambos scripts muestran un aviso legal y piden confirmación
+antes de compilar.
 
-H.264, AAC y HEVC están sujetos a patentes; distribuir binarios que los incluyan puede
-requerir licencias.
+> **Aviso legal importante:** H.264, AAC y HEVC están sujetos a patentes. Al ejecutar
+> estos scripts y compilar tu propia versión, tú, como usuario, eres el único
+> responsable de cumplir con las obligaciones de licencia que puedan derivarse del uso
+> o distribución de esa compilación. El mantenedor de Katphi Browser no asume ninguna
+> responsabilidad por el uso de estos scripts ni por los binarios que de ellos resulten.
+> Si redistribuyes una versión compilada con estos códecs, deberás obtener las licencias
+> correspondientes de Via Licensing Alliance (<https://www.via-la.com/>).
+> Ver [AVISO_LEGAL.md](AVISO_LEGAL.md).
 
 ## Compilar los paquetes
 
@@ -118,6 +134,17 @@ requerir licencias.
 
 Los paquetes siempre incluyen la configuración pública (`config.example.yaml`); el
 build se detiene si esa configuración apunta a una dirección local o privada.
+
+Los paquetes nunca llevan códecs patentados ([AVISO_LEGAL.md](AVISO_LEGAL.md)):
+
+- El build se detiene si el Qt WebEngine instalado tiene H.264/AAC (por ejemplo, si
+  ejecutaste `tools/build_qtwebengine_codecs.sh`). Usa un entorno con el PySide6 de pip o
+  ejecuta antes `tools/build_qtwebengine_codecs.sh restore`.
+- En Linux, el FFmpeg de Qt Multimedia que trae PySide6 incluye H.264/HEVC/AAC. Antes
+  de `pyinstaller` hay que sustituirlo en el entorno de build con
+  `PYTHON=<python del entorno> tools/build_ffmpeg_sin_patentes.sh` (FFmpeg 7.1.3 sin
+  H.264/HEVC/VVC/AAC; tarda unos minutos). Si no lo haces, el build se detiene.
+- En Windows el FFmpeg no se empaqueta y Qt Multimedia usa Media Foundation.
 
 ## Configuración
 
@@ -135,4 +162,8 @@ vicrosdev@proton.me
 
 ## Licencia
 
-[MIT](LICENSE)
+El código fuente de Katphi Browser se distribuye bajo licencia [MIT](LICENSE). Esta
+licencia no cubre los códecs H.264, AAC ni HEVC, que son tecnologías patentadas y
+cuyas licencias se gestionan de forma independiente a través de Via Licensing
+Alliance. Katphi Browser no distribuye binarios que incluyan estos códecs. Más
+detalles en [AVISO_LEGAL.md](AVISO_LEGAL.md).

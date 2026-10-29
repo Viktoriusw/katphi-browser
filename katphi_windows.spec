@@ -18,13 +18,47 @@ pyside6_datas += collect_data_files('PySide6.QtWebEngine')
 # Binarios de PySide6 (DLLs, QtWebEngineProcess.exe, etc.)
 pyside6_binaries = collect_dynamic_libs('PySide6')
 
-# Fuera la copia de seguridad que deja tools/build_qtwebengine_codecs.sh
-# (Qt/.webengine-original): son ~220 MB del WebEngine sin codecs
-def _sin_backup_webengine(entries):
-    return [e for e in entries if '.webengine-original' not in e[0]]
+# ── Sin códecs patentados (H.264/AAC/HEVC) ─────────────────────────────────
+# Katphi no distribuye binarios con códecs patentados (ver AVISO_LEGAL.md):
+# si el PySide6 de este entorno lleva el Qt WebEngine que compilan
+# tools/build_qtwebengine_codecs*.{sh,ps1}, el build se detiene. Se detecta
+# por la copia de seguridad y el aviso que dejan esos scripts y por el
+# codificador OpenH264, que solo existe en un Qt WebEngine con códecs.
+import mmap as _mmap
+import PySide6 as _pyside6
 
-pyside6_datas = _sin_backup_webengine(pyside6_datas)
-pyside6_binaries = _sin_backup_webengine(pyside6_binaries)
+def _webengine_con_codecs():
+    base = os.path.dirname(_pyside6.__file__)
+    for marca in (os.path.join(base, '.webengine-original'),
+                  os.path.join(base, 'Qt', '.webengine-original'),
+                  os.path.join(base, 'AVISO_LEGAL_CODECS.txt'),
+                  os.path.join(base, 'Qt', 'AVISO_LEGAL_CODECS.txt')):
+        if os.path.exists(marca):
+            return marca
+    for lib in (os.path.join(base, 'Qt6WebEngineCore.dll'),
+                os.path.join(base, 'Qt', 'lib', 'libQt6WebEngineCore.so.6')):
+        if os.path.isfile(lib):
+            with open(lib, 'rb') as _f, _mmap.mmap(_f.fileno(), 0, access=_mmap.ACCESS_READ) as _m:
+                if _m.find(b'CWelsH264SVCEncoder') != -1:
+                    return lib
+    return None
+
+_codecs = _webengine_con_codecs()
+if _codecs:
+    raise SystemExit(
+        "El Qt WebEngine de este entorno incluye H.264/AAC (" + _codecs + ").\n"
+        "Los builds oficiales no pueden llevar códecs patentados: usa un entorno con\n"
+        "el PySide6 de pip o ejecuta tools/build_qtwebengine_codecs.sh restore.")
+
+# Qt Multimedia trae su propio FFmpeg con H.264/HEVC/AAC: en Windows no se
+# empaqueta y Qt Multimedia usa su backend de Windows (Media Foundation, con
+# los códecs del sistema). Ver _sin_ffmpeg() tras el Analysis.
+_FFMPEG_PREFIJOS = ('avcodec-', 'avformat-', 'avutil-', 'swresample-', 'swscale-',
+                    'ffmpegmediaplugin')
+
+def _sin_ffmpeg(entries):
+    return [e for e in entries
+            if not os.path.basename(e[0]).lower().startswith(_FFMPEG_PREFIJOS)]
 
 # Hidden imports de PySide6
 pyside6_hiddenimports = [
@@ -47,6 +81,8 @@ pyside6_hiddenimports = [
     'PySide6.QtMultimedia',
     'PySide6.QtMultimediaWidgets',
     'PySide6.QtTextToSpeech',
+    # Katphi Office (plugins cargados en tiempo de ejecución): imprimir PDF
+    'PySide6.QtPdf',
 ]
 
 # ── config.yaml de distribución ────────────────────────────────────────────
@@ -84,7 +120,7 @@ project_datas = [
 ]
 
 # Edición gratuita: el paquete solo puede llevar los plugins gratuitos.
-_FREE_PLUGINS = {'themes', 'split_view', 'voice_control'}
+_FREE_PLUGINS = {'themes', 'split_view', 'voice_control', 'office_viewer'}
 _bundled = {d for d in os.listdir('plugins')
             if os.path.isdir(os.path.join('plugins', d)) and d != '__pycache__'}
 if _bundled - _FREE_PLUGINS:
@@ -97,6 +133,11 @@ if _bundled - _FREE_PLUGINS:
 
 # ── Hidden imports del proyecto ─────────────────────────────────────────────
 app_hiddenimports = [
+    # Núcleo 3.6: esquema katphi-app:// y manejadores de archivo para plugins
+    'app_scheme',
+    'file_handlers',
+    # Informe de error anónimo (panel de logs)
+    'bug_report',
     # Stdlib usados por reflexión
     'importlib.util',
     'importlib.metadata',
@@ -122,6 +163,18 @@ app_hiddenimports = [
     # Usados solo por plugins (se empaquetan como datos y PyInstaller no los analiza)
     'wave',          # voice_control
     'array',         # voice_control
+    'struct',        # katphi_tv
+    'socket',
+    'ipaddress',
+    'argparse',
+    'signal',
+    'itertools',
+    'collections',
+    'html',
+    'cryptography.hazmat.primitives.asymmetric.ed25519',
+    'cryptography.hazmat.primitives.asymmetric.x25519',
+    'cryptography.hazmat.primitives.ciphers.aead',
+    'cryptography.hazmat.primitives.kdf.hkdf',
     'typing',
     'pathlib',
     're',
@@ -214,6 +267,9 @@ a = Analysis(
     win_private_assemblies=False,
     noarchive=False,
 )
+
+a.binaries = _sin_ffmpeg(a.binaries)
+a.datas = _sin_ffmpeg(a.datas)
 
 pyz = PYZ(a.pure)
 
