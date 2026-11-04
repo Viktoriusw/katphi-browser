@@ -1122,7 +1122,7 @@ class PasswordManager(QWidget):
         # Aviso visible para errores de cifrado o de BD (oculto por defecto)
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
+        self.status_label.setStyleSheet("QWidget { color: #d9534f; font-weight: bold; }")
         self.status_label.hide()
         layout.addWidget(self.status_label)
 

@@ -93,17 +93,17 @@ class ShortcutItem(QWidget):
         icon_label.setAlignment(Qt.AlignCenter)
         icon_label.setFixedSize(32, 32)
         icon_label.setStyleSheet(
-            f"font-size: 15px; font-weight: 600; color: {colors['accent']};"
+            f"QWidget {{ font-size: 15px; font-weight: 600; color: {colors['accent']};"
             f" background: {colors.get('accent_subtle', 'transparent')};"
-            " border: none; border-radius: 16px;"
+            " border: none; border-radius: 16px; }}"
         )
         layout.addWidget(icon_label)
 
         name_label = QLabel(data.get("name", "")[:12])
         name_label.setAlignment(Qt.AlignCenter)
         name_label.setStyleSheet(
-            f"font-size: 11px; color: {colors['text_secondary']}; "
-            "background: transparent; border: none;"
+            f"QWidget {{ font-size: 11px; color: {colors['text_secondary']}; "
+            "background: transparent; border: none; }}"
         )
         layout.addWidget(name_label)
     def _apply_style(self, c: dict):
@@ -141,8 +141,8 @@ class AddShortcutItem(QWidget):
         plus = QLabel("+")
         plus.setAlignment(Qt.AlignCenter)
         plus.setStyleSheet(
-            f"font-size: 22px; color: {colors['text_muted']}; "
-            "background: transparent; border: none;"
+            f"QWidget {{ font-size: 22px; color: {colors['text_muted']}; "
+            "background: transparent; border: none; }}"
         )
         layout.addWidget(plus)
 
@@ -176,12 +176,12 @@ class NewTabSettingsDialog(QDialog):
         layout.setSpacing(12)
 
         title = QLabel("Módulos activos")
-        title.setStyleSheet("font-size: 13px; font-weight: 600; color: #F0F0F0;")
+        title.setStyleSheet("QWidget { font-size: 13px; font-weight: 600; color: #F0F0F0; }")
         layout.addWidget(title)
 
         self.ai_check = QCheckBox("Sugerencia IA (requiere chat activo)")
         self.ai_check.setChecked(show_ai)
-        self.ai_check.setStyleSheet("color: #A0A0A0; font-size: 13px;")
+        self.ai_check.setStyleSheet("QWidget { color: #A0A0A0; font-size: 13px; }")
         layout.addWidget(self.ai_check)
 
         save_btn = QPushButton("Guardar")
@@ -280,8 +280,8 @@ class NewTabPage(QWidget):
         search_icon = QLabel()
         search_icon.setPixmap(_themed_icon("search", 16).pixmap(16, 16))
         search_icon.setStyleSheet(
-            f"font-size: 16px; color: {self.colors['text_muted']}; "
-            "background: transparent;"
+            f"QWidget {{ font-size: 16px; color: {self.colors['text_muted']}; "
+            "background: transparent; }}"
         )
         search_icon.setFixedSize(42, 44)
         search_icon.setAlignment(Qt.AlignCenter)
@@ -344,15 +344,15 @@ class NewTabPage(QWidget):
 
         ai_prefix = QLabel("AI:")
         ai_prefix.setStyleSheet(
-            f"font-size: 12px; color: {self.colors['accent']}; "
-            "background: transparent; font-weight: 600;"
+            f"QWidget {{ font-size: 12px; color: {self.colors['accent']}; "
+            "background: transparent; font-weight: 600; }}"
         )
         ai_layout.addWidget(ai_prefix)
 
         self._ai_text = QLabel("Haz clic para preguntar algo sobre esta sesión...")
         self._ai_text.setObjectName("aiSuggestion")
         self._ai_text.setStyleSheet(
-            f"font-size: 12px; color: {self.colors['text_muted']}; background: transparent;"
+            f"QWidget {{ font-size: 12px; color: {self.colors['text_muted']}; background: transparent; }}"
         )
         self._ai_text.setCursor(Qt.PointingHandCursor)
         self._ai_text.mousePressEvent = lambda _: self.open_chat_panel.emit()

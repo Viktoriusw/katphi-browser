@@ -590,7 +590,7 @@ class NetworkSettingsDialog(QDialog):
         self.ua_active = QTextEdit()
         self.ua_active.setReadOnly(True)
         self.ua_active.setMaximumHeight(60)
-        self.ua_active.setStyleSheet("background-color: #e8f5e9; font-family: monospace; font-size: 10px; border: 2px solid #4caf50;")
+        self.ua_active.setStyleSheet("QWidget { background-color: #e8f5e9; font-family: monospace; font-size: 10px; border: 2px solid #4caf50; }")
         ua_layout.addWidget(self.ua_active)
 
         # Preview del User-Agent seleccionado (el que se aplicará)
@@ -598,7 +598,7 @@ class NetworkSettingsDialog(QDialog):
         self.ua_preview = QTextEdit()
         self.ua_preview.setReadOnly(True)
         self.ua_preview.setMaximumHeight(60)
-        self.ua_preview.setStyleSheet("background-color: #fff3e0; font-family: monospace; font-size: 10px; border: 2px solid #ff9800;")
+        self.ua_preview.setStyleSheet("QWidget { background-color: #fff3e0; font-family: monospace; font-size: 10px; border: 2px solid #ff9800; }")
         ua_layout.addWidget(self.ua_preview)
 
         # Custom User-Agent
@@ -618,7 +618,7 @@ class NetworkSettingsDialog(QDialog):
             "ciertos navegadores o para testing de compatibilidad."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 11px; margin-top: 10px;")
+        info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-top: 10px; }")
         layout.addWidget(info_label)
 
         layout.addStretch()
@@ -682,7 +682,7 @@ class NetworkSettingsDialog(QDialog):
             "• Exacta: https://evil.com/malware.js"
         )
         examples_label.setWordWrap(True)
-        examples_label.setStyleSheet("color: #666; font-size: 10px; margin-top: 10px; background-color: #f9f9f9; padding: 8px; border-radius: 4px;")
+        examples_label.setStyleSheet("QWidget { color: #666; font-size: 10px; margin-top: 10px; background-color: #f9f9f9; padding: 8px; border-radius: 4px; }")
         layout.addWidget(examples_label)
 
         layout.addStretch()

@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, ClassVar
 from dataclasses import dataclass
 
+# Tor es SOLO de sesión: activarlo nunca se guarda en config.yaml. El estado
+# vive en esta variable de entorno, que sobrevive al os.execv con el que el
+# navegador se relanza para entrar/salir de Tor, y muere con el proceso: al
+# cerrar el navegador y volver a abrirlo, se arranca siempre sin Tor.
+TOR_SESSION_ENV = "KATPHI_TOR_SESSION"
+
 # Configurar logging
 logger = logging.getLogger(__name__)
 
@@ -384,7 +390,9 @@ class ConfigManager:
         if not isinstance(self._config.get('tor'), dict):
             self._config['tor'] = {}
         tor = self._config['tor']
-        tor.setdefault('enabled', False)
+        # Configs antiguas guardaban enabled: true y cada arranque volvía a
+        # exigir Tor. Ya no se persiste: siempre False en disco.
+        tor['enabled'] = False
         tor.setdefault('socks_port', 9150)
         tor.setdefault('control_port', 9151)
         tor.setdefault('pending_restore_urls', [])
@@ -393,13 +401,17 @@ class ConfigManager:
         self._ensure_tor_section()
         return dict(self._config['tor'])
     def is_tor_enabled(self) -> bool:
-        """Verificar si Tor está habilitado."""
-        self._ensure_tor_section()
-        return bool(self._config['tor'].get('enabled', False))
+        """Tor activo en ESTA sesión del navegador (nunca viene de disco)."""
+        return os.environ.get(TOR_SESSION_ENV) == "1"
     def set_tor_enabled(self, enabled: bool) -> None:
-        """Establecer si Tor está habilitado."""
-        self._ensure_tor_section()
-        self._config['tor']['enabled'] = bool(enabled)
+        """Activa/desactiva Tor para la sesión actual y sus relanzamientos.
+
+        No toca config.yaml: al cerrar el navegador Tor queda desactivado.
+        """
+        if enabled:
+            os.environ[TOR_SESSION_ENV] = "1"
+        else:
+            os.environ.pop(TOR_SESSION_ENV, None)
     def get_tor_pending_urls(self) -> List[str]:
         """Obtener URLs a restaurar tras reinicio por Tor."""
         self._ensure_tor_section()

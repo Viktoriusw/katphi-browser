@@ -138,7 +138,7 @@ class ModernStatusBar(QStatusBar):
         """Configurar interfaz de usuario"""
         # Widget principal (muestra URLs al hover)
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color: #555; font-size: 12px; padding-left: 8px;")
+        self.status_label.setStyleSheet("QWidget { color: #555; font-size: 12px; padding-left: 8px; }")
         self.addWidget(self.status_label, 1)  # Stretch factor 1
 
         # Widget SSL
@@ -160,18 +160,18 @@ class ModernStatusBar(QStatusBar):
 
         # Separador
         separator1 = QLabel("|")
-        separator1.setStyleSheet("color: #ccc;")
+        separator1.setStyleSheet("QWidget { color: #ccc; }")
         # Estado de carga
         self.load_label = QLabel("")
-        self.load_label.setStyleSheet("font-size: 11px; color: #555;")
+        self.load_label.setStyleSheet("QWidget { font-size: 11px; color: #555; }")
         # Separador
         separator2 = QLabel("|")
-        separator2.setStyleSheet("color: #ccc;")
+        separator2.setStyleSheet("QWidget { color: #ccc; }")
         # Nivel de zoom
         self.zoom_label = QLabel("100%")
         self.zoom_label.setFixedWidth(50)
         self.zoom_label.setAlignment(Qt.AlignCenter)
-        self.zoom_label.setStyleSheet("font-size: 11px; font-weight: bold;")
+        self.zoom_label.setStyleSheet("QLabel { font-size: 11px; font-weight: bold; }")
         self.zoom_label.setCursor(QCursor(Qt.PointingHandCursor))
         self.zoom_label.mousePressEvent = self.reset_zoom_on_click
 
@@ -272,9 +272,9 @@ class ModernStatusBar(QStatusBar):
 
         # Cambiar color si no es 100%
         if zoom_percent != 100:
-            self.zoom_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #007bff;")
+            self.zoom_label.setStyleSheet("QLabel { font-size: 11px; font-weight: bold; color: #007bff; }")
         else:
-            self.zoom_label.setStyleSheet("font-size: 11px; font-weight: bold;")
+            self.zoom_label.setStyleSheet("QLabel { font-size: 11px; font-weight: bold; }")
         self.zoom_label.setToolTip(f"Zoom: {zoom_percent}%\nClick para restablecer a 100%")
     def reset_zoom_on_click(self, event):
         """Restablecer zoom al hacer click en el indicador"""

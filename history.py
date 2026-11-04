@@ -105,6 +105,15 @@ class HistoryPanel(QWidget):
         header_layout.addWidget(clear_btn)
         layout.addLayout(header_layout)
 
+        # Recuperar la sesión anterior (las pestañas no se reabren solas al
+        # arrancar; solo si el usuario lo pide, y una vez)
+        self.restore_session_btn = QPushButton("Restaurar sesión anterior")
+        self.restore_session_btn.setToolTip(
+            "Reabre las pestañas que tenías abiertas al cerrar el navegador")
+        self.restore_session_btn.clicked.connect(self.restore_previous_session)
+        layout.addWidget(self.restore_session_btn)
+        self.update_restore_button()
+
         # Search
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Buscar en el historial...")
@@ -115,6 +124,30 @@ class HistoryPanel(QWidget):
         self.history_list = QListWidget()
         self.history_list.itemClicked.connect(self.open_history_item)
         layout.addWidget(self.history_list)
+    def _main_window(self):
+        return getattr(self.tab_manager, "parent", None)
+
+    def update_restore_button(self):
+        """Muestra el botón solo si hay una sesión anterior sin restaurar."""
+        win = self._main_window()
+        count = 0
+        if win is not None and hasattr(win, "has_previous_session") and win.has_previous_session():
+            count = self.tab_manager.saved_session_count()
+        self.restore_session_btn.setVisible(count > 0)
+        if count:
+            self.restore_session_btn.setText(
+                f"Restaurar sesión anterior ({count} pestaña{'s' if count != 1 else ''})")
+
+    def restore_previous_session(self):
+        win = self._main_window()
+        if win is not None and hasattr(win, "restore_previous_session"):
+            win.restore_previous_session()
+        self.update_restore_button()
+
+    def showEvent(self, event):
+        self.update_restore_button()
+        super().showEvent(event)
+
     def refresh_history(self):
         """Recargar lista completa"""
         self.history_list.clear()

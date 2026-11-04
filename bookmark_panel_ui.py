@@ -8,17 +8,21 @@ Este widget reemplaza/complementa al BookmarkManager de maintag.py ofreciendo:
   - Mover marcadores entre carpetas (menú contextual)
   - Doble clic para abrir un marcador en el navegador
   - Búsqueda rápida por título / URL
-  - Exportación a HTML compatible con Firefox/Chrome
+  - Importación y exportación HTML compatible con Firefox/Chrome/Edge/Safari
   - Diálogo para agregar marcador con selector de carpeta
 """
 
 from __future__ import annotations
 
-import sqlite3
+import html
+import os
+from datetime import date
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon
+
+import bookmarks_io
 
 try:
     from favicon_manager import get_favicon_manager, _domain as _favicon_domain
@@ -29,15 +33,18 @@ except ImportError:
     def _favicon_domain(url): return ""
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
+    QGridLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMenu,
     QMessageBox,
     QPushButton,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -98,6 +105,18 @@ DB_PATH = "bookmarks.db"
 def _icon(name: str) -> QIcon:
     """Devuelve un QIcon desde la carpeta icons/ del proyecto."""
     return QIcon(f"icons/{name}.svg") or QIcon(f"icons/{name}.png")
+
+
+def _themed_icon(name: str, color: str, size: int = 16) -> QIcon:
+    """Icono SVG recoloreado con el color del tema (como la barra lateral)."""
+    try:
+        from ui.core.strip_icons import build_nav_icon
+        icon = build_nav_icon(name, color, QSize(size, size))
+        if not icon.isNull():
+            return icon
+    except Exception:
+        pass
+    return _icon(name)
 
 
 # ─── Diálogo para añadir/editar un marcador ──────────────────────────────────
@@ -265,6 +284,77 @@ class MoveToCarpetaDialog(QDialog):
         return self.combo.currentData() or 1
 
 
+# ─── Diálogo de importación ───────────────────────────────────────────────────
+
+class ImportBookmarksDialog(QDialog):
+    """Confirma una importación: carpeta destino y tratamiento de duplicados."""
+
+    NEW_FOLDER = -1
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        file_name: str = "",
+        bookmark_count: int = 0,
+        folder_count: int = 0,
+        folders_manager=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Importar marcadores")
+        self.setModal(True)
+        self.setMinimumWidth(420)
+        self.container_name = f"Importados {date.today().isoformat()}"
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+        summary = QLabel(
+            f"<b>{html.escape(file_name)}</b><br>"
+            f"{bookmark_count} marcadores en {folder_count} carpetas"
+        )
+        summary.setTextFormat(Qt.RichText)
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+
+        layout.addWidget(QLabel("Importar en:"))
+        self.combo = QComboBox()
+        self.combo.addItem(f"Nueva carpeta «{self.container_name}»", self.NEW_FOLDER)
+        self.combo.addItem("Marcadores (raíz)", 1)
+        if folders_manager:
+            def _add(parent_id: int, indent: str = "    "):
+                for f in folders_manager.get_children(parent_id):
+                    self.combo.addItem(f"{indent}{f.name}", f.id)
+                    _add(f.id, indent + "    ")
+            _add(1)
+        layout.addWidget(self.combo)
+
+        self.skip_dupes = QCheckBox("Omitir los marcadores que ya están guardados")
+        self.skip_dupes.setChecked(True)
+        layout.addWidget(self.skip_dupes)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.clicked.connect(self.reject)
+        ok_btn = QPushButton("Importar")
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(self.accept)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+
+    @property
+    def target(self) -> tuple[int, Optional[str]]:
+        """(carpeta padre, nombre de la carpeta contenedora nueva o None)."""
+        data = self.combo.currentData()
+        if data == self.NEW_FOLDER:
+            return 1, self.container_name
+        return data or 1, None
+
+
+def _count_folders(folder) -> int:
+    return len(folder.folders) + sum(_count_folders(f) for f in folder.folders)
+
+
 # ─── Panel principal ──────────────────────────────────────────────────────────
 
 class BookmarkPanelWidget(QWidget):
@@ -333,8 +423,26 @@ class BookmarkPanelWidget(QWidget):
         """Aplica estilos al panel usando el ThemeEngine activo."""
         c = _get_bookmark_theme_colors()
         self._title_lbl.setStyleSheet(
-            f"font-size: 14px; font-weight: bold; color: {c['primary']}; padding: 4px 0;"
+            f"QWidget {{ font-size: 14px; font-weight: bold; color: {c['primary']}; padding: 4px 0; }}"
         )
+        icon_color = c["secondary"]
+        try:
+            from ui.core.strip_icons import get_icon_color
+            icon_color = get_icon_color() or icon_color
+        except Exception:
+            pass
+        for btn, name in ((self._import_btn, "download"), (self._export_btn, "upload")):
+            btn.setIcon(_themed_icon(name, icon_color))
+            btn.setStyleSheet(f"""
+                QToolButton {{
+                    background: transparent;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 3px;
+                }}
+                QToolButton:hover {{ background-color: {c['hover']}; }}
+                QToolButton:pressed {{ background-color: {c['selected']}; }}
+            """)
         self._tree.setStyleSheet(f"""
             QTreeWidget {{
                 background-color: {c['background']};
@@ -377,9 +485,30 @@ class BookmarkPanelWidget(QWidget):
         root_layout.setContentsMargins(4, 4, 4, 4)
         root_layout.setSpacing(4)
 
-        # — Título del panel —
+        # — Título del panel + botones de importar / exportar —
+        # Título y botones comparten celda: el título se alinea a la izquierda y
+        # los botones quedan centrados en el ancho del panel, lejos de la X
+        # flotante que MainWindow coloca en la esquina derecha de los paneles.
+        header = QGridLayout()
+        header.setContentsMargins(0, 0, 0, 0)
         self._title_lbl = QLabel("Marcadores")
-        root_layout.addWidget(self._title_lbl)
+        header.addWidget(self._title_lbl, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        self._import_btn = QToolButton()
+        self._import_btn.setToolTip("Importar marcadores (HTML de Firefox, Chrome, Edge…)")
+        self._import_btn.clicked.connect(self._on_import)
+        self._export_btn = QToolButton()
+        self._export_btn.setToolTip("Exportar marcadores a HTML")
+        self._export_btn.clicked.connect(self._on_export)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(4)
+        for btn in (self._import_btn, self._export_btn):
+            btn.setIconSize(QSize(16, 16))
+            btn.setFixedSize(26, 26)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setAutoRaise(True)
+            btn_row.addWidget(btn)
+        header.addLayout(btn_row, 0, 0, Qt.AlignHCenter | Qt.AlignVCenter)
+        root_layout.addLayout(header)
 
         # — Barra de búsqueda —
         self._search_edit = QLineEdit()
@@ -609,17 +738,77 @@ class BookmarkPanelWidget(QWidget):
                 self.data_changed.emit()
             else:
                 QMessageBox.critical(self, "Error", "No se pudo eliminar el marcador")
-    # ── Exportar ──────────────────────────────────────────────────────────────
+    # ── Importar / exportar ───────────────────────────────────────────────────
+
+    def _on_import(self):
+        """Importa un archivo HTML de marcadores de otro navegador."""
+        if not self.fm:
+            QMessageBox.information(self, "Importar", "El sistema de carpetas no está disponible.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importar marcadores", os.path.expanduser("~"),
+            "Marcadores HTML (*.html *.htm);;Todos los archivos (*)",
+        )
+        if not path:
+            return
+        try:
+            root, unsupported = bookmarks_io.parse_bookmarks_html(path)
+        except (OSError, ValueError) as e:
+            QMessageBox.critical(self, "Importar", f"No se pudo leer el archivo:\n{e}")
+            return
+        total = root.count_bookmarks()
+        if total == 0:
+            QMessageBox.information(self, "Importar", "El archivo no contiene marcadores.")
+            return
+
+        dlg = ImportBookmarksDialog(
+            self, os.path.basename(path), total, _count_folders(root), self.fm
+        )
+        if not dlg.exec():
+            return
+        parent_id, container = dlg.target
+        try:
+            res = bookmarks_io.import_bookmarks(
+                self.fm.db_path, root, parent_id=parent_id,
+                container_name=container, skip_duplicates=dlg.skip_dupes.isChecked(),
+            )
+        except Exception as e:
+            logger.error("Error importando marcadores: %s", e)
+            QMessageBox.critical(self, "Importar", f"No se pudieron importar los marcadores:\n{e}")
+            return
+
+        self.reload()
+        self.data_changed.emit()
+        lines = [f"Marcadores importados: {res.imported}"]
+        if res.folders_created:
+            lines.append(f"Carpetas creadas: {res.folders_created}")
+        if res.duplicates:
+            lines.append(f"Omitidos por estar ya guardados: {res.duplicates}")
+        if unsupported:
+            lines.append(f"Omitidos por no ser páginas web (place:, javascript:…): {unsupported}")
+        QMessageBox.information(self, "Importar", "\n".join(lines))
 
     def _on_export(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Exportar marcadores", "bookmarks.html", "HTML (*.html)"
+        if not self.fm:
+            QMessageBox.information(self, "Exportar", "El sistema de carpetas no está disponible.")
+            return
+        default = os.path.join(
+            os.path.expanduser("~"), f"marcadores-katphi-{date.today().isoformat()}.html"
         )
-        if path and self.bm and self.fm:
-            if self.bm.export_bookmarks_html(path, self.fm):
-                QMessageBox.information(self, "Exportado", f"Marcadores exportados a:\n{path}")
-            else:
-                QMessageBox.critical(self, "Error", "No se pudo exportar los marcadores")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar marcadores", default, "HTML (*.html)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith((".html", ".htm")):
+            path += ".html"
+        try:
+            n = bookmarks_io.export_bookmarks_html(self.fm.db_path, path)
+        except Exception as e:
+            logger.error("Error exportando marcadores: %s", e)
+            QMessageBox.critical(self, "Exportar", f"No se pudieron exportar los marcadores:\n{e}")
+            return
+        QMessageBox.information(self, "Exportar", f"{n} marcadores exportados a:\n{path}")
     # ── Doble clic ────────────────────────────────────────────────────────────
 
     def _on_double_click(self, item: QTreeWidgetItem, _column: int):

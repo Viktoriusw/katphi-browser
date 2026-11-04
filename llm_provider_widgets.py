@@ -81,7 +81,7 @@ def build_compat_provider_widget(provider: str, link_color: str, hint_color: str
     info.setOpenExternalLinks(True)
     info.setTextFormat(Qt.RichText)
     info.setWordWrap(True)
-    info.setStyleSheet(f"color: {hint_color}; font-size: 11px;")
+    info.setStyleSheet(f"QWidget {{ color: {hint_color}; font-size: 11px; }}")
     layout.addWidget(info)
 
     return CompatProviderFields(widget, key_input, model_combo)

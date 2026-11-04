@@ -106,7 +106,7 @@ class PerformanceMonitor(QDialog):
         info_layout = QHBoxLayout()
 
         self.info_label = QLabel()
-        self.info_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         info_layout.addWidget(self.info_label)
 
         info_layout.addStretch()

@@ -142,6 +142,16 @@ _bundled = {d for d in os.listdir('plugins')
 if _bundled - _FREE_PLUGINS:
     raise SystemExit(f"plugins/ contiene plugins premium: {sorted(_bundled - _FREE_PLUGINS)}")
 
+# Archivos que el empaquetado no puede perder (3.6.1 salió sin pdfjs/build por
+# un rsync --exclude=build sin anclar y Katphi Office no abría ningún PDF).
+_REQUIRED_DATA = [
+    'plugins/office_viewer/web/pdfjs/build/pdf.min.mjs',
+    'plugins/office_viewer/web/pdfjs/build/pdf.worker.min.mjs',
+]
+_missing = [p for p in _REQUIRED_DATA if not os.path.isfile(p)]
+if _missing:
+    raise SystemExit(f"Faltan archivos imprescindibles en el árbol de build: {_missing}")
+
 # ── Hidden imports del proyecto ─────────────────────────────────────────────
 app_hiddenimports = [
     # Núcleo 3.6: esquema katphi-app:// y manejadores de archivo para plugins

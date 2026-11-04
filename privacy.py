@@ -2073,7 +2073,7 @@ class PrivacyManager(QWidget):
 
         self.data_preview_label = QLabel("Calculating...")
 
-        self.data_preview_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.data_preview_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         time_selector_layout.addWidget(self.data_preview_label)
 
         time_selector_layout.addStretch()

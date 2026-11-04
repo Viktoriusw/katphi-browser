@@ -194,6 +194,10 @@ class ChatPanelSafe(BasePanel):
         # Se liberan en QThread.finished; así nunca se destruye un QThread en marcha (C-007).
         self._chat_workers: list = []
         self._streaming_placeholder_added = False
+        # Animación de aparición del texto de la IA (ver _reveal_*)
+        self._reveal: "dict | None" = None
+        self._reveal_timer: "QTimer | None" = None
+        self._last_msg_label = None
 
         # ── Scrapelio: búsquedas y acciones del asistente ──
         self._scrapelio_workers: list = []        # workers vivos (evita que el GC los destruya)
@@ -839,14 +843,14 @@ class ChatPanelSafe(BasePanel):
         status_bar = QWidget()
         status_bar.setFixedHeight(32)
         status_bar.setStyleSheet(
-            f"background: {c['surface_1']}; border-bottom: 1px solid {c['border']};"
+            f"QWidget {{ background: {c['surface_1']}; border-bottom: 1px solid {c['border']}; }}"
         )
         sb_layout = QHBoxLayout(status_bar)
         sb_layout.setContentsMargins(12, 0, 8, 0)
         sb_layout.setSpacing(6)
 
         self.status_label = QLabel("● Desconectado")
-        self.status_label.setStyleSheet(f"color: {c['error']}; font-size: 11px; background: transparent;")
+        self.status_label.setStyleSheet(f"QWidget {{ color: {c['error']}; font-size: 11px; background: transparent; }}")
         sb_layout.addWidget(self.status_label)
         sb_layout.addStretch()
 
@@ -868,7 +872,7 @@ class ChatPanelSafe(BasePanel):
 
         # ── Contexto de página (colapsable visualmente) ────────────────────────
         ctx_bar = QWidget()
-        ctx_bar.setStyleSheet(f"background: {c['surface_1']}; border-bottom: 1px solid {c['border']};")
+        ctx_bar.setStyleSheet(f"QWidget {{ background: {c['surface_1']}; border-bottom: 1px solid {c['border']}; }}")
         ctx_l = QHBoxLayout(ctx_bar)
         ctx_l.setContentsMargins(12, 4, 8, 4)
         ctx_l.setSpacing(6)
@@ -878,8 +882,8 @@ class ChatPanelSafe(BasePanel):
         self.context_display.setPlaceholderText("Sin contexto de página")
         self.context_display.setMaximumHeight(70)
         self.context_display.setStyleSheet(
-            f"background: transparent; border: none; font-size: 11px; "
-            f"color: {c['text_secondary']};"
+            f"QWidget {{ background: transparent; border: none; font-size: 11px; "
+            f"color: {c['text_secondary']}; }}"
         )
         ctx_l.addWidget(self.context_display, 1)
 
@@ -915,10 +919,10 @@ class ChatPanelSafe(BasePanel):
         self.chat_scroll.setFrameShape(QFrame.NoFrame)
         self.chat_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.chat_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.chat_scroll.setStyleSheet(f"background: {c['surface_0']}; border: none;")
+        self.chat_scroll.setStyleSheet(f"QWidget {{ background: {c['surface_0']}; border: none; }}")
 
         self.chat_messages_widget = QWidget()
-        self.chat_messages_widget.setStyleSheet(f"background: {c['surface_0']};")
+        self.chat_messages_widget.setStyleSheet(f"QWidget {{ background: {c['surface_0']}; }}")
         self.chat_messages_layout = QVBoxLayout(self.chat_messages_widget)
         self.chat_messages_layout.setAlignment(Qt.AlignTop)
         self.chat_messages_layout.setSpacing(2)
@@ -931,7 +935,7 @@ class ChatPanelSafe(BasePanel):
         input_area = QWidget()
         input_area.setObjectName("chatInputArea")
         input_area.setStyleSheet(
-            f"background: {c['surface_1']}; border-top: 1px solid {c['border']};"
+            f"QWidget {{ background: {c['surface_1']}; border-top: 1px solid {c['border']}; }}"
         )
         ia_layout = QVBoxLayout(input_area)
         ia_layout.setContentsMargins(12, 8, 12, 8)
@@ -966,7 +970,7 @@ class ChatPanelSafe(BasePanel):
         self.context_checkbox.setChecked(True)
         self.context_checkbox.toggled.connect(self.on_context_toggled)
         self.context_checkbox.setStyleSheet(
-            f"color: {c['text_secondary']}; font-size: 11px; background: transparent;"
+            f"QWidget {{ color: {c['text_secondary']}; font-size: 11px; background: transparent; }}"
         )
         mode_row.addWidget(self.context_checkbox)
 
@@ -978,7 +982,7 @@ class ChatPanelSafe(BasePanel):
             "se envía al proveedor de IA. Las peticiones a proveedores remotos salen por Tor; "
             "los locales (Ollama, LM Studio) no salen del equipo.")
         self.tor_context_label.setStyleSheet(
-            f"color: {c.get('warning', '#D29922')}; font-size: 10px; background: transparent;"
+            f"QWidget {{ color: {c.get('warning', '#D29922')}; font-size: 10px; background: transparent; }}"
         )
         self.tor_context_label.setVisible(False)
         self.context_checkbox.toggled.connect(self._update_tor_context_warning)
@@ -1009,8 +1013,8 @@ class ChatPanelSafe(BasePanel):
         self.message_input.setMaximumHeight(100)
         self.message_input.setAcceptRichText(False)
         self.message_input.setStyleSheet(
-            f"background: transparent; border: none; font-size: 13px; "
-            f"color: {c['text_primary']}; padding: 4px 0px;"
+            f"QWidget {{ background: transparent; border: none; font-size: 13px; "
+            f"color: {c['text_primary']}; padding: 4px 0px; }}"
         )
         input_row.addWidget(self.message_input, 1)
 
@@ -1073,8 +1077,8 @@ class ChatPanelSafe(BasePanel):
         self._intent_badge = QLabel("— Sin analizar —")
         self._intent_badge.setAlignment(Qt.AlignCenter)
         self._intent_badge.setStyleSheet(
-            f"background: {c['accent_subtle']}; border: 1px solid {c['border']};"
-            f" border-radius: 8px; padding: 6px 12px; color: {c['text_primary']}; font-size: 13px;"
+            f"QWidget {{ background: {c['accent_subtle']}; border: 1px solid {c['border']};"
+            f" border-radius: 8px; padding: 6px 12px; color: {c['text_primary']}; font-size: 13px; }}"
         )
         sg_layout.addWidget(self._intent_badge)
 
@@ -1093,7 +1097,7 @@ class ChatPanelSafe(BasePanel):
         conf_row.addWidget(self._conf_bar, 1)
         self._conf_pct_label = QLabel("0%")
         self._conf_pct_label.setFixedWidth(36)
-        self._conf_pct_label.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
+        self._conf_pct_label.setStyleSheet(f"QWidget {{ color: {c['text_secondary']}; font-size: 12px; }}")
         conf_row.addWidget(self._conf_pct_label)
         sg_layout.addLayout(conf_row)
 
@@ -1101,7 +1105,7 @@ class ChatPanelSafe(BasePanel):
         self._suggested_action_label = QLabel("")
         self._suggested_action_label.setWordWrap(True)
         self._suggested_action_label.setStyleSheet(
-            f"color: {c['text_secondary']}; font-size: 12px; font-style: italic;"
+            f"QWidget {{ color: {c['text_secondary']}; font-size: 12px; font-style: italic; }}"
         )
         sg_layout.addWidget(self._suggested_action_label)
 
@@ -1127,7 +1131,7 @@ class ChatPanelSafe(BasePanel):
 
         tabs_header = QHBoxLayout()
         self._tabs_count_label = QLabel("0 pestañas")
-        self._tabs_count_label.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
+        self._tabs_count_label.setStyleSheet(f"QWidget {{ color: {c['text_secondary']}; font-size: 12px; }}")
         tabs_header.addWidget(self._tabs_count_label)
         tabs_header.addStretch()
         refresh_tabs_btn = QPushButton()
@@ -1197,7 +1201,7 @@ class ChatPanelSafe(BasePanel):
             "Genera una aplicación web interactiva desde el contenido de tus pestañas."
         )
         gentab_info.setWordWrap(True)
-        gentab_info.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px;")
+        gentab_info.setStyleSheet(f"QWidget {{ color: {c['text_secondary']}; font-size: 12px; }}")
         gg_layout.addWidget(gentab_info)
 
         # Un botón por formato: cada uno genera una página con estructura propia
@@ -1246,7 +1250,7 @@ class ChatPanelSafe(BasePanel):
         hg_layout.setSpacing(6)
 
         helio_info = QLabel("Sugerencias inteligentes basadas en tu actividad")
-        helio_info.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px; font-style: italic;")
+        helio_info.setStyleSheet(f"QWidget {{ color: {c['text_secondary']}; font-size: 11px; font-style: italic; }}")
         hg_layout.addWidget(helio_info)
 
         self._helio_suggestion_frames = []
@@ -1263,7 +1267,7 @@ class ChatPanelSafe(BasePanel):
             fl.setSpacing(8)
             lbl = QLabel("Cargando sugerencias...")
             lbl.setObjectName(f"helio_sug_label_{i}")
-            lbl.setStyleSheet(f"color: {c['text_primary']}; font-size: 12px; background: transparent; border: none;")
+            lbl.setStyleSheet(f"QWidget {{ color: {c['text_primary']}; font-size: 12px; background: transparent; border: none; }}")
             lbl.setWordWrap(True)
             fl.addWidget(lbl, 1)
             action_btn = QPushButton("→")
@@ -1537,7 +1541,7 @@ class ChatPanelSafe(BasePanel):
         )
         info_cloud.setOpenExternalLinks(True)
         info_cloud.setTextFormat(Qt.RichText)
-        info_cloud.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        info_cloud.setStyleSheet("QWidget { color: #94a3b8; font-size: 11px; }")
         cloud_layout.addWidget(info_cloud)
         prov_layout.addWidget(self.chat_cloud_widget)
 
@@ -1590,7 +1594,7 @@ class ChatPanelSafe(BasePanel):
         self.chat_anthropic_model_desc = QLabel("")
         self.chat_anthropic_model_desc.setWordWrap(True)
         self.chat_anthropic_model_desc.setStyleSheet(
-            f"color: {self._C['text_secondary']}; font-size: 11px;"
+            f"QWidget {{ color: {self._C['text_secondary']}; font-size: 11px; }}"
         )
         ant_layout.addWidget(self.chat_anthropic_model_desc)
         self.chat_anthropic_model_combo.currentTextChanged.connect(
@@ -1605,7 +1609,7 @@ class ChatPanelSafe(BasePanel):
         )
         ant_info.setOpenExternalLinks(True)
         ant_info.setTextFormat(Qt.RichText)
-        ant_info.setStyleSheet(f"color: {self._C['text_secondary']}; font-size: 11px;")
+        ant_info.setStyleSheet(f"QWidget {{ color: {self._C['text_secondary']}; font-size: 11px; }}")
         ant_layout.addWidget(ant_info)
 
         prov_layout.addWidget(self.chat_anthropic_widget)
@@ -1656,7 +1660,7 @@ class ChatPanelSafe(BasePanel):
         self.chat_hf_model_desc = QLabel("")
         self.chat_hf_model_desc.setWordWrap(True)
         self.chat_hf_model_desc.setStyleSheet(
-            f"color: {self._C['text_secondary']}; font-size: 11px;"
+            f"QWidget {{ color: {self._C['text_secondary']}; font-size: 11px; }}"
         )
         hf_layout.addWidget(self.chat_hf_model_desc)
         self.chat_hf_model_combo.currentTextChanged.connect(self._update_hf_model_desc)
@@ -1670,7 +1674,7 @@ class ChatPanelSafe(BasePanel):
         )
         hf_info.setOpenExternalLinks(True)
         hf_info.setTextFormat(Qt.RichText)
-        hf_info.setStyleSheet(f"color: {self._C['text_secondary']}; font-size: 11px;")
+        hf_info.setStyleSheet(f"QWidget {{ color: {self._C['text_secondary']}; font-size: 11px; }}")
         hf_layout.addWidget(hf_info)
 
         prov_layout.addWidget(self.chat_hf_widget)
@@ -1714,7 +1718,7 @@ class ChatPanelSafe(BasePanel):
         ol_info.setOpenExternalLinks(True)
         ol_info.setTextFormat(Qt.RichText)
         ol_info.setWordWrap(True)
-        ol_info.setStyleSheet(f"color: {self._C['text_secondary']}; font-size: 11px;")
+        ol_info.setStyleSheet(f"QWidget {{ color: {self._C['text_secondary']}; font-size: 11px; }}")
         ol_layout.addWidget(ol_info)
 
         prov_layout.addWidget(self.chat_ollama_widget)
@@ -2036,7 +2040,7 @@ class ChatPanelSafe(BasePanel):
         if hasattr(self, "status_label"):
             self.status_label.setText("● Probando...")
             self.status_label.setStyleSheet(
-                f"color: {c['accent']}; font-size: 11px; background: transparent;"
+                f"QWidget {{ color: {c['accent']}; font-size: 11px; background: transparent; }}"
             )
         try:
             client = LLMClient(self.llm_config)
@@ -2045,12 +2049,12 @@ class ChatPanelSafe(BasePanel):
                 if ok:
                     self.status_label.setText("● Conectado")
                     self.status_label.setStyleSheet(
-                        f"color: {c['success']}; font-size: 11px; background: transparent;"
+                        f"QWidget {{ color: {c['success']}; font-size: 11px; background: transparent; }}"
                     )
                 else:
                     self.status_label.setText("● Error")
                     self.status_label.setStyleSheet(
-                        f"color: {c['error']}; font-size: 11px; background: transparent;"
+                        f"QWidget {{ color: {c['error']}; font-size: 11px; background: transparent; }}"
                     )
             if hasattr(self, "connection_status_label"):
                 self.connection_status_label.setText(
@@ -2062,7 +2066,7 @@ class ChatPanelSafe(BasePanel):
             if hasattr(self, "status_label"):
                 self.status_label.setText("● Error")
                 self.status_label.setStyleSheet(
-                    f"color: {c['error']}; font-size: 11px; background: transparent;"
+                    f"QWidget {{ color: {c['error']}; font-size: 11px; background: transparent; }}"
                 )
             QMessageBox.warning(self, "Error", str(e))
     def send_message_safe(self):
@@ -2245,6 +2249,7 @@ class ChatPanelSafe(BasePanel):
         """Lanza ChatWorker en segundo plano. NO bloquea el hilo principal."""
         # Cancelar worker anterior si sigue activo (sigue en _chat_workers hasta que acabe)
         self._stop_chat_worker()
+        self._reveal_flush()
         self._streaming_placeholder_added = False
         self._streaming_original_message = original_message
 
@@ -2310,6 +2315,7 @@ class ChatPanelSafe(BasePanel):
         """Cancela el worker en curso y restaura el botón de envío."""
         self._agent_cancelled = True
         self._stop_chat_worker()
+        self._reveal_flush()
         self.add_message_to_chat("System", "Generación cancelada.", "assistant")
         self._restore_send_button()
         self._stop_activity()
@@ -2333,24 +2339,189 @@ class ChatPanelSafe(BasePanel):
         return self._PARTIAL_TAG_RE.sub("", text).strip()
 
     def _on_chat_chunk(self, chunk: str):
-        """Añade fragmento de streaming al último mensaje IA."""
+        """Acumula el fragmento de streaming; la animación lo va mostrando (_reveal_tick)."""
         if not self._streaming_placeholder_added:
             self.add_message_to_chat("IA", "", "assistant")
             self._streaming_placeholder_added = True
             self._streaming_text = ""
+            self._reveal_begin(self._last_msg_label)
         self._streaming_text = getattr(self, "_streaming_text", "") + chunk
+        original = getattr(self, "_streaming_original_message", "")
+        visible = self._strip_echo(self._strip_action_tags(self._streaming_text), original)
+        # Si el modelo empieza repitiendo la petición, no enseñarla para quitarla luego
+        key = (original or "").strip().rstrip(".!?¡¿ ").lower()
+        if len(key) >= 10 and len(visible) <= len(key) and key.startswith(visible.lower()):
+            visible = ""
+        self._reveal_set_target(visible)
 
-        # Actualizar el QLabel del último mensaje de IA (objectName "bubbleMsg")
-        last_labels = self.chat_messages_widget.findChildren(
-            QLabel, "bubbleMsg"
-        )
-        if last_labels:
-            last_labels[-1].setText(self._strip_action_tags(self._streaming_text))
-            last_labels[-1].adjustSize()
-        # Auto-scroll
-        QTimer.singleShot(0, lambda: self.chat_scroll.verticalScrollBar().setValue(
-            self.chat_scroll.verticalScrollBar().maximum()
-        ))
+    # ── Animación de aparición del texto (al estilo del chat de claude.ai) ──
+    # El texto llega a trompicones; aquí se muestra a ritmo constante y cada
+    # carácter nuevo aparece con un fundido corto, ya con formato desde el principio.
+    _REVEAL_TICK_MS = 16
+    _REVEAL_FADE_S = 0.36       # duración del fundido de cada carácter
+    _REVEAL_MIN_CPS = 80        # velocidad mínima (caracteres/segundo)
+    _REVEAL_CATCHUP_S = 0.5     # el texto pendiente se alcanza en ~este tiempo
+    _REVEAL_FINISH_S = 0.3      # al terminar la respuesta, lo pendiente sale en ~este tiempo
+    _HTML_TOKEN_RE = re.compile(r"<[^>]*>|&#?\w+;|[^<&]", re.DOTALL)
+
+    def _reveal_begin(self, label) -> None:
+        self._reveal_flush()
+        if label is None:
+            return
+        self._reveal = {"label": label, "target": "", "shown": 0.0, "times": [],
+                        "final": None, "last": time.monotonic(), "rendered": None}
+        if self._reveal_timer is not None:
+            self._reveal_timer.setInterval(self._REVEAL_TICK_MS)
+
+    def _reveal_set_target(self, text: str) -> None:
+        st = self._reveal
+        if st is None:
+            return
+        st["target"] = text or ""
+        self._reveal_start_timer()
+
+    def _reveal_finish(self, final_text: str) -> None:
+        """La respuesta está completa: terminar la animación y dejar el formato final."""
+        st = self._reveal
+        if st is None:
+            return
+        st["final"] = final_text or ""
+        st["target"] = st["final"]
+        self._reveal_start_timer()
+
+    def _reveal_start_timer(self) -> None:
+        if self._reveal_timer is None:
+            self._reveal_timer = QTimer(self)
+            self._reveal_timer.setInterval(self._REVEAL_TICK_MS)
+            self._reveal_timer.timeout.connect(self._reveal_tick)
+        if not self._reveal_timer.isActive():
+            if self._reveal is not None:
+                self._reveal["last"] = time.monotonic()
+            self._reveal_timer.start()
+
+    def _reveal_stop_timer(self) -> None:
+        if self._reveal_timer is not None:
+            self._reveal_timer.stop()
+
+    @staticmethod
+    def _label_alive(label) -> bool:
+        try:
+            label.objectName()
+            return True
+        except RuntimeError:   # el widget ya se destruyó (chat borrado)
+            return False
+
+    def _reveal_tick(self) -> None:
+        st = self._reveal
+        if st is None or not self._label_alive(st["label"]):
+            self._reveal = None
+            self._reveal_stop_timer()
+            return
+        now = time.monotonic()
+        dt = min(now - st["last"], 0.1)
+        st["last"] = now
+        target = st["target"]
+        total = len(target)
+        shown = min(st["shown"], total)
+        backlog = total - shown
+        if backlog > 0:
+            cps = max(self._REVEAL_MIN_CPS, backlog / self._REVEAL_CATCHUP_S)
+            if st["final"] is not None:
+                cps = max(cps, backlog / self._REVEAL_FINISH_S)
+            shown = min(total, shown + cps * dt)
+        st["shown"] = shown
+        k = int(shown)
+        times = st["times"]
+        del times[k:]
+        times.extend([now] * (k - len(times)))
+
+        # Opacidad de los caracteres que aún se están fundiendo (desde el final)
+        alphas = []
+        i = k - 1
+        while i >= 0:
+            age = now - times[i]
+            if age >= self._REVEAL_FADE_S:
+                break
+            if not target[i].isspace():
+                t = age / self._REVEAL_FADE_S
+                alphas.append(1.0 - (1.0 - t) ** 2)   # ease-out
+            i -= 1
+
+        if k >= total and not alphas:
+            if st["final"] is not None:
+                self._reveal_complete()
+                return
+            self._reveal_stop_timer()          # al día: esperar al siguiente fragmento
+            if st["rendered"] == (k, False):
+                return
+        key = (k, bool(alphas))
+        if not alphas and st["rendered"] == key:
+            return
+        st["rendered"] = key
+        html = self.format_ai_response(target[:k]) if k else ""
+        if alphas and html:
+            html = self._fade_html_tail(html, alphas)
+        t0 = time.perf_counter()
+        self._set_bubble_html(st["label"], html)
+        # Respuestas largas: menos fotogramas para no saturar el hilo de la interfaz
+        cost_ms = (time.perf_counter() - t0) * 1000
+        interval = int(min(80, max(self._REVEAL_TICK_MS, cost_ms * 2.5)))
+        if self._reveal_timer is not None and self._reveal_timer.interval() != interval:
+            self._reveal_timer.setInterval(interval)
+
+    def _fade_html_tail(self, html: str, alphas: list) -> str:
+        """Da a los últimos caracteres visibles del HTML la opacidad indicada (alphas: del último hacia atrás)."""
+        color = QColor(self._C.get("text_primary", "#F0F0F0"))
+        if not color.isValid():
+            color = QColor("#F0F0F0")
+        r, g, b = color.red(), color.green(), color.blue()
+        tokens = self._HTML_TOKEN_RE.findall(html)
+        n = 0
+        for j in range(len(tokens) - 1, -1, -1):
+            if n >= len(alphas):
+                break
+            tok = tokens[j]
+            if tok.startswith("<") or tok.isspace():
+                continue
+            tokens[j] = (f'<span style="color:rgba({r},{g},{b},{alphas[n]:.2f});">'
+                         f'{tok}</span>')
+            n += 1
+        return "".join(tokens)
+
+    def _set_bubble_html(self, label, html: str) -> None:
+        sb = self.chat_scroll.verticalScrollBar()
+        stick = sb.value() >= sb.maximum() - 48   # no arrastrar si el usuario ha subido
+        label.setTextFormat(Qt.RichText)
+        label.setText(html)
+        label.adjustSize()
+        if stick:
+            QTimer.singleShot(0, lambda: sb.setValue(sb.maximum()))
+
+    def _reveal_complete(self) -> None:
+        """Formato final + botones de enlaces; deja la animación libre."""
+        st = self._reveal
+        self._reveal = None
+        self._reveal_stop_timer()
+        if st is None or not self._label_alive(st["label"]):
+            return
+        text = st["final"] if st["final"] is not None else st["target"]
+        label = st["label"]
+        try:
+            self._set_bubble_html(label, self.format_ai_response(text) if text else "")
+            if st["final"] is not None:
+                links = self._extract_urls_from_message(text)
+                bubble = label.parentWidget()
+                if links and bubble is not None and bubble.layout() is not None:
+                    self._add_recommendation_cards(bubble.layout(), links)
+            self.chat_messages_widget.updateGeometry()
+        except Exception:
+            _chat_log.exception("No se pudo completar el mensaje de la IA")
+
+    def _reveal_flush(self) -> None:
+        """Termina en el acto la animación en curso (nuevo turno, cancelación)."""
+        if self._reveal is not None:
+            self._reveal_complete()
+
     @staticmethod
     def _strip_echo(text: str, original: str) -> str:
         """Quita la petición del usuario si el modelo la repite al principio ("Resume esta página.")."""
@@ -2368,31 +2539,13 @@ class ChatPanelSafe(BasePanel):
         visible = self._strip_echo(self._strip_action_tags(full_content),
                                    getattr(self, "_streaming_original_message", ""))
         if not self._streaming_placeholder_added:
-            # Sin streaming: mostrar de una vez
+            # Sin streaming: también se muestra con la animación
             if visible:
-                self.add_message_to_chat("IA", visible, "assistant")
-        else:
-            # Streaming terminado: aplicar formato HTML al texto acumulado
-            try:
-                last_labels = self.chat_messages_widget.findChildren(
-                    QLabel, "bubbleMsg"
-                )
-                if last_labels:
-                    formatted = self.format_ai_response(visible)
-                    last_labels[-1].setTextFormat(Qt.RichText)
-                    last_labels[-1].setText(formatted)
-                    last_labels[-1].adjustSize()
-                    # Botones para los enlaces de la respuesta
-                    links = self._extract_urls_from_message(visible)
-                    bubble = last_labels[-1].parentWidget()
-                    if links and bubble is not None and bubble.layout() is not None:
-                        self._add_recommendation_cards(bubble.layout(), links)
-                    self.chat_messages_widget.updateGeometry()
-                    QTimer.singleShot(10, lambda: self.chat_scroll.verticalScrollBar().setValue(
-                        self.chat_scroll.verticalScrollBar().maximum()
-                    ))
-            except Exception:
-                pass
+                self.add_message_to_chat("IA", "", "assistant")
+                self._reveal_begin(self._last_msg_label)
+                self._reveal_finish(visible)
+        elif self._reveal is not None:
+            self._reveal_finish(visible)
         # Registrar en historial (con las etiquetas: el LLM ve lo que pidió)
         self.session_messages.append({"role": "assistant", "content": full_content})
         original = getattr(self, "_streaming_original_message", "")
@@ -2779,14 +2932,14 @@ class ChatPanelSafe(BasePanel):
         )
         head.setTextFormat(Qt.RichText)
         head.setWordWrap(True)
-        head.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px; background: transparent;")
+        head.setStyleSheet(f"QWidget {{ color: {c['text_secondary']}; font-size: 11px; background: transparent; }}")
         lay.addWidget(head)
 
         wikipedia = data.get("wikipedia", [])
         if not results and not wikipedia:
             empty = QLabel("Sin resultados. Prueba con otras palabras.")
             empty.setWordWrap(True)
-            empty.setStyleSheet(f"color: {c['text_muted']}; font-size: 12px; background: transparent;")
+            empty.setStyleSheet(f"QWidget {{ color: {c['text_muted']}; font-size: 12px; background: transparent; }}")
             lay.addWidget(empty)
 
         for i, r in enumerate(results, 1):
@@ -2807,7 +2960,7 @@ class ChatPanelSafe(BasePanel):
             item.setOpenExternalLinks(False)
             item.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
             item.linkActivated.connect(lambda u: self._open_url_in_browser(u))
-            item.setStyleSheet("background: transparent; padding: 2px 0;")
+            item.setStyleSheet("QLabel { background: transparent; padding: 2px 0; }")
             lay.addWidget(item)
 
         for a in wikipedia:
@@ -2826,7 +2979,7 @@ class ChatPanelSafe(BasePanel):
             item.setOpenExternalLinks(False)
             item.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
             item.linkActivated.connect(lambda u: self._open_url_in_browser(u))
-            item.setStyleSheet("background: transparent; padding: 2px 0;")
+            item.setStyleSheet("QLabel { background: transparent; padding: 2px 0; }")
             lay.addWidget(item)
 
         btn_style = (
@@ -2854,7 +3007,7 @@ class ChatPanelSafe(BasePanel):
 
         if results:
             hint = QLabel("Pulsa un título o escribe «abre el 2», «abre los 3 primeros»...")
-            hint.setStyleSheet(f"color: {c['text_muted']}; font-size: 10px; background: transparent;")
+            hint.setStyleSheet(f"QWidget {{ color: {c['text_muted']}; font-size: 10px; background: transparent; }}")
             lay.addWidget(hint)
 
         frame.setStyleSheet(
@@ -3000,8 +3153,8 @@ class ChatPanelSafe(BasePanel):
                 lambda: self._tick_activity(getattr(self, "_activity_text", "Procesando...")))
         if hasattr(self, "status_label"):
             self.status_label.setStyleSheet(
-                f"color: {c['warning'] if 'warning' in c else '#D29922'}; "
-                "font-size: 11px; background: transparent;"
+                f"QWidget {{ color: {c['warning'] if 'warning' in c else '#D29922'}; "
+                "font-size: 11px; background: transparent; }}"
             )
         self.activity_timer.start(200)
         self.busy_changed.emit(True)
@@ -3020,12 +3173,12 @@ class ChatPanelSafe(BasePanel):
             if self.server_url:
                 self.status_label.setText("● Conectado")
                 self.status_label.setStyleSheet(
-                    f"color: {c['success']}; font-size: 11px; background: transparent;"
+                    f"QWidget {{ color: {c['success']}; font-size: 11px; background: transparent; }}"
                 )
             else:
                 self.status_label.setText("● Desconectado")
                 self.status_label.setStyleSheet(
-                    f"color: {c['error']}; font-size: 11px; background: transparent;"
+                    f"QWidget {{ color: {c['error']}; font-size: 11px; background: transparent; }}"
                 )
     _MD_LINK_RE = re.compile(r'\[([^\]]+)\]\((https?://[^)\s]+)\)')
     _BARE_URL_RE = re.compile(r'(?<![="\'>])(https?://[^\s<>"\')\]]+)')
@@ -3164,14 +3317,14 @@ class ChatPanelSafe(BasePanel):
         meta_lbl = QLabel(f"{sender_text}")
         meta_lbl.setObjectName("bubbleTitle")
         meta_lbl.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; "
+            f"QWidget {{ font-size: 11px; font-weight: 600; "
             f"color: {c['accent'] if message_type == 'user' else c['text_muted']}; "
-            "background: transparent;"
+            "background: transparent; }}"
         )
         meta_row.addWidget(meta_lbl)
 
         time_lbl = QLabel(timestamp)
-        time_lbl.setStyleSheet(f"font-size: 10px; color: {c['text_muted']}; background: transparent;")
+        time_lbl.setStyleSheet(f"QWidget {{ font-size: 10px; color: {c['text_muted']}; background: transparent; }}")
         meta_row.addWidget(time_lbl)
         meta_row.addStretch()
         msg_layout.addLayout(meta_row)
@@ -3192,6 +3345,7 @@ class ChatPanelSafe(BasePanel):
         msg_lbl.setOpenExternalLinks(False)
         msg_lbl.linkActivated.connect(lambda u: self._open_url_in_browser(u))
         msg_layout.addWidget(msg_lbl)
+        self._last_msg_label = msg_lbl
 
         # Botones para abrir los enlaces de la respuesta de la IA
         if message_type == "assistant" and sender == "IA":
@@ -3205,7 +3359,7 @@ class ChatPanelSafe(BasePanel):
             row.addWidget(msg_widget)
             row_widget = QWidget()
             row_widget.setLayout(row)
-            row_widget.setStyleSheet("background: transparent;")
+            row_widget.setStyleSheet("QWidget { background: transparent; }")
             self.chat_messages_layout.addWidget(row_widget)
         else:
             self.chat_messages_layout.addWidget(msg_widget)
@@ -3289,6 +3443,8 @@ class ChatPanelSafe(BasePanel):
             self._open_url_in_browser(url, focus=(i == 0))
     def clear_chat(self):
         """Clear chat area"""
+        self._reveal = None
+        self._reveal_stop_timer()
         for i in reversed(range(self.chat_messages_layout.count())):
             widget = self.chat_messages_layout.itemAt(i).widget()
             if widget:

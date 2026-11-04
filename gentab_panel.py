@@ -315,7 +315,7 @@ class GenTabPanel(BasePanel):
         # Formato que se usará: lo elige la acción rápida o se deduce de lo escrito
         self.format_hint = QLabel()
         self.format_hint.setObjectName("formatHint")
-        self.format_hint.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.format_hint.setStyleSheet("QWidget { color: #94a3b8; font-size: 11px; }")
         input_layout.addWidget(self.format_hint)
         self._quick_format = None  # (texto de la acción rápida, formato)
 
@@ -413,7 +413,7 @@ class GenTabPanel(BasePanel):
         )
         info_cloud.setOpenExternalLinks(True)
         info_cloud.setTextFormat(Qt.RichText)
-        info_cloud.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        info_cloud.setStyleSheet("QWidget { color: #94a3b8; font-size: 11px; }")
         cloud_layout.addWidget(info_cloud)
         prov_layout.addWidget(self.cloud_widget)
 
@@ -462,7 +462,7 @@ class GenTabPanel(BasePanel):
 
         self.anthropic_model_desc = QLabel("")
         self.anthropic_model_desc.setWordWrap(True)
-        self.anthropic_model_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.anthropic_model_desc.setStyleSheet("QWidget { color: #94a3b8; font-size: 11px; }")
         ant_layout.addWidget(self.anthropic_model_desc)
         self.anthropic_model_combo.currentTextChanged.connect(self._update_anthropic_model_desc)
 
@@ -473,7 +473,7 @@ class GenTabPanel(BasePanel):
         )
         ant_info.setOpenExternalLinks(True)
         ant_info.setTextFormat(Qt.RichText)
-        ant_info.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        ant_info.setStyleSheet("QWidget { color: #94a3b8; font-size: 11px; }")
         ant_layout.addWidget(ant_info)
 
         prov_layout.addWidget(self.anthropic_widget)
@@ -519,7 +519,7 @@ class GenTabPanel(BasePanel):
 
         self.hf_model_desc = QLabel("")
         self.hf_model_desc.setWordWrap(True)
-        self.hf_model_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.hf_model_desc.setStyleSheet("QWidget { color: #94a3b8; font-size: 11px; }")
         hf_layout.addWidget(self.hf_model_desc)
         self.hf_model_combo.currentTextChanged.connect(self._update_hf_model_desc)
 
@@ -531,7 +531,7 @@ class GenTabPanel(BasePanel):
         )
         hf_info.setOpenExternalLinks(True)
         hf_info.setTextFormat(Qt.RichText)
-        hf_info.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        hf_info.setStyleSheet("QWidget { color: #94a3b8; font-size: 11px; }")
         hf_layout.addWidget(hf_info)
 
         prov_layout.addWidget(self.hf_widget)
@@ -574,7 +574,7 @@ class GenTabPanel(BasePanel):
         ol_info.setOpenExternalLinks(True)
         ol_info.setTextFormat(Qt.RichText)
         ol_info.setWordWrap(True)
-        ol_info.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        ol_info.setStyleSheet("QWidget { color: #94a3b8; font-size: 11px; }")
         ol_layout.addWidget(ol_info)
 
         prov_layout.addWidget(self.ollama_widget)
@@ -1003,7 +1003,7 @@ class GenTabPanel(BasePanel):
         label = QLabel(f"<span style='color:#6366f1;font-size:11px'>{timestamp}</span> {text}")
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
-        label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        label.setStyleSheet("QWidget { color: #94a3b8; font-size: 12px; }")
         layout.addWidget(label)
 
         frame.setStyleSheet("""
@@ -1029,7 +1029,7 @@ class GenTabPanel(BasePanel):
 
         msg = QLabel(html.escape(text))
         msg.setWordWrap(True)
-        msg.setStyleSheet("color: #e2e8f0; font-size: 13px; padding-top: 4px;")
+        msg.setStyleSheet("QWidget { color: #e2e8f0; font-size: 13px; padding-top: 4px; }")
         layout.addWidget(msg)
 
         frame.setStyleSheet("""
@@ -1057,12 +1057,12 @@ class GenTabPanel(BasePanel):
         title_label = QLabel(title)
         title_label.setTextFormat(Qt.RichText)
         title_label.setWordWrap(True)
-        title_label.setStyleSheet("color: #e2e8f0; font-size: 15px;")
+        title_label.setStyleSheet("QWidget { color: #e2e8f0; font-size: 15px; }")
         layout.addWidget(title_label)
 
         info_label = QLabel(info)
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        info_label.setStyleSheet("QWidget { color: #94a3b8; font-size: 12px; }")
         layout.addWidget(info_label)
 
         open_btn = QPushButton("Abrir GenTab en nueva pestaña")
@@ -1113,7 +1113,7 @@ class GenTabPanel(BasePanel):
 
         label = QLabel(f"{html.escape(text)}")
         label.setWordWrap(True)
-        label.setStyleSheet("color: #fca5a5; font-size: 12px;")
+        label.setStyleSheet("QWidget { color: #fca5a5; font-size: 12px; }")
         layout.addWidget(label)
 
         frame.setStyleSheet("""
@@ -1136,9 +1136,9 @@ class GenTabPanel(BasePanel):
         color = colors.get(status, "#94a3b8")
         self._stop_status_animation()
         self.status_indicator.setText("●")
-        self.status_indicator.setStyleSheet(f"color: {color}; font-size: 16px;")
+        self.status_indicator.setStyleSheet(f"QWidget {{ color: {color}; font-size: 16px; }}")
         self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 12px;")
+        self.status_label.setStyleSheet(f"QWidget {{ color: {color}; font-size: 12px; }}")
         if status in ("extracting", "generating"):
             self._start_status_animation(color)
     def _start_status_animation(self, color: str):
@@ -1151,7 +1151,7 @@ class GenTabPanel(BasePanel):
         frame = self._status_anim_frames[self._status_anim_idx % len(self._status_anim_frames)]
         self._status_anim_idx += 1
         self.status_indicator.setText(frame)
-        self.status_indicator.setStyleSheet(f"color: {color}; font-size: 16px;")
+        self.status_indicator.setStyleSheet(f"QWidget {{ color: {color}; font-size: 16px; }}")
     def _stop_status_animation(self):
         if self._status_anim_timer and self._status_anim_timer.isActive():
             self._status_anim_timer.stop()
@@ -1216,10 +1216,10 @@ class GenTabPanel(BasePanel):
         ok, info = client.test()
         if ok:
             self.server_status.setText(f"{info}")
-            self.server_status.setStyleSheet("color: #22c55e;")
+            self.server_status.setStyleSheet("QWidget { color: #22c55e; }")
         else:
             self.server_status.setText(f"{info[:80]}")
-            self.server_status.setStyleSheet("color: #ef4444;")
+            self.server_status.setStyleSheet("QWidget { color: #ef4444; }")
     def _refresh_history(self):
         if not hasattr(self, 'history_list'):
             return

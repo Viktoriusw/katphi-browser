@@ -17,9 +17,8 @@ if TYPE_CHECKING:
 
 _sys_argv_original: list = []
 
-# En una ventana privada no se toca config.yaml: el estado de Tor deseado se
-# pasa al proceso relanzado por el entorno (sobrevive a os.execv).
-PRIVATE_TOR_ENV = "KATPHI_PRIVATE_TOR"
+# El estado de Tor (todas las ventanas, también la privada) viaja en
+# config_manager.TOR_SESSION_ENV: Tor solo de sesión, nunca en config.yaml.
 
 # Flags de proxy que main.py añade a argv con Tor activo; nunca deben
 # arrastrarse al proceso relanzado (las vuelve a decidir main.py).
@@ -55,7 +54,9 @@ def relaunch(argv: list = None) -> None:
 
 def restart_with_tor(enabled: bool, window) -> None:
     """
-    Guarda configuración Tor, URLs de pestañas y reinicia el navegador.
+    Activa/desactiva Tor para ESTA sesión, guarda las URLs de las pestañas y
+    reinicia el navegador. El estado de Tor no se guarda en config.yaml: viaja
+    en el entorno (os.execv lo conserva) y desaparece al cerrar el navegador.
 
     Args:
         enabled: True para activar Tor, False para desactivar.
@@ -66,10 +67,10 @@ def restart_with_tor(enabled: bool, window) -> None:
 
     private = is_private_mode()
     argv = _clean_argv(_sys_argv_original or sys.argv)
+    config.set_tor_enabled(enabled)
 
     if private:
-        # Ventana privada: ni URLs pendientes ni persistencia en config.yaml.
-        os.environ[PRIVATE_TOR_ENV] = "1" if enabled else "0"
+        # Ventana privada: sin URLs pendientes en config.yaml.
         if "--private" not in argv:
             argv.append("--private")
         relaunch(argv)
@@ -87,7 +88,6 @@ def restart_with_tor(enabled: bool, window) -> None:
         except Exception:
             pass
         config.set_tor_pending_urls(urls)
-    config.set_tor_enabled(enabled)
     config.persist_config()
 
     relaunch(argv)

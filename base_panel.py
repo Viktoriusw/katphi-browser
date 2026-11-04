@@ -576,8 +576,8 @@ class BasePanel(QWidget):
         """Añade un separador de sección con texto a la layout principal."""
         lbl = QLabel(label.upper())
         lbl.setStyleSheet(
-            "font-size: 10px; font-weight: 600; letter-spacing: 0.8px; "
-            "color: #606060; padding: 8px 0px 4px 0px;"
+            "QWidget { font-size: 10px; font-weight: 600; letter-spacing: 0.8px; "
+            "color: #606060; padding: 8px 0px 4px 0px; }"
         )
         if self.layout():
             self.layout().addWidget(lbl)
@@ -616,8 +616,8 @@ class KatphiPanelBase(BasePanel):
         header.setObjectName("panelHeader")
         header.setFixedHeight(40)
         header.setStyleSheet(
-            f"background: {c['surface_0']}; "
-            f"border-bottom: 1px solid {c['border']};"
+            f"QWidget {{ background: {c['surface_0']}; "
+            f"border-bottom: 1px solid {c['border']}; }}"
         )
 
         h_layout = QHBoxLayout(header)
@@ -627,8 +627,8 @@ class KatphiPanelBase(BasePanel):
         title_lbl = QLabel(self._panel_title.upper())
         title_lbl.setObjectName("panelTitle")
         title_lbl.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; letter-spacing: 0.8px; "
-            f"color: {c['text_secondary']}; background: transparent;"
+            f"QWidget {{ font-size: 11px; font-weight: 600; letter-spacing: 0.8px; "
+            f"color: {c['text_secondary']}; background: transparent; }}"
         )
         h_layout.addWidget(title_lbl)
         h_layout.addStretch()

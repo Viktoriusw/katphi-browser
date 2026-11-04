@@ -122,7 +122,7 @@ class ToastNotification(QWidget):
 
         label = QLabel(message)
         label.setWordWrap(False)
-        label.setStyleSheet(f"color: #F0F0F0; font-size: 13px;")
+        label.setStyleSheet(f"QWidget {{ color: #F0F0F0; font-size: 13px; }}")
         layout.addWidget(label)
 
         self.setStyleSheet(f"""

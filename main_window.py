@@ -417,7 +417,7 @@ class _FrameResizeHandle(QWidget):
         super().__init__(main_window)
         self._mw = main_window
         self._edges = edges
-        self.setStyleSheet("background: transparent;")
+        self.setStyleSheet("QWidget { background: transparent; }")
         self.setCursor(QCursor(_cursor_shape_for_resize_edges(self._edges)))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 — API Qt
@@ -855,16 +855,13 @@ class MainWindow(QMainWindow):
             session_restored = True
             self._session_restored = True
             print(f"[TOR] Restored {len(pending_urls)} tabs after reinicio")
-        elif self._private_mode:
-            # A-001: la ventana privada nunca restaura la sesión
-            self._session_restored = True
-            print("[PRIVATE] Private window: session restoration skipped")
-        elif self.auth_manager and self.auth_manager.auth_state.is_authenticated:
-            print("[AUTH] User is authenticated, restoring session...")
-            session_restored = self.tab_manager.restaurar_sesion()
-            self._session_restored = True
         else:
-            print("[AUTH] User not authenticated, skipping session restoration")
+            # Como un navegador normal: cada arranque es una sesión nueva. Las
+            # pestañas de la sesión anterior NO se reabren solas (antes se
+            # restauraban desde dos sitios, al crear la ventana y al terminar
+            # el login, y se duplicaban); el usuario puede recuperarlas desde
+            # Historial o menú > Sesiones > Restaurar sesión anterior.
+            self._session_restored = True
         # Configure application close event
         self.closeEvent = self.on_close
 
@@ -1188,6 +1185,10 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(120, self._refresh_side_strip_style)
                 QTimer.singleShot(140, self._refresh_tab_bar_style)
                 QTimer.singleShot(150, self._refresh_url_bar_style)
+                # El tema de arranque se aplica antes de esta conexión: sin esta
+                # llamada los tooltips se quedaban con el estilo nativo hasta
+                # que el usuario cambiaba de tema.
+                QTimer.singleShot(160, self._apply_tooltip_theme)
         # Aplicar estilo inicial al navbar siempre (con o sin ThemeEngine)
         QTimer.singleShot(130, self._refresh_navbar_style)
     def setup_shortcuts(self):
@@ -1350,19 +1351,19 @@ class MainWindow(QMainWindow):
         if hasattr(self, "session_manager") and self.session_manager:
             print("[Browser] Saving session for crash recovery...")
             self.session_manager.on_browser_close()
-        # Save session only if user is authenticated
+        # Guardar las pestañas abiertas para poder ofrecer "Restaurar sesión
+        # anterior" en el próximo arranque (no se reabren solas). Si en esta
+        # sesión no se llegó a restaurar la anterior y se cierra sin pestañas
+        # con contenido, se conserva la anterior para no perderla.
         if hasattr(self, "tab_manager"):
-            if self.auth_manager and self.auth_manager.auth_state.is_authenticated:
-                print("[AUTH] User is authenticated, saving session...")
-                self.tab_manager.guardar_sesion()
-            else:
-                print("[AUTH] User not authenticated, clearing session...")
-                self.tab_manager.limpiar_sesion()
+            self.tab_manager.guardar_sesion()
 
     def on_close(self, event):
         """Handle browser close event"""
         try:
             self._shutdown_cleanup()
+            # Cerrar el navegador cierra Tor (el próximo arranque es sin Tor)
+            self._stop_tor_on_exit()
             event.accept()
         except Exception as e:
             print(f"[Browser] Error during shutdown: {e}")
@@ -1964,7 +1965,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "ssl_indicator"):
             try:
                 self.ssl_indicator.setStyleSheet(
-                    f"background: transparent; border: none;"
+                    f"QWidget {{ background: transparent; border: none; }}"
                 )
             except Exception:
                 pass
@@ -2613,6 +2614,15 @@ class MainWindow(QMainWindow):
                     font-size: 12px;
                 }}
             """)
+            # Paleta de respaldo (estilos nativos / widgets sin QSS)
+            from PySide6.QtGui import QPalette, QColor
+            from PySide6.QtWidgets import QToolTip
+            pal = QToolTip.palette()
+            pal.setColor(QPalette.ToolTipBase, QColor(bg))
+            pal.setColor(QPalette.ToolTipText, QColor(text))
+            pal.setColor(QPalette.Window, QColor(bg))
+            pal.setColor(QPalette.WindowText, QColor(text))
+            QToolTip.setPalette(pal)
         except Exception as e:
             print(f"[THEME] Error actualizando estilo de tooltip: {e}")
     def toggle_theme(self):
@@ -3261,6 +3271,40 @@ class MainWindow(QMainWindow):
                 "Advanced Scraping is a premium feature.\n"
                 "Please install the Advanced Scraping plugin to use this functionality.",
             )
+    def _stop_tor_on_exit(self):
+        """Para el proceso Tor al cerrar el navegador. Tor también se cierra
+        solo al morir el proceso (__OwningControllerProcess); esto lo hace
+        explícito y cubre el Tor heredado tras un reinicio (vía ControlPort)."""
+        try:
+            import net_proxy
+            if self.tor_manager and net_proxy.is_tor_active():
+                self.tor_manager.stop()
+                print("[TOR] Tor detenido al cerrar el navegador")
+        except Exception as e:
+            print(f"[TOR] No se pudo detener Tor al cerrar: {e}")
+
+    def has_previous_session(self) -> bool:
+        """True si hay pestañas de la sesión anterior sin restaurar."""
+        tm = getattr(self, "tab_manager", None)
+        return bool(tm and not self._private_mode
+                    and not getattr(self, "_previous_session_restored", False)
+                    and tm.saved_session_count() > 0)
+
+    def restore_previous_session(self):
+        """Reabre las pestañas de la sesión anterior (una sola vez)."""
+        if not self.has_previous_session():
+            QMessageBox.information(self, "Restaurar sesión anterior",
+                                    "No hay ninguna sesión anterior que restaurar.")
+            return False
+        self._previous_session_restored = True
+        ok = self.tab_manager.restaurar_sesion()
+        if hasattr(self, "history_panel") and self.history_panel:
+            try:
+                self.history_panel.update_restore_button()
+            except Exception:
+                pass
+        return ok
+
     def _restart_with_tor(self, enabled: bool):
         """Callback para reiniciar con Tor activado/desactivado."""
         # C-008: tor_restart evita reimportar main.py como otro módulo
@@ -3912,8 +3956,19 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Carpeta '{name.strip()}' creada", 3000)
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo crear la carpeta:\n{e}")
+    def _hamburger_import_bookmarks(self):
+        """Importa marcadores HTML de otro navegador (desde el menú hamburguesa)."""
+        bpw = getattr(self, "bookmark_panel_widget", None)
+        if not bpw:
+            QMessageBox.information(self, "Importar", "El sistema de carpetas no está disponible.")
+            return
+        bpw._on_import()
     def _hamburger_export_bookmarks(self):
         """Exporta los marcadores a HTML (desde el menú hamburguesa)."""
+        bpw = getattr(self, "bookmark_panel_widget", None)
+        if bpw:
+            bpw._on_export()
+            return
         bm = getattr(self, "bookmark_manager", None)
         fm = getattr(self, "folders_manager", None)
         if not bm or not fm:
@@ -4076,6 +4131,9 @@ class MainWindow(QMainWindow):
 
         # === Sección 1.5: Gestión de sesiones ===
         session_menu = menu.addMenu("Sesiones")
+        restore_prev = session_menu.addAction("Restaurar sesión anterior")
+        restore_prev.setEnabled(self.has_previous_session())
+        restore_prev.triggered.connect(self.restore_previous_session)
         session_menu.addAction("Guardar sesión actual...").triggered.connect(
             self.save_current_session
         )
@@ -4100,6 +4158,10 @@ class MainWindow(QMainWindow):
 
         bookmarks_menu.addAction("Nueva carpeta…").triggered.connect(
             self._hamburger_new_folder
+        )
+
+        bookmarks_menu.addAction("Importar marcadores…").triggered.connect(
+            self._hamburger_import_bookmarks
         )
 
         bookmarks_menu.addAction("Exportar marcadores…").triggered.connect(
@@ -4688,15 +4750,9 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print(f"[AUTH] resync: error cargando instalados: {e}")
 
-        # --- 5. Restaurar sesión de pestañas solo con usuario autenticado,
-        #        y una sola vez por proceso (D-003): las resincronizaciones
-        #        posteriores no deben cerrar las pestañas del usuario
-        if authed and hasattr(self, "tab_manager") and not self._session_restored:
-            self._session_restored = True
-            try:
-                self.tab_manager.restaurar_sesion()
-            except Exception as e:
-                print(f"[AUTH] resync: error restaurando sesión: {e}")
+        # --- 5. (Eliminado) El login ya NO restaura pestañas: la sesión
+        #        anterior solo se recupera a petición del usuario
+        #        (restore_previous_session), así nunca se duplican.
 
         print(
             f"[AUTH] resync completado (authed={authed}, "
@@ -6571,7 +6627,7 @@ class MainWindow(QMainWindow):
                 f"Actual: {type_labels.get(current_type, 'No configurada')}"
             )
             current_label.setStyleSheet(
-                "color: #666; font-size: 11px; margin-top: 5px;"
+                "QWidget { color: #666; font-size: 11px; margin-top: 5px; }"
             )
             homepage_layout.addWidget(current_label)
 

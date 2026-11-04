@@ -406,7 +406,10 @@ class BrowserTabBar(QTabBar):
         """
         # Contenedor transparente: da 6px de margen derecho sin ampliar el hover
         container = QWidget(self)
-        container.setStyleSheet("background: transparent;")
+        # Con selector: un "background: transparent;" sin selector se hereda
+        # en el tooltip del botón (hijo suyo) y lo dejaba transparente/negro.
+        container.setObjectName("tabCloseContainer")
+        container.setStyleSheet("QWidget#tabCloseContainer { background: transparent; }")
 
         btn = QToolButton(container)
         try:
@@ -771,6 +774,9 @@ class TabManager:
         pestaña queda en espera sin cargar la URL."""
 
         try:
+            # Pestaña de inicio/nueva pestaña (sin URL): se marca para poder
+            # sustituirla al restaurar la sesión anterior si sigue sin usar.
+            start_tab = url is None or not isinstance(url, str) or not url.strip()
             # Si no se proporciona URL, usar la página de inicio configurada
             if url is None or not isinstance(url, str) or not url.strip():
                 # Usar homepage_manager si está disponible
@@ -793,6 +799,7 @@ class TabManager:
                         url = "https://duckduckgo.com"
             # Crear el navegador
             browser = BrowserView(self)
+            browser._katphi_start_tab = start_tab
             private = _is_private_mode()
             browser.tab_extra = {} if private else dict(extra or {})
             pending = False
@@ -1263,6 +1270,15 @@ class TabManager:
         if _is_private_mode():
             return
 
+        # Si solo hay pestañas de inicio sin usar (se abrió y se cerró sin
+        # navegar), no se sobrescribe la sesión anterior: así se puede seguir
+        # recuperando en el próximo arranque.
+        if self.saved_session_count() > 0 and all(
+                self.is_untouched_start_tab(self.tabs.widget(i))
+                for i in range(self.tabs.count())):
+            print("Sesión sin navegar: se conserva la sesión anterior guardada.")
+            return
+
         session = []
 
         for i in range(self.tabs.count()):
@@ -1282,51 +1298,79 @@ class TabManager:
             print(f"Sesión guardada con {len(session)} pestañas.")
         except Exception as e:
             print(f"Error al guardar la sesión: {e}")
+    def is_untouched_start_tab(self, browser) -> bool:
+        """Pestaña de inicio (abierta sin URL) en la que no se ha navegado."""
+        if browser is None or not getattr(browser, "_katphi_start_tab", False):
+            return False
+        try:
+            return not browser.history().canGoBack()
+        except Exception:
+            return False
+
+    def _read_saved_session(self):
+        """Lista de pestañas guardadas al cerrar la sesión anterior ([] si no hay)."""
+        if _is_private_mode() or not os.path.exists(self.SESSION_FILE):
+            return []
+        try:
+            with open(self.SESSION_FILE, "r", encoding="utf-8") as f:
+                session = json.load(f)
+        except Exception:
+            return []
+        if not isinstance(session, list):
+            return []
+        return [t for t in session if isinstance(t, dict)
+                and t.get("url") and t.get("url") != "about:blank"]
+
+    def saved_session_count(self) -> int:
+        return len(self._read_saved_session())
+
     def restaurar_sesion(self):
-        """Restore tab session from JSON file"""
+        """Reabre las pestañas de la sesión anterior.
+
+        No cierra ni duplica nada: añade las pestañas guardadas que no estén
+        ya abiertas y, si la única pestaña es la de inicio sin usar, la
+        sustituye (como "Restaurar sesión anterior" en Firefox/Chrome).
+        """
 
         # A-001: la ventana privada empieza siempre limpia
         if _is_private_mode():
             return False
 
-        if not os.path.exists(self.SESSION_FILE):
-            print("No saved session to restore.")
-
-            return False
         try:
-            with open(self.SESSION_FILE, "r", encoding="utf-8") as f:
-                session = json.load(f)
-            # Validate session data
-
-            if not session or not isinstance(session, list):
-                print("Session file is empty or invalid, no tabs to restore.")
-
+            session = self._read_saved_session()
+            if not session:
+                print("No saved session to restore.")
                 return False
-            # Close existing tabs safely if any exist
 
-            tab_count = self.tabs.count()
+            # Pestañas de inicio sin usar: se sustituyen por la sesión
+            replaceable = [self.tabs.widget(i) for i in range(self.tabs.count())
+                           if self.is_untouched_start_tab(self.tabs.widget(i))]
+            # URLs ya abiertas: no se abren otra vez (evita duplicados)
+            open_urls = {self.tab_url(self.tabs.widget(i))
+                         for i in range(self.tabs.count())
+                         if self.tabs.widget(i) not in replaceable}
 
-            if tab_count > 0:
-                # Remove tabs from end to beginning to avoid index issues
-
-                for i in range(tab_count - 1, -1, -1):
-                    try:
-                        self.close_tab(i)
-                    except Exception as e:
-                        print(f"Error closing tab {i}: {e}")
-            # Restore session tabs
-
+            added = 0
             for tab_data in session:
                 url = tab_data.get("url", "")
-
-                # Si no hay URL guardada, usar None para que add_new_tab use el motor predeterminado
-                if not url or url == "about:blank":
-                    url = None
+                if url in open_urls:
+                    continue
+                open_urls.add(url)
                 extra = tab_data.get("extra")
-                self.add_new_tab(url, extra=extra if isinstance(extra, dict) else None)
-            print(f"Session restored with {len(session)} tabs.")
+                if self.add_new_tab(url, extra=extra if isinstance(extra, dict) else None):
+                    added += 1
 
-            return True
+            if added:
+                for browser in replaceable:
+                    index = self.tabs.indexOf(browser)
+                    if index >= 0 and self.tabs.count() > 1:
+                        stack_len = len(self.closed_tabs_stack)
+                        self.close_tab(index)
+                        # La pestaña de inicio no va a "reabrir pestaña cerrada"
+                        del self.closed_tabs_stack[stack_len:]
+            print(f"Session restored with {added} tabs.")
+
+            return added > 0
         except json.JSONDecodeError as e:
             print(f"Error decoding session file: {e}. Starting fresh.")
 
@@ -1648,7 +1692,7 @@ class TabManager:
         badge.setToolTip(tooltip)
         badge.setFixedSize(16, 16)
         badge.setAlignment(Qt.AlignCenter)
-        badge.setStyleSheet("background: transparent;")
+        badge.setStyleSheet("QLabel { background: transparent; }")
         return badge
     def get_closed_tabs_history(self):
         """Obtener historial de pestañas cerradas"""

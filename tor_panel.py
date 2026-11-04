@@ -103,7 +103,7 @@ class TorPanel(QWidget):
 
         self.detail_label = QLabel("")
         self.detail_label.setWordWrap(True)
-        self.detail_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.detail_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         state_layout.addWidget(self.detail_label)
 
         self.progress_bar = QProgressBar()
@@ -203,9 +203,9 @@ class TorPanel(QWidget):
     def _show_connected(self) -> None:
         """Estado: Conectado."""
         self.status_label.setText("Tor activo")
-        self.status_label.setStyleSheet("color: #2e7d32; font-weight: bold;")
+        self.status_label.setStyleSheet("QWidget { color: #2e7d32; font-weight: bold; }")
         self.detail_label.setText("Tu tráfico está enrutado por la red Tor.")
-        self.detail_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.detail_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         self.progress_bar.setVisible(False)
         self.connect_btn.setVisible(False)
         self.cancel_btn.setVisible(False)
@@ -214,7 +214,7 @@ class TorPanel(QWidget):
     def _show_error(self, message: str) -> None:
         """Estado: Error."""
         self.status_label.setText("Error")
-        self.status_label.setStyleSheet("color: #c62828;")
+        self.status_label.setStyleSheet("QWidget { color: #c62828; }")
         self.detail_label.setText(message)
         self.progress_bar.setVisible(False)
         self.connect_btn.setEnabled(True)

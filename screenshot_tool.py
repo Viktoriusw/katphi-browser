@@ -345,7 +345,7 @@ class ScreenshotDialog(QDialog):
             "en páginas largas."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 11px; margin-top: 10px;")
+        info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-top: 10px; }")
         layout.addWidget(info_label)
     def perform_capture(self):
         """Realizar la captura según las opciones seleccionadas"""

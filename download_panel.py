@@ -140,7 +140,7 @@ class DownloadPanel(QWidget):
         # Mensaje cuando no hay descargas
         self.empty_label = QLabel("No hay descargas recientes")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_label.setStyleSheet("color: #888; font-size: 14px; margin-top: 50px;")
+        self.empty_label.setStyleSheet("QWidget { color: #888; font-size: 14px; margin-top: 50px; }")
         self.downloads_layout.addWidget(self.empty_label)
 
         # Estilo general
@@ -401,17 +401,17 @@ class DownloadItemWidget(QWidget):
         info_layout = QHBoxLayout()
 
         self.size_label = QLabel("0 KB / 0 KB")
-        self.size_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.size_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         info_layout.addWidget(self.size_label)
 
         info_layout.addStretch()
 
         self.speed_label = QLabel("0 KB/s")
-        self.speed_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.speed_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         info_layout.addWidget(self.speed_label)
 
         self.time_label = QLabel("")
-        self.time_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.time_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         info_layout.addWidget(self.time_label)
 
         container_layout.addLayout(info_layout)

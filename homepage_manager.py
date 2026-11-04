@@ -155,7 +155,7 @@ class HomepageSettingsDialog(QDialog):
             engine = self.homepage_manager.parent_window.search_engine_manager.get_default_engine()
             if engine:
                 engine_info = QLabel(f"    Actual: {engine.name}")
-                engine_info.setStyleSheet("color: #666; font-size: 11px; margin-left: 24px;")
+                engine_info.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-left: 24px; }")
                 home_layout.addWidget(engine_info)
         # Opción 3: URL personalizada
         self.custom_radio = QRadioButton("URL personalizada:")
@@ -207,7 +207,7 @@ class HomepageSettingsDialog(QDialog):
             "Si está desactivado, las nuevas pestañas usarán el motor de búsqueda predeterminado."
         )
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 11px; margin-top: 5px;")
+        info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-top: 5px; }")
         new_tab_layout.addWidget(info_label)
 
         new_tab_group.setLayout(new_tab_layout)
@@ -218,7 +218,7 @@ class HomepageSettingsDialog(QDialog):
             "Consejo: Puedes cambiar el motor de búsqueda predeterminado en Ajustes > Búsqueda"
         )
         tip_label.setWordWrap(True)
-        tip_label.setStyleSheet("color: #0066cc; font-size: 11px; margin-top: 10px; padding: 8px; background-color: #f0f7ff; border-radius: 4px;")
+        tip_label.setStyleSheet("QWidget { color: #0066cc; font-size: 11px; margin-top: 10px; padding: 8px; background-color: #f0f7ff; border-radius: 4px; }")
         layout.addWidget(tip_label)
 
         layout.addStretch()

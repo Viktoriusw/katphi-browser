@@ -164,7 +164,14 @@ def test_session_round_trip_keeps_extra(tm, container_profile):
     tm.extensions.register(
         "profile_resolver",
         lambda extra: container_profile if extra.get("profile_key") == "container:work" else None)
+    # Arranque nuevo: solo la pestaña de inicio (restaurar no duplica las abiertas)
+    for i in range(tm.tabs.count() - 1, -1, -1):
+        view = tm.tabs.widget(i)
+        tm.tabs.removeTab(i)
+        tm._destroy_browser(view)
+    tm.add_new_tab()
     assert tm.restaurar_sesion() is True
+    assert tm.tabs.count() == 2   # about:blank no se restaura
     views = [tm.tabs.widget(i) for i in range(tm.tabs.count())]
     work = [v for v in views if v.tab_extra.get("profile_key") == "container:work"]
     assert len(work) == 1 and work[0].page().profile() is container_profile

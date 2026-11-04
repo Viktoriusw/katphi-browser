@@ -798,35 +798,13 @@ class BookmarkManager(QWidget):
 
         Args:
             output_path: Ruta del archivo HTML de salida.
-            folders_manager: Instancia de FoldersManager para obtener la jerarquía.
+            folders_manager: Instancia de FoldersManager (aporta la ruta de la BD).
         """
         try:
-            hierarchy = folders_manager.get_hierarchy()
-            html = self._render_html(hierarchy)
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(html)
-            self.logger.info("Marcadores exportados a %s", output_path)
+            import bookmarks_io
+            db_path = getattr(folders_manager, "db_path", "bookmarks.db")
+            bookmarks_io.export_bookmarks_html(db_path, output_path)
             return True
         except Exception as e:
             self.logger.error("Error exportando marcadores: %s", e)
             return False
-    def _render_html(self, folder: dict, level: int = 0) -> str:
-        """Genera el HTML de una carpeta y sus contenidos (recursivo)."""
-        if level == 0:
-            html = (
-                "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n"
-                "<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n"
-                "<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n"
-            )
-        else:
-            html = ""
-        indent = "    " * level
-        for sub in folder.get("children_folders", []):
-            html += f"{indent}<DT><H3>{sub['name']}</H3>\n{indent}<DL><p>\n"
-            html += self._render_html(sub, level + 1)
-            html += f"{indent}</DL><p>\n"
-        for bm in folder.get("children_bookmarks", []):
-            html += f"{indent}<DT><A HREF=\"{bm['url']}\">{bm['title']}</A>\n"
-        if level == 0:
-            html += "</DL><p>\n</html>"
-        return html

@@ -97,15 +97,15 @@ class PluginRow(QFrame):
         icon_lbl.setPixmap(build_nav_icon(icon_name, self._C["text_secondary"], QSize(18, 18)).pixmap(18, 18))
         icon_lbl.setFixedWidth(24)
         icon_lbl.setAlignment(Qt.AlignCenter)
-        icon_lbl.setStyleSheet("background: transparent; border: none;")
+        icon_lbl.setStyleSheet("QWidget { background: transparent; border: none; }")
         layout.addWidget(icon_lbl)
 
         # Nombre
         name_lbl = QLabel(self.plugin_data.get("name", "Plugin"))
         name_lbl.setObjectName("pluginName")
         name_lbl.setStyleSheet(
-            f"font-size: 13px; color: {self._C['text_primary']}; "
-            "background: transparent; border: none;"
+            f"QWidget {{ font-size: 13px; color: {self._C['text_primary']}; "
+            "background: transparent; border: none; }}"
         )
         layout.addWidget(name_lbl, 1)
 
@@ -122,9 +122,9 @@ class PluginRow(QFrame):
         if self.is_installed:
             lbl = QLabel("Active")
             lbl.setStyleSheet(
-                f"background: {c['success_subtle']}; color: {c['success']}; "
+                f"QWidget {{ background: {c['success_subtle']}; color: {c['success']}; "
                 "font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; "
-                "border: none;"
+                "border: none; }}"
             )
             return lbl
         if self.license_data and self.license_data.get("is_licensed"):
@@ -132,18 +132,18 @@ class PluginRow(QFrame):
             if trial > 0:
                 lbl = QLabel(f"Trial {trial}d")
                 lbl.setStyleSheet(
-                    f"background: rgba(210,153,34,0.15); color: {c['warning']}; "
+                    f"QWidget {{ background: rgba(210,153,34,0.15); color: {c['warning']}; "
                     "font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; "
-                    "border: none;"
+                    "border: none; }}"
                 )
                 return lbl
         # Plugin de pago sin licencia
         if self.plugin_data.get("price", 0) > 0:
             lbl = QLabel("Pro")
             lbl.setStyleSheet(
-                f"background: {c['accent_subtle']}; color: {c['accent']}; "
+                f"QWidget {{ background: {c['accent_subtle']}; color: {c['accent']}; "
                 "font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; "
-                "border: none;"
+                "border: none; }}"
             )
             return lbl
         return None
@@ -263,7 +263,7 @@ class PluginsPanelV2(BasePanel):
         # ── Header ────────────────────────────────────────────────────────────
         toolbar = QFrame()
         toolbar.setStyleSheet(
-            "background: #222222; border-bottom: 1px solid rgba(255,255,255,0.08);"
+            "QWidget { background: #222222; border-bottom: 1px solid rgba(255,255,255,0.08); }"
         )
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(16, 0, 12, 0)
@@ -271,8 +271,8 @@ class PluginsPanelV2(BasePanel):
 
         title_label = QLabel("PLUGINS")
         title_label.setStyleSheet(
-            "font-size: 11px; font-weight: 600; letter-spacing: 0.8px; "
-            "color: #A0A0A0; background: transparent;"
+            "QWidget { font-size: 11px; font-weight: 600; letter-spacing: 0.8px; "
+            "color: #A0A0A0; background: transparent; }"
         )
         toolbar_layout.addWidget(title_label)
         toolbar_layout.addStretch()
@@ -305,7 +305,7 @@ class PluginsPanelV2(BasePanel):
         """)
 
         self.scroll_widget = QWidget()
-        self.scroll_widget.setStyleSheet("background: #1A1A1A;")
+        self.scroll_widget.setStyleSheet("QWidget { background: #1A1A1A; }")
         self.scroll_layout = QVBoxLayout(self.scroll_widget)
         self.scroll_layout.setContentsMargins(0, 0, 0, 0)
         self.scroll_layout.setSpacing(0)
@@ -317,13 +317,13 @@ class PluginsPanelV2(BasePanel):
         status_bar = QFrame()
         status_bar.setFixedHeight(36)
         status_bar.setStyleSheet(
-            "background: #222222; border-top: 1px solid rgba(255,255,255,0.08);"
+            "QWidget { background: #222222; border-top: 1px solid rgba(255,255,255,0.08); }"
         )
         sb_layout = QHBoxLayout(status_bar)
         sb_layout.setContentsMargins(16, 0, 12, 0)
 
         self.status_label = QLabel("Cargando plugins...")
-        self.status_label.setStyleSheet("color: #606060; font-size: 11px; background: transparent;")
+        self.status_label.setStyleSheet("QWidget { color: #606060; font-size: 11px; background: transparent; }")
         sb_layout.addWidget(self.status_label)
         sb_layout.addStretch()
 
@@ -453,13 +453,13 @@ class PluginsPanelV2(BasePanel):
         lbl_icon = QLabel()
         lbl_icon.setPixmap(build_nav_icon(icon_name, "#606060", QSize(40, 40)).pixmap(40, 40))
         lbl_icon.setAlignment(Qt.AlignCenter)
-        lbl_icon.setStyleSheet("background: transparent;")
+        lbl_icon.setStyleSheet("QWidget { background: transparent; }")
         cl.addWidget(lbl_icon)
 
         lbl_msg = QLabel(message)
         lbl_msg.setAlignment(Qt.AlignCenter)
         lbl_msg.setWordWrap(True)
-        lbl_msg.setStyleSheet("font-size: 13px; color: #A0A0A0; background: transparent;")
+        lbl_msg.setStyleSheet("QWidget { font-size: 13px; color: #A0A0A0; background: transparent; }")
         cl.addWidget(lbl_msg)
 
         self.scroll_layout.addWidget(container)

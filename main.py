@@ -18,9 +18,8 @@ from PySide6.QtWidgets import QApplication
 
 _logger = logging.getLogger(__name__)
 
-# El usuario eligió "Continuar sin Tor (esta sesión)": el proceso se relanza
-# con esta variable y arranca sin proxy, sin tocar tor.enabled en config.yaml.
-_TOR_SKIP_ENV = "KATPHI_TOR_SKIP_SESSION"
+# Tor es solo de sesión (config_manager.TOR_SESSION_ENV): un arranque normal
+# del navegador nunca usa Tor; solo el relanzamiento pedido desde el panel Tor.
 
 # Resultado de _configure_tor_proxy_if_needed()
 _TOR_OFF = "off"
@@ -79,20 +78,10 @@ def _configure_tor_proxy_if_needed() -> str:
         from config_manager import config
         from constants import is_private_mode
 
+        # Solo True si este proceso es el relanzamiento "con Tor" pedido desde
+        # el panel (variable de entorno). Abrir el navegador = siempre sin Tor.
         enabled = config.is_tor_enabled()
-        if is_private_mode():
-            # La ventana privada no persiste el estado de Tor: tor_restart lo
-            # pasa por el entorno al relanzarse.
-            from tor_restart import PRIVATE_TOR_ENV
-            env_tor = os.environ.get(PRIVATE_TOR_ENV)
-            if env_tor in ("0", "1"):
-                enabled = env_tor == "1"
-                net_proxy.set_tor_active(enabled)
-        if os.environ.pop(_TOR_SKIP_ENV, None) == "1":
-            # Solo para esta sesión: la preferencia guardada no cambia.
-            _logger.warning("[TOR] Sesión sin Tor por elección del usuario (tor.enabled se conserva)")
-            enabled = False
-            net_proxy.set_tor_active(False)
+        net_proxy.set_tor_active(enabled)
 
         if not enabled:
             if "proxy-server" in os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", ""):
@@ -160,12 +149,11 @@ def _resolve_tor_unavailable() -> str:
         box.setInformativeText(
             "Para no navegar con tu IP real todavía no se ha cargado ninguna página.\n\n"
             "Reintentar: arranca Tor y espera a que conecte.\n"
-            "Continuar sin Tor: navega sin Tor solo en esta sesión; "
-            "la preferencia guardada no cambia.\n"
+            "Continuar sin Tor: navega con tu conexión normal.\n"
             "Salir: cierra el navegador."
         )
         retry_btn = box.addButton("Reintentar", QMessageBox.AcceptRole)
-        continue_btn = box.addButton("Continuar sin Tor (esta sesión)", QMessageBox.DestructiveRole)
+        continue_btn = box.addButton("Continuar sin Tor", QMessageBox.DestructiveRole)
         quit_btn = box.addButton("Salir", QMessageBox.RejectRole)
         box.setDefaultButton(retry_btn)
         box.setEscapeButton(quit_btn)
@@ -494,8 +482,9 @@ def main():
         if choice == "continue":
             # Las flags de proxy ya están en los argumentos de la QApplication
             # y Qt WebEngine las leerá al crear el primer perfil: se relanza el
-            # proceso sin ellas, solo para esta sesión.
-            os.environ[_TOR_SKIP_ENV] = "1"
+            # proceso sin ellas y sin Tor.
+            from config_manager import config as _cfg
+            _cfg.set_tor_enabled(False)
             tor_restart.relaunch()
             return
 

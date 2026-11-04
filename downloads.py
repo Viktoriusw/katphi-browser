@@ -512,7 +512,7 @@ class DownloadManager(QObject):
 
             type_label = QLabel(file_info['description'])
 
-            type_label.setStyleSheet("color: gray; font-size: 10px;")
+            type_label.setStyleSheet("QWidget { color: gray; font-size: 10px; }")
 
             info_layout.addWidget(type_label)
 

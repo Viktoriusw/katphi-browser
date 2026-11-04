@@ -349,11 +349,11 @@ class PremiumButton(QWidget):
         elif access_info.access_level == PluginAccessLevel.TRIAL:
             self.button.setText(f"{self.text} (Prueba: {access_info.trial_remaining}d)")
 
-            self.button.setStyleSheet("background-color: #f39c12; color: white;")
+            self.button.setStyleSheet("QWidget { background-color: #f39c12; color: white; }")
         else:
             self.button.setText(f"{self.text} (Premium)")
 
-            self.button.setStyleSheet("background-color: #e74c3c; color: white;")
+            self.button.setStyleSheet("QWidget { background-color: #e74c3c; color: white; }")
     def _on_clicked(self):
         """Handle button click"""
 

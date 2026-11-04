@@ -170,7 +170,7 @@ class TabGroupWidget(QFrame):
         info_layout.addWidget(self.name_label)
 
         self.count_label = QLabel(f"{len(self.group.tab_indices)} tabs")
-        self.count_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.count_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         info_layout.addWidget(self.count_label)
 
         layout.addLayout(info_layout, 1)
@@ -289,7 +289,7 @@ class TabGroupsPanel(QWidget):
         footer_layout.setContentsMargins(10, 5, 10, 5)
 
         self.info_label = QLabel("No groups yet")
-        self.info_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         footer_layout.addWidget(self.info_label)
 
         footer_layout.addStretch()
@@ -407,7 +407,7 @@ class TabGroupsPanel(QWidget):
         if not groups:
             no_groups_label = QLabel("No groups created yet.\n\nCreate a group to organize your tabs!")
             no_groups_label.setAlignment(Qt.AlignCenter)
-            no_groups_label.setStyleSheet("color: #999; padding: 40px; font-size: 13px;")
+            no_groups_label.setStyleSheet("QWidget { color: #999; padding: 40px; font-size: 13px; }")
             self.groups_layout.addWidget(no_groups_label)
             self.info_label.setText("No groups")
             return

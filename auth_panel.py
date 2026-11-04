@@ -237,7 +237,7 @@ class LoginDialog(QDialog):
 
         title_label.setFont(QFont("Arial", 24, QFont.Bold))
 
-        title_label.setStyleSheet(f"color: {self._tc['text']}; margin-bottom: 5px;")
+        title_label.setStyleSheet(f"QWidget {{ color: {self._tc['text']}; margin-bottom: 5px; }}")
         header_layout.addWidget(title_label)
 
         # Subtitle
@@ -246,7 +246,7 @@ class LoginDialog(QDialog):
 
         subtitle_label.setAlignment(Qt.AlignCenter)
 
-        subtitle_label.setStyleSheet(f"color: {self._tc['text_secondary']}; font-size: 14px;")
+        subtitle_label.setStyleSheet(f"QWidget {{ color: {self._tc['text_secondary']}; font-size: 14px; }}")
         header_layout.addWidget(subtitle_label)
 
         layout.addLayout(header_layout)
@@ -681,12 +681,12 @@ class AccountInfoWidget(QWidget):
 
         self.user_email_label.setFont(QFont("Arial", 12, QFont.Bold))
 
-        self.user_email_label.setStyleSheet("color: #2c3e50;")
+        self.user_email_label.setStyleSheet("QWidget { color: #2c3e50; }")
         user_layout.addWidget(self.user_email_label)
 
         self.user_id_label = QLabel()
 
-        self.user_id_label.setStyleSheet("color: #7f8c8d; font-size: 11px;")
+        self.user_id_label.setStyleSheet("QWidget { color: #7f8c8d; font-size: 11px; }")
         user_layout.addWidget(self.user_id_label)
 
         user_group.setLayout(user_layout)
@@ -932,7 +932,7 @@ class AuthPanel(BasePanel):
 
         title_label.setFont(QFont("Arial", 16, QFont.Bold))
 
-        title_label.setStyleSheet("color: #2c3e50;")
+        title_label.setStyleSheet("QWidget { color: #2c3e50; }")
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
@@ -941,7 +941,7 @@ class AuthPanel(BasePanel):
 
         self.status_label = QLabel("Sin conexión")
 
-        self.status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+        self.status_label.setStyleSheet("QWidget { color: #e74c3c; font-weight: bold; }")
         header_layout.addWidget(self.status_label)
 
         layout.addLayout(header_layout)
@@ -974,7 +974,7 @@ class AuthPanel(BasePanel):
 
         self.validation_status = QLabel("Última validación: Nunca")
 
-        self.validation_status.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        self.validation_status.setStyleSheet("QWidget { color: #7f8c8d; font-size: 12px; }")
         validation_layout.addWidget(self.validation_status)
 
         # Force validation button
@@ -1060,7 +1060,7 @@ class AuthPanel(BasePanel):
 
         info_label.setWordWrap(True)
 
-        info_label.setStyleSheet("color: #7f8c8d; font-size: 14px; margin-top: 10px;")
+        info_label.setStyleSheet("QWidget { color: #7f8c8d; font-size: 14px; margin-top: 10px; }")
         layout.addWidget(info_label)
 
         layout.addStretch()
@@ -1113,7 +1113,7 @@ class AuthPanel(BasePanel):
 
         self.status_label.setText(status_text)
 
-        self.status_label.setStyleSheet(f"color: {status_color}; font-weight: bold;")
+        self.status_label.setStyleSheet(f"QWidget {{ color: {status_color}; font-weight: bold; }}")
 
         logger.info(f"Connection status changed: {is_connected}")
     def update_status(self):
@@ -1142,7 +1142,7 @@ class AuthPanel(BasePanel):
                 status_color = "#e74c3c"
             self.status_label.setText(status_text)
 
-            self.status_label.setStyleSheet(f"color: {status_color}; font-weight: bold;")
+            self.status_label.setStyleSheet(f"QWidget {{ color: {status_color}; font-weight: bold; }}")
     def update_display(self):
         """Actualizar la pantalla basada en el estado de autenticación actual"""
 

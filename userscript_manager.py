@@ -821,7 +821,7 @@ class UserScriptDialog(QDialog):
             "Puedes activar/desactivar estos scripts desde la pestaña 'Mis Scripts'."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("background-color: #f9f9f9; padding: 15px; border-radius: 8px;")
+        info.setStyleSheet("QWidget { background-color: #f9f9f9; padding: 15px; border-radius: 8px; }")
         layout.addWidget(info)
 
         layout.addStretch()
