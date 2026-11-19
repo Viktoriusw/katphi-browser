@@ -13,6 +13,7 @@ Proporciona:
 
 from __future__ import annotations
 
+from i18n import tr
 import html
 import sqlite3
 from dataclasses import dataclass, field
@@ -127,7 +128,7 @@ class _NetscapeParser(HTMLParser):
             self.root.name = "".join(self._text).strip()
         elif tag == "h3" and self._h3 is not None:
             folder = self._h3
-            folder.name = " ".join("".join(self._text).split()) or "Carpeta"
+            folder.name = " ".join("".join(self._text).split()) or tr("Carpeta")
             self._current.folders.append(folder)
             self._pending_folder = folder
             self._h3 = None
@@ -174,13 +175,13 @@ def parse_bookmarks_html(path: str) -> tuple[ParsedFolder, int]:
     """
     import os
     if os.path.getsize(path) > MAX_FILE_BYTES:
-        raise ValueError("El archivo es demasiado grande (máx. 64 MB).")
+        raise ValueError(tr("El archivo es demasiado grande (máx. 64 MB)."))
     with open(path, "rb") as f:
         raw = f.read()
     text = raw.decode("utf-8-sig", errors="replace")
     head = text[:4096].lower()
     if "netscape-bookmark-file" not in head and "<dl" not in text[:200000].lower():
-        raise ValueError("El archivo no tiene formato de marcadores HTML.")
+        raise ValueError(tr("El archivo no tiene formato de marcadores HTML."))
     parser = _NetscapeParser()
     parser.feed(text)
     parser.close()
@@ -288,7 +289,7 @@ def import_bookmarks(
             insert(root, target)
             result.target_folder_id = target
         logger.info(
-            "Marcadores importados: %d nuevos, %d carpetas, %d duplicados",
+            tr("Marcadores importados: %d nuevos, %d carpetas, %d duplicados"),
             result.imported, result.folders_created, result.duplicates,
         )
         return result
@@ -349,7 +350,7 @@ def export_bookmarks_html(db_path: str, output_path: str) -> int:
         "     DO NOT EDIT! -->",
         '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
         "<TITLE>Bookmarks</TITLE>",
-        "<H1>Marcadores de Katphi</H1>",
+        tr("<H1>Marcadores de Katphi</H1>"),
         "",
         "<DL><p>",
     ]
@@ -375,5 +376,5 @@ def export_bookmarks_html(db_path: str, output_path: str) -> int:
     lines.append("</DL><p>")
     with open(output_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
-    logger.info("Exportados %d marcadores a %s", count, output_path)
+    logger.info(tr("Exportados %d marcadores a %s"), count, output_path)
     return count

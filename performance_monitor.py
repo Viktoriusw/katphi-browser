@@ -9,6 +9,7 @@ Características:
 - Estadísticas de red
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTableWidget,
                                QTableWidgetItem, QPushButton, QLabel, QHeaderView,
                                QMessageBox, QProgressBar)
@@ -26,7 +27,7 @@ class PerformanceMonitor(QDialog):
         self.parent = parent
         self.process = psutil.Process(os.getpid())
 
-        self.setWindowTitle("Administrador de tareas - Katphi")
+        self.setWindowTitle(tr("Administrador de tareas - Katphi"))
         self.setMinimumSize(800, 600)
         self.setModal(False)
 
@@ -44,7 +45,7 @@ class PerformanceMonitor(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Administrador de tareas del navegador")
+        title = QLabel(tr("Administrador de tareas del navegador"))
         title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
@@ -53,7 +54,7 @@ class PerformanceMonitor(QDialog):
 
         # CPU
         cpu_widget = QVBoxLayout()
-        self.cpu_label = QLabel("CPU: 0%")
+        self.cpu_label = QLabel(tr("CPU: 0%"))
         self.cpu_label.setStyleSheet("font-weight: bold;")
         self.cpu_bar = QProgressBar()
         self.cpu_bar.setMaximum(100)
@@ -64,7 +65,7 @@ class PerformanceMonitor(QDialog):
 
         # Memoria
         mem_widget = QVBoxLayout()
-        self.mem_label = QLabel("Memoria: 0 MB")
+        self.mem_label = QLabel(tr("Memoria: 0 MB"))
         self.mem_label.setStyleSheet("font-weight: bold;")
         self.mem_bar = QProgressBar()
         self.mem_bar.setMaximum(100)
@@ -79,14 +80,14 @@ class PerformanceMonitor(QDialog):
         layout.addSpacing(10)
 
         # Tabla de pestañas
-        tabs_label = QLabel("Pestañas activas:")
+        tabs_label = QLabel(tr("Pestañas activas:"))
         tabs_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(tabs_label)
 
         self.tabs_table = QTableWidget()
         self.tabs_table.setColumnCount(5)
         self.tabs_table.setHorizontalHeaderLabels([
-            "Pestaña", "URL", "Título", "Estado", "Acciones"
+            tr("Pestaña"), tr("URL"), tr("Título"), tr("Estado"), tr("Acciones")
         ])
 
         # Configurar tabla
@@ -112,12 +113,12 @@ class PerformanceMonitor(QDialog):
         info_layout.addStretch()
 
         # Botón de actualizar
-        refresh_btn = QPushButton("Actualizar")
+        refresh_btn = QPushButton(tr("Actualizar"))
         refresh_btn.clicked.connect(self.update_stats)
         info_layout.addWidget(refresh_btn)
 
         # Botón de cerrar
-        close_btn = QPushButton("Cerrar")
+        close_btn = QPushButton(tr("Cerrar"))
         close_btn.clicked.connect(self.close)
         info_layout.addWidget(close_btn)
 
@@ -131,7 +132,7 @@ class PerformanceMonitor(QDialog):
             memory_mb = memory_info.rss / (1024 * 1024)  # Convertir a MB
 
             # Actualizar CPU
-            self.cpu_label.setText(f"CPU: {cpu_percent:.1f}%")
+            self.cpu_label.setText(tr("CPU: {cpu_percent:.1f}%", cpu_percent=cpu_percent))
             self.cpu_bar.setValue(int(min(cpu_percent, 100)))
 
             # Color según uso de CPU
@@ -142,7 +143,7 @@ class PerformanceMonitor(QDialog):
             else:
                 self.cpu_bar.setStyleSheet("QProgressBar::chunk { background-color: #27ae60; }")
             # Actualizar Memoria
-            self.mem_label.setText(f"Memoria: {memory_mb:.1f} MB")
+            self.mem_label.setText(tr("Memoria: {memory_mb:.1f} MB", memory_mb=memory_mb))
 
             # Calcular porcentaje de memoria del sistema
             system_memory = psutil.virtual_memory()
@@ -162,11 +163,10 @@ class PerformanceMonitor(QDialog):
             # Información adicional
             threads = self.process.num_threads()
             self.info_label.setText(
-                f"Hilos: {threads} | "
-                f"Memoria total del sistema: {system_memory.percent:.1f}% usada"
+                tr("Hilos: {threads} | Memoria total del sistema: {percent:.1f}% usada", threads=threads, percent=system_memory.percent)
             )
         except Exception as e:
-            print(f"[PerformanceMonitor] Error updating stats: {e}")
+            print(tr("[PerformanceMonitor] Error updating stats: {e}", e=e))
     def update_tabs_table(self):
         """Actualizar tabla de pestañas"""
         if not self.parent or not hasattr(self.parent, 'tab_manager'):
@@ -200,13 +200,13 @@ class PerformanceMonitor(QDialog):
             title = tabs_widget.tabText(i)
             # Limpiar marcador de estado
             title = title.replace("● ", "")
-            title_item = QTableWidgetItem(title if title else "Sin título")
+            title_item = QTableWidgetItem(title if title else tr("Sin título"))
             title_item.setToolTip(title)
             self.tabs_table.setItem(row, 2, title_item)
 
             # Estado
             loading = browser.page().isLoading() if hasattr(browser, 'page') else False
-            status = "Cargando..." if loading else "Listo"
+            status = tr("Cargando...") if loading else tr("Listo")
             status_item = QTableWidgetItem(status)
             status_item.setTextAlignment(Qt.AlignCenter)
 
@@ -215,7 +215,7 @@ class PerformanceMonitor(QDialog):
             self.tabs_table.setItem(row, 3, status_item)
 
             # Botón de cerrar
-            close_btn = QPushButton("Cerrar")
+            close_btn = QPushButton(tr("Cerrar"))
             close_btn.setMaximumWidth(80)
             close_btn.clicked.connect(lambda checked, idx=i: self.close_tab(idx))
             self.tabs_table.setCellWidget(row, 4, close_btn)
@@ -223,8 +223,8 @@ class PerformanceMonitor(QDialog):
         """Cerrar una pestaña específica"""
         reply = QMessageBox.question(
             self,
-            "Cerrar pestaña",
-            f"¿Cerrar la pestaña #{tab_index + 1}?",
+            tr("Cerrar pestaña"),
+            tr("¿Cerrar la pestaña #{value}?", value=tab_index + 1),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -261,42 +261,27 @@ class PerformanceDiagnostic:
             system_cpu = psutil.cpu_percent(interval=1.0)
 
             # Crear reporte
-            report = f"""
-DIAGNÓSTICO DE RENDIMIENTO
-==========================
-
-NAVEGADOR:
-- Uso de CPU: {cpu_percent:.1f}%
-- Memoria RAM: {memory_mb:.1f} MB
-- Hilos activos: {threads}
-
-SISTEMA:
-- CPU total: {system_cpu:.1f}%
-- Memoria total: {system_memory.percent:.1f}% ({system_memory.used / (1024**3):.1f} GB / {system_memory.total / (1024**3):.1f} GB)
-- Memoria disponible: {system_memory.available / (1024**3):.1f} GB
-
-RECOMENDACIONES:
-"""
+            report = tr("\nDIAGNÓSTICO DE RENDIMIENTO\n==========================\n\nNAVEGADOR:\n- Uso de CPU: {cpu_percent:.1f}%\n- Memoria RAM: {memory_mb:.1f} MB\n- Hilos activos: {threads}\n\nSISTEMA:\n- CPU total: {system_cpu:.1f}%\n- Memoria total: {percent:.1f}% ({value:.1f} GB / {value2:.1f} GB)\n- Memoria disponible: {value3:.1f} GB\n\nRECOMENDACIONES:\n", cpu_percent=cpu_percent, memory_mb=memory_mb, threads=threads, system_cpu=system_cpu, percent=system_memory.percent, value=system_memory.used / (1024**3), value2=system_memory.total / (1024**3), value3=system_memory.available / (1024**3))
 
             # Recomendaciones basadas en métricas
             recommendations = []
 
             if cpu_percent > 80:
-                recommendations.append("- Alto uso de CPU. Considera cerrar pestañas innecesarias.")
+                recommendations.append(tr("- Alto uso de CPU. Considera cerrar pestañas innecesarias."))
             if memory_mb > 1000:
-                recommendations.append("- Alto uso de memoria (>1GB). Considera cerrar pestañas.")
+                recommendations.append(tr("- Alto uso de memoria (>1GB). Considera cerrar pestañas."))
             if threads > 50:
-                recommendations.append("- Muchos hilos activos. Revisa extensiones/plugins.")
+                recommendations.append(tr("- Muchos hilos activos. Revisa extensiones/plugins."))
             if system_memory.percent > 90:
-                recommendations.append("- Memoria del sistema casi llena. Cierra otras aplicaciones.")
+                recommendations.append(tr("- Memoria del sistema casi llena. Cierra otras aplicaciones."))
             if not recommendations:
-                recommendations.append("- El navegador funciona correctamente.")
+                recommendations.append(tr("- El navegador funciona correctamente."))
             report += "\n".join(recommendations)
 
             # Mostrar reporte
             msg = QMessageBox(parent)
-            msg.setWindowTitle("Diagnóstico de rendimiento")
-            msg.setText("Diagnóstico completado")
+            msg.setWindowTitle(tr("Diagnóstico de rendimiento"))
+            msg.setText(tr("Diagnóstico completado"))
             msg.setDetailedText(report)
             msg.setIcon(QMessageBox.Information)
             msg.exec()
@@ -305,7 +290,7 @@ RECOMENDACIONES:
         except Exception as e:
             QMessageBox.warning(
                 parent,
-                "Error",
-                f"Error al ejecutar diagnóstico: {e}"
+                tr("Error"),
+                tr("Error al ejecutar diagnóstico: {e}", e=e)
             )
             return None

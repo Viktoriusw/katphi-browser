@@ -20,6 +20,7 @@ Detección (sin tocar nada si el motor sí tiene H.264):
     que Python consulta cada pocos segundos en la pestaña visible.
 """
 
+from i18n import tr
 import logging
 import shutil
 import subprocess
@@ -78,6 +79,15 @@ _DETECT_JS = r"""
     if (window.__katphiMedia) { return; }
     var isTop = (window.top === window);
     var st = { miss: 0, unsupported: false, frame: false, src: '' };
+    // Solo cuenta un vídeo que alguien quiere ver: grande, visible y con
+    // intento de reproducción (clic del usuario o autoplay con sonido).
+    // Las consultas de compatibilidad (canPlayType/isTypeSupported) que hacen
+    // los scripts de anuncios y los <video> decorativos o sin cargar no avisan.
+    var lastGesture = 0;
+    var intents = new WeakMap();
+    ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) {
+        document.addEventListener(ev, function () { lastGesture = Date.now(); }, true);
+    });
 
     function mediaOf(t) {
         if (!t || !t.tagName) { return null; }
@@ -93,22 +103,38 @@ _DETECT_JS = r"""
         }
         return /^https?:/i.test(s) ? s : '';
     }
+    function bigVisible(m) {
+        if (!m || !m.isConnected || m.tagName !== 'VIDEO') { return false; }
+        if (!isTop && (window.innerWidth < 240 || window.innerHeight < 135)) { return false; }
+        var r = m.getBoundingClientRect();
+        if (r.width < 240 || r.height < 135) { return false; }
+        var cs = getComputedStyle(m);
+        return cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity || '1') >= 0.1;
+    }
+    function userGesture() { return (Date.now() - lastGesture) < 2500; }
+    function wanted(m) {
+        return intents.has(m);
+    }
     function anyPlaying() {
         var vs = document.querySelectorAll('video');
         for (var i = 0; i < vs.length; i++) {
-            if (vs[i].readyState >= 2) { return true; }
+            if (vs[i].readyState >= 2 && !vs[i].paused) { return true; }
         }
         return false;
     }
     function stuckVideo() {
+        if (anyPlaying()) { return null; }
         var vs = document.querySelectorAll('video');
-        if (!vs.length || anyPlaying()) { return null; }
-        return vs[0];
+        for (var i = 0; i < vs.length; i++) {
+            var v = vs[i], t = intents.get(v);
+            if (t && (Date.now() - t) > 5000 && v.readyState < 2 && !v.paused && bigVisible(v)) { return v; }
+        }
+        return null;
     }
     function failed() {
         if (st.unsupported) { return true; }
-        // Pidió H.264 hace más de 4 s y ningún vídeo ha llegado a tener imagen
-        return !!(st.miss && (Date.now() - st.miss) > 4000 && stuckVideo());
+        // Pidió H.264/AAC, alguien quiso ver un vídeo y a los 5 s sigue sin imagen
+        return !!(st.miss && stuckVideo());
     }
     function notifyTop() {
         if (isTop) { return; }
@@ -120,21 +146,34 @@ _DETECT_JS = r"""
         notifyTop();
     }
 
+    document.addEventListener('play', function (e) {
+        var m = mediaOf(e.target);
+        if (!m) { return; }
+        // Autoplay silenciado sin controles = vídeo decorativo o anuncio
+        if (m.muted && !m.controls && !userGesture()) { return; }
+        intents.set(m, Date.now());
+        if (!isTop) {
+            setTimeout(function () { if (failed()) { notifyTop(); } }, 6000);
+        }
+    }, true);
+    document.addEventListener('volumechange', function (e) {
+        var m = mediaOf(e.target);
+        if (m && !m.muted && userGesture() && !intents.has(m)) { intents.set(m, Date.now()); }
+    }, true);
+
     document.addEventListener('error', function (e) {
         var m = mediaOf(e.target);
         if (!m) { return; }
         setTimeout(function () {
             // 4 = MEDIA_ERR_SRC_NOT_SUPPORTED; 3 = NETWORK_NO_SOURCE (fallaron todos los <source>)
-            if ((m.error && m.error.code === 4) || m.networkState === 3) { markUnsupported(m); }
+            if (!((m.error && m.error.code === 4) || m.networkState === 3)) { return; }
+            if (!bigVisible(m)) { return; }
+            if (wanted(m) || m.controls || (m.autoplay && !m.muted)) { markUnsupported(m); }
         }, 0);
     }, true);
 
     document.addEventListener('katphi-codec-miss', function () {
-        if (st.miss) { return; }
-        st.miss = Date.now();
-        if (!isTop) {
-            setTimeout(function () { if (failed()) { notifyTop(); } }, 5000);
-        }
+        if (!st.miss) { st.miss = Date.now(); }
     });
 
     if (isTop) {
@@ -228,15 +267,15 @@ class MediaFallbackBar(QFrame):
         layout.setSpacing(8)
 
         label = QLabel(
-            "Este vídeo usa H.264/AAC, códecs patentados que Katphi Browser "
+            tr("Este vídeo usa H.264/AAC, códecs patentados que Katphi Browser "
             "no incluye por motivos de licencia. Puedes verlo con el reproductor "
-            "de Katphi, que usa los decodificadores de tu sistema, o abrirlo fuera:")
+            "de Katphi, que usa los decodificadores de tu sistema, o abrirlo fuera:"))
         label.setWordWrap(True)
         layout.addWidget(label, 1)
 
         self._add_native_player_button(layout)
 
-        browser_btn = QPushButton("Abrir en el navegador del sistema")
+        browser_btn = QPushButton(tr("Abrir en el navegador del sistema"))
         browser_btn.clicked.connect(self._open_in_system_browser)
         layout.addWidget(browser_btn)
 
@@ -244,14 +283,14 @@ class MediaFallbackBar(QFrame):
             target = media_src or (page_url if page_ok else "")
             if not target:
                 continue
-            btn = QPushButton(f"Abrir con {name}")
+            btn = QPushButton(tr("Abrir con {name}", name=name))
             btn.setToolTip(target)
             btn.clicked.connect(lambda _=False, e=exe, t=target: self._open_with_player(e, t))
             layout.addWidget(btn)
 
         close_btn = QToolButton()
         close_btn.setIcon(self.style().standardIcon(QStyle.SP_TitleBarCloseButton))
-        close_btn.setToolTip("Cerrar")
+        close_btn.setToolTip(tr("Cerrar"))
         close_btn.setAutoRaise(True)
         close_btn.clicked.connect(self.dismiss)
         layout.addWidget(close_btn)
@@ -266,29 +305,29 @@ class MediaFallbackBar(QFrame):
         try:
             import native_player
         except Exception as e:
-            logger.debug("native_player no disponible: %s", e)
+            logger.debug(tr("native_player no disponible: %s"), e)
             return
         available, _reason = native_player.is_available()
         target = self._media_src or (
             self._page_url if native_player.accepts_page_urls() else "")
         if available and not target:
             return
-        btn = QPushButton("Reproducir en Katphi")
+        btn = QPushButton(tr("Reproducir en Katphi"))
         if available:
             btn.setToolTip(target)
             btn.clicked.connect(lambda _=False: self._open_native_player(target))
         elif native_player.install_hint():
-            btn.setToolTip("Necesita libmpv del sistema")
+            btn.setToolTip(tr("Necesita libmpv del sistema"))
             btn.clicked.connect(lambda _=False: QMessageBox.information(
-                self._window, "Reproductor de Katphi",
-                "El reproductor de Katphi usa los decodificadores de vídeo de tu "
-                "sistema y aquí no están instalados.\n\n" + native_player.install_hint()))
+                self._window, tr("Reproductor de Katphi"),
+                tr("El reproductor de Katphi usa los decodificadores de vídeo de tu "
+                "sistema y aquí no están instalados.\n\n") + native_player.install_hint()))
         else:
             return
         layout.addWidget(btn)
 
     def _open_native_player(self, target):
-        if not self._confirm_leaving("el reproductor de Katphi", tor_only=True):
+        if not self._confirm_leaving(tr("el reproductor de Katphi"), tor_only=True):
             return
         import native_player
         try:
@@ -301,9 +340,9 @@ class MediaFallbackBar(QFrame):
                                       parent=self._window)
             self.dismiss()
         except Exception as e:
-            logger.warning("[MEDIA] Reproductor de Katphi: %s", e)
-            QMessageBox.warning(self._window, "Reproductor de Katphi",
-                                f"No se pudo abrir el reproductor: {e}")
+            logger.warning(tr("[MEDIA] Reproductor de Katphi: %s"), e)
+            QMessageBox.warning(self._window, tr("Reproductor de Katphi"),
+                                tr("No se pudo abrir el reproductor: {e}", e=e))
 
     def dismiss(self, *_):
         try:
@@ -332,31 +371,31 @@ class MediaFallbackBar(QFrame):
         try:
             import net_proxy
             if net_proxy.is_tor_active():
-                warnings.append("se abrirá fuera de Tor, con tu IP real")
+                warnings.append(tr("se abrirá fuera de Tor, con tu IP real"))
         except Exception:
             pass
         try:
             from constants import is_private_mode
             if is_private_mode() and not tor_only:
-                warnings.append("quedará en el historial de esa aplicación")
+                warnings.append(tr("quedará en el historial de esa aplicación"))
         except Exception:
             pass
         if not warnings:
             return True
         reply = QMessageBox.question(
-            self._window, "Reproducir sin Tor" if tor_only else "Abrir fuera de Katphi",
-            f"El vídeo se abrirá en {what}: " + " y ".join(warnings) + ".\n\n¿Continuar?",
+            self._window, tr("Reproducir sin Tor") if tor_only else tr("Abrir fuera de Katphi"),
+            tr("El vídeo se abrirá en {what}: ", what=what) + tr(" y ").join(warnings) + tr(".\n\n¿Continuar?"),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         return reply == QMessageBox.Yes
 
     def _open_in_system_browser(self):
-        if not self._confirm_leaving("el navegador del sistema"):
+        if not self._confirm_leaving(tr("el navegador del sistema")):
             return
         QDesktopServices.openUrl(QUrl(self._page_url))
         self.dismiss()
 
     def _open_with_player(self, exe, target):
-        if not self._confirm_leaving("un reproductor externo"):
+        if not self._confirm_leaving(tr("un reproductor externo")):
             return
         args = [exe]
         if "mpv" in exe.lower() and self._page_url:
@@ -372,8 +411,8 @@ class MediaFallbackBar(QFrame):
                              stderr=subprocess.DEVNULL, **kwargs)
             self.dismiss()
         except Exception as e:
-            QMessageBox.warning(self._window, "Reproductor externo",
-                                f"No se pudo abrir el reproductor: {e}")
+            QMessageBox.warning(self._window, tr("Reproductor externo"),
+                                tr("No se pudo abrir el reproductor: {e}", e=e))
 
 
 class MediaSupportMonitor(QObject):
@@ -435,7 +474,7 @@ class MediaSupportMonitor(QObject):
             self.stop()
             for profile in {self._view_profile(v) for v in self._all_views()} - {None}:
                 _remove_scripts(profile)
-            logger.info("[MEDIA] Qt WebEngine con H.264/AAC: aviso de códecs desactivado")
+            logger.info(tr("[MEDIA] Qt WebEngine con H.264/AAC: aviso de códecs desactivado"))
             return
         _codecs_available = False
         if not data.get("failed") or key in self._handled:
@@ -443,7 +482,7 @@ class MediaSupportMonitor(QObject):
         if self._current_view() is not view or view.url().toString() != key[1]:
             return
         self._handled.add(key)
-        logger.info("[MEDIA] Vídeo con códecs no soportados en %s", key[1])
+        logger.info(tr("[MEDIA] Vídeo con códecs no soportados en %s"), key[1])
         MediaFallbackBar(view, key[1], data.get("src") or "", self._window)
 
     def _all_views(self):

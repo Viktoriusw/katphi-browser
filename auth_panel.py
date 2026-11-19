@@ -13,6 +13,7 @@ Validación agresiva y feedback claro para el usuario
 """
 
 
+from i18n import tr
 from PySide6.QtWidgets import (
 
 
@@ -97,7 +98,7 @@ class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.setWindowTitle("Katphi - Iniciar Sesión")
+        self.setWindowTitle(tr("Katphi - Iniciar Sesión"))
 
         self.setMinimumSize(500, 600)
 
@@ -154,7 +155,7 @@ class LoginDialog(QDialog):
 
         if identifier:
             if " " in identifier or len(identifier) < 3:
-                self._show_field_error(self.email_edit, "Introduce tu ID de usuario o email")
+                self._show_field_error(self.email_edit, tr("Introduce tu ID de usuario o email"))
 
                 return False
             else:
@@ -174,7 +175,7 @@ class LoginDialog(QDialog):
         if self.is_validating:
             self.login_button.setText("Validando...")
         else:
-            self.login_button.setText("Iniciar Sesión")
+            self.login_button.setText(tr("Iniciar Sesión"))
     def _show_field_error(self, field, message):
         """Mostrar error en un campo"""
         tc = self._tc
@@ -231,7 +232,7 @@ class LoginDialog(QDialog):
 
         # Title
 
-        title_label = QLabel("Katphi")
+        title_label = QLabel(tr("Katphi"))
 
         title_label.setAlignment(Qt.AlignCenter)
 
@@ -242,7 +243,7 @@ class LoginDialog(QDialog):
 
         # Subtitle
 
-        subtitle_label = QLabel("Accede a tus plugins premium")
+        subtitle_label = QLabel(tr("Accede a tus plugins premium"))
 
         subtitle_label.setAlignment(Qt.AlignCenter)
 
@@ -293,7 +294,7 @@ class LoginDialog(QDialog):
 
         self.email_edit.setPlaceholderText("sc_xxxxxxxx")
 
-        form_layout.addRow("ID user Katphi:", self.email_edit)
+        form_layout.addRow(tr("ID user Katphi:"), self.email_edit)
 
         # Password field
 
@@ -301,13 +302,13 @@ class LoginDialog(QDialog):
 
         self.password_edit.setEchoMode(QLineEdit.Password)
 
-        self.password_edit.setPlaceholderText("Tu contraseña")
+        self.password_edit.setPlaceholderText(tr("Tu contraseña"))
 
-        form_layout.addRow("Contraseña:", self.password_edit)
+        form_layout.addRow(tr("Contraseña:"), self.password_edit)
 
         # Remember me checkbox
 
-        self.remember_checkbox = QCheckBox("Recordar sesión")
+        self.remember_checkbox = QCheckBox(tr("Recordar sesión"))
 
         self.remember_checkbox.setChecked(True)
 
@@ -323,7 +324,7 @@ class LoginDialog(QDialog):
 
         # Login button
 
-        self.login_button = QPushButton("Iniciar Sesión")
+        self.login_button = QPushButton(tr("Iniciar Sesión"))
 
         self.login_button.setStyleSheet("""
 
@@ -365,7 +366,7 @@ class LoginDialog(QDialog):
 
         # Register button
 
-        self.register_button = QPushButton("Crear Cuenta")
+        self.register_button = QPushButton(tr("Crear Cuenta"))
 
         self.register_button.setStyleSheet("""
 
@@ -396,7 +397,7 @@ class LoginDialog(QDialog):
 
         # Forgot password link
 
-        forgot_label = QLabel('<a href="#" style="color: #3498db; text-decoration: none;">¿Olvidaste tu contraseña?</a>')
+        forgot_label = QLabel(tr('<a href="#" style="color: #3498db; text-decoration: none;">¿Olvidaste tu contraseña?</a>'))
 
         forgot_label.setAlignment(Qt.AlignCenter)
 
@@ -488,21 +489,21 @@ class LoginDialog(QDialog):
         # Validación básica
 
         if not email or not password:
-            self._show_error("Por favor, completa todos los campos.")
+            self._show_error(tr("Por favor, completa todos los campos."))
 
             return
         if not self._validate_email():
-            self._show_error("Por favor, introduce tu ID de usuario o email.")
+            self._show_error(tr("Por favor, introduce tu ID de usuario o email."))
 
             return
         if len(password) < 6:
-            self._show_error("La contraseña debe tener al menos 6 caracteres.")
+            self._show_error(tr("La contraseña debe tener al menos 6 caracteres."))
 
             return
         # Verificar límite de intentos
 
         if self.validation_attempts >= self.max_attempts:
-            self._show_error("Demasiados intentos fallidos. Por favor, espera antes de intentar de nuevo.")
+            self._show_error(tr("Demasiados intentos fallidos. Por favor, espera antes de intentar de nuevo."))
 
             return
         # Configurar estado de validación
@@ -539,11 +540,11 @@ class LoginDialog(QDialog):
 
         self.error_label.show()
 
-        logger.warning(f"Login error: {message}")
+        logger.warning(tr("Login error: {message}", message=message))
     def _show_success(self, message):
         """Mostrar mensaje de éxito"""
 
-        QMessageBox.information(self, "Éxito", message)
+        QMessageBox.information(self, tr("Éxito"), message)
 
         logger.info(f"Login success: {message}")
     def on_login_success(self):
@@ -561,7 +562,7 @@ class LoginDialog(QDialog):
 
         # Error se muestra en ui.py, aquí solo reseteamos el formulario
 
-        logger.warning(f"Login failed: {error_message}")
+        logger.warning(tr("Login failed: {error_message}", error_message=error_message))
 
         self._reset_form()
     def handle_login_result(self, success: bool, message: str = ""):
@@ -586,7 +587,7 @@ class LoginDialog(QDialog):
         else:
             # Solo resetear el formulario, el error se muestra en ui.py
 
-            logger.warning(f"Login failed: {message}")
+            logger.warning(tr("Login failed: {message}", message=message))
 
             # Resetear intentos si es un error de usuario no verificado
 
@@ -673,7 +674,7 @@ class AccountInfoWidget(QWidget):
 
         # User info section
 
-        user_group = QGroupBox("Información de Cuenta")
+        user_group = QGroupBox(tr("Información de Cuenta"))
 
         user_layout = QVBoxLayout()
 
@@ -695,7 +696,7 @@ class AccountInfoWidget(QWidget):
 
         # Plugin licenses section
 
-        licenses_group = QGroupBox("Plugins Premium")
+        licenses_group = QGroupBox(tr("Plugins Premium"))
 
         licenses_layout = QVBoxLayout()
 
@@ -739,7 +740,7 @@ class AccountInfoWidget(QWidget):
 
         # Manage account button
 
-        self.manage_button = QPushButton("Gestionar Cuenta")
+        self.manage_button = QPushButton(tr("Gestionar Cuenta"))
 
         self.manage_button.setStyleSheet("""
 
@@ -769,7 +770,7 @@ class AccountInfoWidget(QWidget):
 
         # Logout button
 
-        self.logout_button = QPushButton("Cerrar Sesión")
+        self.logout_button = QPushButton(tr("Cerrar Sesión"))
 
         self.logout_button.setStyleSheet("""
 
@@ -811,7 +812,7 @@ class AccountInfoWidget(QWidget):
 
         self.user_email_label.setText(f"{user_info['email']}")
 
-        self.user_id_label.setText(f"ID: {user_info['user_id']}")
+        self.user_id_label.setText(tr("ID: {value}", value=user_info['user_id']))
 
         # Update plugin licenses
 
@@ -828,13 +829,13 @@ class AccountInfoWidget(QWidget):
 
                     item.setText(f"{license_info.plugin_name}")
 
-                    item.setToolTip(f"Plugin ID: {plugin_id}\nDispositivos: {license_info.current_devices}/{license_info.device_limit}")
+                    item.setToolTip(tr("Plugin ID: {plugin_id}\nDispositivos: {current_devices}/{device_limit}", plugin_id=plugin_id, current_devices=license_info.current_devices, device_limit=license_info.device_limit))
 
                     self.licenses_list.addItem(item)
         else:
             item = QListWidgetItem()
 
-            item.setText("No tienes plugins premium activos")
+            item.setText(tr("No tienes plugins premium activos"))
 
             # QListWidgetItem doesn't support setStyleSheet, use setForeground instead
 
@@ -854,9 +855,9 @@ class AccountInfoWidget(QWidget):
 
         reply = QMessageBox.question(
 
-            self, "Cerrar Sesión",
+            self, tr("Cerrar Sesión"),
 
-            "¿Estás seguro de que quieres cerrar sesión?",
+            tr("¿Estás seguro de que quieres cerrar sesión?"),
 
             QMessageBox.Yes | QMessageBox.No,
 
@@ -928,7 +929,7 @@ class AuthPanel(BasePanel):
 
         header_layout = QHBoxLayout()
 
-        title_label = QLabel("Autenticación")
+        title_label = QLabel(tr("Autenticación"))
 
         title_label.setFont(QFont("Arial", 16, QFont.Bold))
 
@@ -939,7 +940,7 @@ class AuthPanel(BasePanel):
 
         # Status indicator
 
-        self.status_label = QLabel("Sin conexión")
+        self.status_label = QLabel(tr("Sin conexión"))
 
         self.status_label.setStyleSheet("QWidget { color: #e74c3c; font-weight: bold; }")
         header_layout.addWidget(self.status_label)
@@ -968,18 +969,18 @@ class AuthPanel(BasePanel):
 
         # Validation info
 
-        validation_group = QGroupBox("Estado de Validación")
+        validation_group = QGroupBox(tr("Estado de Validación"))
 
         validation_layout = QVBoxLayout()
 
-        self.validation_status = QLabel("Última validación: Nunca")
+        self.validation_status = QLabel(tr("Última validación: Nunca"))
 
         self.validation_status.setStyleSheet("QWidget { color: #7f8c8d; font-size: 12px; }")
         validation_layout.addWidget(self.validation_status)
 
         # Force validation button
 
-        self.validate_button = QPushButton("Validar Ahora")
+        self.validate_button = QPushButton(tr("Validar Ahora"))
 
         self.validate_button.setStyleSheet("""
 
@@ -1039,7 +1040,7 @@ class AuthPanel(BasePanel):
 
         # Título
 
-        title_label = QLabel("No has iniciado sesión")
+        title_label = QLabel(tr("No has iniciado sesión"))
 
         title_label.setAlignment(Qt.AlignCenter)
 
@@ -1051,9 +1052,9 @@ class AuthPanel(BasePanel):
 
         info_label = QLabel(
 
-            "Para acceder a plugins premium y funciones avanzadas,\n"
+            tr("Para acceder a plugins premium y funciones avanzadas,\n"
 
-            "haz clic en el botón de cuenta () en la barra superior."
+            "haz clic en el botón de cuenta () en la barra superior.")
         )
 
         info_label.setAlignment(Qt.AlignCenter)
@@ -1085,7 +1086,7 @@ class AuthPanel(BasePanel):
     def on_login_failed(self, error_message: str):
         """Manejador de login fallido con feedback detallado"""
 
-        logger.warning(f"Login failed: {error_message}")
+        logger.warning(tr("Login failed: {error_message}", error_message=error_message))
 
         self.update_display()
 
@@ -1097,7 +1098,7 @@ class AuthPanel(BasePanel):
 
         self.update_display()
 
-        QMessageBox.information(self, "Sesión Cerrada", "Has cerrado sesión correctamente.")
+        QMessageBox.information(self, tr("Sesión Cerrada"), tr("Has cerrado sesión correctamente."))
     def on_plugin_license_changed(self, plugin_id: str, is_licensed: bool):
         """Manejador de cambio de licencia de plugin"""
 
@@ -1107,7 +1108,7 @@ class AuthPanel(BasePanel):
     def on_connection_status_changed(self, is_connected: bool):
         """Manejador de cambio de estado de conexión"""
 
-        status_text = "Conectado" if is_connected else "Sin conexión"
+        status_text = tr("Conectado") if is_connected else tr("Sin conexión")
 
         status_color = "#27ae60" if is_connected else "#e74c3c"
 
@@ -1133,11 +1134,11 @@ class AuthPanel(BasePanel):
 
                 status_color = "#27ae60"
             elif is_connected:
-                status_text = "Conectado (No autenticado)"
+                status_text = tr("Conectado (No autenticado)")
 
                 status_color = "#f39c12"
             else:
-                status_text = "Sin conexión"
+                status_text = tr("Sin conexión")
 
                 status_color = "#e74c3c"
             self.status_label.setText(status_text)
@@ -1163,9 +1164,9 @@ class AuthPanel(BasePanel):
 
             last_validation = datetime.fromtimestamp(self.auth_manager.auth_state.last_validation)
 
-            self.validation_status.setText(f"Última validación: {last_validation.strftime('%H:%M:%S')}")
+            self.validation_status.setText(tr("Última validación: {value}", value=last_validation.strftime('%H:%M:%S')))
         else:
-            self.validation_status.setText("Última validación: Nunca")
+            self.validation_status.setText(tr("Última validación: Nunca"))
     def _disconnect_signals(self):
         """Desconectar todas las señales para prevenir memory leaks"""
         try:
@@ -1216,7 +1217,7 @@ class AuthPanel(BasePanel):
             if hasattr(self, 'status_timer') and self.status_timer:
                 self.status_timer.stop()
         except Exception as e:
-            print(f"Error al desconectar señales del AuthPanel: {str(e)}")
+            print(tr("Error al desconectar señales del AuthPanel: {value}", value=str(e)))
     def closeEvent(self, event):
         """Manejar cierre del panel"""
         self._disconnect_signals()

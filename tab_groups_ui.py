@@ -3,6 +3,7 @@
 Tab Groups UI - Interfaz de usuario para gestionar grupos de pestañas
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QColorDialog, QMessageBox, QDialog, QDialogButtonBox,
@@ -66,7 +67,7 @@ class CreateGroupDialog(QDialog):
     def __init__(self, group=None, parent=None):
         super().__init__(parent)
         self.group = group
-        self.setWindowTitle("Edit Group" if group else "Create New Group")
+        self.setWindowTitle(tr("Edit Group") if group else tr("Create New Group"))
         self.setModal(True)
         self.setMinimumWidth(400)
 
@@ -77,9 +78,9 @@ class CreateGroupDialog(QDialog):
 
         # Nombre del grupo
         name_layout = QHBoxLayout()
-        name_layout.addWidget(QLabel("Group Name:"))
+        name_layout.addWidget(QLabel(tr("Group Name:")))
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("E.g. Work, Personal, Shopping...")
+        self.name_input.setPlaceholderText(tr("E.g. Work, Personal, Shopping..."))
 
         if self.group:
             self.name_input.setText(self.group.name)
@@ -90,7 +91,7 @@ class CreateGroupDialog(QDialog):
 
         # Color del grupo
         color_layout = QHBoxLayout()
-        color_layout.addWidget(QLabel("Group Color:"))
+        color_layout.addWidget(QLabel(tr("Group Color:")))
 
         self.color_button = ColorButton()
         if self.group:
@@ -98,7 +99,7 @@ class CreateGroupDialog(QDialog):
         color_layout.addWidget(self.color_button)
 
         # Colores predefinidos
-        presets_label = QLabel("Quick colors:")
+        presets_label = QLabel(tr("Quick colors:"))
         color_layout.addWidget(presets_label)
 
         for color, _ in TabGroupManager.COLORS[:5]:
@@ -165,11 +166,11 @@ class TabGroupWidget(QFrame):
         info_layout = QVBoxLayout()
 
         # Nombre y contador
-        self.name_label = QLabel(f"<b>{self.group.name}</b>")
+        self.name_label = QLabel(tr("<b>{name}</b>", name=self.group.name))
         self.name_label.setStyleSheet("font-size: 14px;")
         info_layout.addWidget(self.name_label)
 
-        self.count_label = QLabel(f"{len(self.group.tab_indices)} tabs")
+        self.count_label = QLabel(tr("{count} tabs", count=len(self.group.tab_indices)))
         self.count_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         info_layout.addWidget(self.count_label)
 
@@ -185,7 +186,7 @@ class TabGroupWidget(QFrame):
         view_tabs_btn = QPushButton()
         view_tabs_btn.setIcon(_themed_icon("list"))
         view_tabs_btn.setFixedSize(30, 30)
-        view_tabs_btn.setToolTip("View tabs in this group")
+        view_tabs_btn.setToolTip(tr("View tabs in this group"))
         view_tabs_btn.clicked.connect(lambda: self.tabsRequested.emit(self.group.id))
         layout.addWidget(view_tabs_btn)
 
@@ -193,7 +194,7 @@ class TabGroupWidget(QFrame):
         edit_btn = QPushButton()
         edit_btn.setIcon(_themed_icon("edit"))
         edit_btn.setFixedSize(30, 30)
-        edit_btn.setToolTip("Edit group")
+        edit_btn.setToolTip(tr("Edit group"))
         edit_btn.clicked.connect(lambda: self.editRequested.emit(self.group.id))
         layout.addWidget(edit_btn)
 
@@ -201,7 +202,7 @@ class TabGroupWidget(QFrame):
         delete_btn = QPushButton()
         delete_btn.setIcon(_themed_icon("ide_trash"))
         delete_btn.setFixedSize(30, 30)
-        delete_btn.setToolTip("Delete group")
+        delete_btn.setToolTip(tr("Delete group"))
         delete_btn.clicked.connect(lambda: self.deleteRequested.emit(self.group.id))
         layout.addWidget(delete_btn)
     def update_style(self):
@@ -219,8 +220,8 @@ class TabGroupWidget(QFrame):
     def update_group(self, group: TabGroup):
         """Actualizar datos del grupo"""
         self.group = group
-        self.name_label.setText(f"<b>{group.name}</b>")
-        self.count_label.setText(f"{len(group.tab_indices)} tabs")
+        self.name_label.setText(tr("<b>{name}</b>", name=group.name))
+        self.count_label.setText(tr("{count} tabs", count=len(group.tab_indices)))
         self.color_indicator.setStyleSheet(f"""
             QLabel {{
                 background-color: {group.color};
@@ -253,18 +254,18 @@ class TabGroupsPanel(QWidget):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(10, 10, 10, 10)
 
-        title = QLabel("<h2>Tab Groups</h2>")
+        title = QLabel(tr("<h2>Tab Groups</h2>"))
         header_layout.addWidget(title)
 
         header_layout.addStretch()
 
         # Botón de crear grupo
-        create_btn = QPushButton("Create Group")
+        create_btn = QPushButton(tr("Create Group"))
         create_btn.clicked.connect(self.create_group)
         header_layout.addWidget(create_btn)
 
         # Botón de crear grupo con tabs seleccionados
-        create_from_tabs_btn = QPushButton("Group Selected Tabs")
+        create_from_tabs_btn = QPushButton(tr("Group Selected Tabs"))
         create_from_tabs_btn.clicked.connect(self.create_group_from_selected)
         header_layout.addWidget(create_from_tabs_btn)
 
@@ -288,14 +289,14 @@ class TabGroupsPanel(QWidget):
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(10, 5, 10, 5)
 
-        self.info_label = QLabel("No groups yet")
+        self.info_label = QLabel(tr("No groups yet"))
         self.info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         footer_layout.addWidget(self.info_label)
 
         footer_layout.addStretch()
 
         # Botón para limpiar todos los grupos
-        clear_all_btn = QPushButton("Clear All Groups")
+        clear_all_btn = QPushButton(tr("Clear All Groups"))
         clear_all_btn.clicked.connect(self.clear_all_groups)
         footer_layout.addWidget(clear_all_btn)
 
@@ -318,29 +319,29 @@ class TabGroupsPanel(QWidget):
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_group_data()
             if not data["name"]:
-                QMessageBox.warning(self, "Error", "Please enter a group name")
+                QMessageBox.warning(self, tr("Error"), tr("Please enter a group name"))
                 return
             group = self.group_manager.create_group(
                 name=data["name"],
                 color=data["color"]
             )
 
-            QMessageBox.information(self, "Success", f"Group '{group.name}' created!")
+            QMessageBox.information(self, tr("Success"), tr("Group '{name}' created!", name=group.name))
     def create_group_from_selected(self):
         """Crear grupo con las pestañas seleccionadas"""
         if not self.tab_manager:
-            QMessageBox.warning(self, "Error", "Tab manager not available")
+            QMessageBox.warning(self, tr("Error"), tr("Tab manager not available"))
             return
         # Obtener pestaña actual
         current_index = self.tab_manager.tabs.currentIndex()
         if current_index < 0:
-            QMessageBox.warning(self, "Error", "No tab selected")
+            QMessageBox.warning(self, tr("Error"), tr("No tab selected"))
             return
         dialog = CreateGroupDialog(parent=self)
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_group_data()
             if not data["name"]:
-                QMessageBox.warning(self, "Error", "Please enter a group name")
+                QMessageBox.warning(self, tr("Error"), tr("Please enter a group name"))
                 return
             # Crear grupo con la pestaña actual
             group = self.group_manager.create_group(
@@ -349,8 +350,8 @@ class TabGroupsPanel(QWidget):
                 tab_indices=[current_index]
             )
 
-            QMessageBox.information(self, "Success",
-                                  f"Group '{group.name}' created with 1 tab!")
+            QMessageBox.information(self, tr("Success"),
+                                  tr("Group '{name}' created with 1 tab!", name=group.name))
     def edit_group(self, group_id: str):
         """Editar grupo existente"""
         group = self.group_manager.get_group(group_id)
@@ -369,8 +370,8 @@ class TabGroupsPanel(QWidget):
         if not group:
             return
         reply = QMessageBox.question(
-            self, "Confirm Delete",
-            f"Delete group '{group.name}'?\n\nTabs will not be closed, only ungrouped.",
+            self, tr("Confirm Delete"),
+            tr("Delete group '{name}'?\n\nTabs will not be closed, only ungrouped.", name=group.name),
             QMessageBox.Yes | QMessageBox.No
         )
 
@@ -389,8 +390,8 @@ class TabGroupsPanel(QWidget):
         if tabs_info:
             msg = f"Tabs in group '{group.name}':\n\n" + "\n".join(tabs_info)
         else:
-            msg = f"No tabs in group '{group.name}'"
-        QMessageBox.information(self, f"Group: {group.name}", msg)
+            msg = tr("No tabs in group '{name}'", name=group.name)
+        QMessageBox.information(self, tr("Group: {name}", name=group.name), msg)
     def toggle_collapse(self, group_id: str):
         """Colapsar/expandir grupo"""
         self.group_manager.toggle_group_collapse(group_id)
@@ -405,11 +406,11 @@ class TabGroupsPanel(QWidget):
         groups = self.group_manager.get_all_groups()
 
         if not groups:
-            no_groups_label = QLabel("No groups created yet.\n\nCreate a group to organize your tabs!")
+            no_groups_label = QLabel(tr("No groups created yet.\n\nCreate a group to organize your tabs!"))
             no_groups_label.setAlignment(Qt.AlignCenter)
             no_groups_label.setStyleSheet("QWidget { color: #999; padding: 40px; font-size: 13px; }")
             self.groups_layout.addWidget(no_groups_label)
-            self.info_label.setText("No groups")
+            self.info_label.setText(tr("No groups"))
             return
         # Crear widgets para cada grupo
         for group in groups:
@@ -421,12 +422,12 @@ class TabGroupsPanel(QWidget):
             self.groups_layout.addWidget(widget)
         # Actualizar info
         total_tabs = sum(len(g.tab_indices) for g in groups)
-        self.info_label.setText(f"{len(groups)} groups • {total_tabs} tabs grouped")
+        self.info_label.setText(tr("{count} groups • {total_tabs} tabs grouped", count=len(groups), total_tabs=total_tabs))
     def clear_all_groups(self):
         """Limpiar todos los grupos"""
         reply = QMessageBox.question(
-            self, "Confirm Clear All",
-            "Delete ALL groups?\n\nTabs will not be closed, only ungrouped.",
+            self, tr("Confirm Clear All"),
+            tr("Delete ALL groups?\n\nTabs will not be closed, only ungrouped."),
             QMessageBox.Yes | QMessageBox.No
         )
 

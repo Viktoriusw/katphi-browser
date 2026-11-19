@@ -20,6 +20,7 @@ estas páginas.
 """
 from __future__ import annotations
 
+from i18n import tr
 import logging
 import mimetypes
 import os
@@ -119,7 +120,7 @@ class _AppSchemeHandler(QWebEngineUrlSchemeHandler):
                 job.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
                 return
             if not self._initiator_allowed(job, host):
-                logger.warning("[app_scheme] Petición a %s bloqueada (iniciador %s)",
+                logger.warning(tr("[app_scheme] Petición a %s bloqueada (iniciador %s)"),
                                url.toString(), job.initiator().toString())
                 job.fail(QWebEngineUrlRequestJob.Error.RequestDenied)
                 return
@@ -138,7 +139,7 @@ class _AppSchemeHandler(QWebEngineUrlSchemeHandler):
             content_type, data = result
             self._reply(job, content_type, data, entry)
         except Exception as e:
-            logger.error("[app_scheme] Error sirviendo %s: %s", job.requestUrl().toString(), e)
+            logger.error(tr("[app_scheme] Error sirviendo %s: %s"), job.requestUrl().toString(), e)
             try:
                 job.fail(QWebEngineUrlRequestJob.Error.RequestFailed)
             except Exception:
@@ -184,7 +185,7 @@ class _AppSchemeHandler(QWebEngineUrlSchemeHandler):
             job.setAdditionalResponseHeaders(
                 {QByteArray(k): [QByteArray(v)] for k, v in headers.items()})
         except Exception as e:
-            logger.error("[app_scheme] No se pudieron fijar las cabeceras: %s", e)
+            logger.error(tr("[app_scheme] No se pudieron fijar las cabeceras: %s"), e)
         buf = QBuffer(job)
         buf.setData(QByteArray(data))
         buf.open(QIODevice.OpenModeFlag.ReadOnly)
@@ -211,4 +212,4 @@ def install_on_profile(profile) -> None:
             profile.installUrlSchemeHandler(_SCHEME_B, _handler)
         _profiles.add(key)
     except Exception as e:
-        logger.error("[app_scheme] No se pudo instalar en el perfil: %s", e)
+        logger.error(tr("[app_scheme] No se pudo instalar en el perfil: %s"), e)

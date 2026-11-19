@@ -15,6 +15,7 @@ Uso:
 
 from __future__ import annotations
 
+from i18n import tr
 import hashlib
 import logging
 from pathlib import Path
@@ -130,9 +131,9 @@ class FaviconManager(QObject):
                         if entry.is_file() or entry.is_symlink():
                             entry.unlink()
                     except OSError as exc:
-                        logger.debug("No se pudo borrar %s: %s", entry, exc)
+                        logger.debug(tr("No se pudo borrar %s: %s"), entry, exc)
         except OSError as exc:
-            logger.debug("Error vaciando la caché de favicons: %s", exc)
+            logger.debug(tr("Error vaciando la caché de favicons: %s"), exc)
 
     def prefetch(self, url: str) -> None:
         """Inicia la descarga en background sin retornar resultado."""
@@ -153,7 +154,7 @@ class FaviconManager(QObject):
             self._CACHE_DIR.mkdir(parents=True, exist_ok=True)
             pix.save(str(self._disk_path(domain)), "PNG")
         except Exception as exc:
-            logger.debug("No se pudo guardar el favicon de %s: %s", domain, exc)
+            logger.debug(tr("No se pudo guardar el favicon de %s: %s"), domain, exc)
 
     def _from_disk(self, domain: str) -> QIcon | None:
         if self._private:
@@ -197,7 +198,7 @@ class FaviconManager(QObject):
             else:
                 self._nam.setProxy(QNetworkProxy(QNetworkProxy.ProxyType.DefaultProxy))
         except Exception as exc:
-            logger.debug("Favicons: no se pudo configurar el proxy: %s", exc)
+            logger.debug(tr("Favicons: no se pudo configurar el proxy: %s"), exc)
 
     def _on_reply(self, reply: QNetworkReply, domain: str, *, https_attempt: bool) -> None:
         try:
@@ -226,7 +227,7 @@ class FaviconManager(QObject):
             else:
                 self._pending.discard(domain)
         except Exception as exc:
-            logger.debug("Error favicon %s: %s", domain, exc)
+            logger.debug(tr("Error favicon %s: %s"), domain, exc)
             self._pending.discard(domain)
         finally:
             reply.deleteLater()

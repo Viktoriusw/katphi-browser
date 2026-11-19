@@ -11,6 +11,7 @@ Características:
 - NavbarLoadingBar: barra de progreso de 2px en navbar
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QStatusBar, QLabel, QWidget, QHBoxLayout,
                                QPushButton, QMessageBox, QFrame)
 from PySide6.QtCore import Qt, QUrl, QByteArray, QPropertyAnimation, QEasingCurve, QTimer, QSize
@@ -20,21 +21,21 @@ from PySide6.QtSvg import QSvgRenderer
 
 # ── SVG inline para el indicador SSL ──────────────────────────────────────────
 
-_SVG_LOCK = """<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+_SVG_LOCK = tr("""<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect x="5" y="11" width="14" height="10" rx="2" fill="{color}"/>
   <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="{color}" stroke-width="2"
         stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="12" cy="16" r="1.2" fill="white"/>
-</svg>"""
+</svg>""")
 
-_SVG_LOCK_OPEN = """<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+_SVG_LOCK_OPEN = tr("""<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect x="5" y="11" width="14" height="10" rx="2" fill="{color}"/>
   <path d="M8 11V7a4 4 0 0 1 8 0" stroke="{color}" stroke-width="2"
         stroke-linecap="round" stroke-linejoin="round"/>
   <line x1="16" y1="4" x2="19" y2="7" stroke="{color}" stroke-width="2"
         stroke-linecap="round"/>
   <circle cx="12" cy="16" r="1.2" fill="white"/>
-</svg>"""
+</svg>""")
 
 _SVG_WARN = """<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
@@ -82,12 +83,12 @@ class SslIndicatorButton(QLabel):
         if url_string.startswith("https://"):
             px = _svg_to_pixmap(_SVG_LOCK, "#5f9ea0", self._SIZE)
             self.setPixmap(px)
-            self.setToolTip("Conexión segura (HTTPS)")
+            self.setToolTip(tr("Conexión segura (HTTPS)"))
             self.setVisible(True)
         elif url_string.startswith("http://"):
             px = _svg_to_pixmap(_SVG_WARN, "#e5743a", self._SIZE)
             self.setPixmap(px)
-            self.setToolTip("Conexión no segura — este sitio no usa HTTPS")
+            self.setToolTip(tr("Conexión no segura — este sitio no usa HTTPS"))
             self.setVisible(True)
         else:
             self.clear()
@@ -107,13 +108,11 @@ class SslIndicatorButton(QLabel):
         url = QUrl(self._current_url)
         host = url.host() or self._current_url
         if self._current_url.startswith("https://"):
-            title = "Conexión segura"
-            body  = (f"<b>{host}</b> usa HTTPS.<br><br>"
-                     "Tu conexión está cifrada y el sitio ha verificado su identidad.")
+            title = tr("Conexión segura")
+            body  = (tr("<b>{host}</b> usa HTTPS.<br><br>Tu conexión está cifrada y el sitio ha verificado su identidad.", host=host))
         elif self._current_url.startswith("http://"):
-            title = "Conexión no segura"
-            body  = (f"<b>{host}</b> no usa HTTPS.<br><br>"
-                     "La información enviada a este sitio puede ser interceptada por terceros.")
+            title = tr("Conexión no segura")
+            body  = (tr("<b>{host}</b> no usa HTTPS.<br><br>La información enviada a este sitio puede ser interceptada por terceros.", host=host))
         else:
             return
         msg = QMessageBox()
@@ -213,7 +212,7 @@ class ModernStatusBar(QStatusBar):
 
         if url_string.startswith('https://'):
             self._set_ssl_icon("lock", "#28a745")
-            self.ssl_text.setText("Seguro")
+            self.ssl_text.setText(tr("Seguro"))
             self.ssl_widget.setStyleSheet("""
                 QWidget {
                     background-color: transparent;
@@ -223,10 +222,10 @@ class ModernStatusBar(QStatusBar):
                     font-weight: bold;
                 }
             """)
-            self.ssl_widget.setToolTip("Conexión segura (HTTPS)\nClick para ver detalles del certificado")
+            self.ssl_widget.setToolTip(tr("Conexión segura (HTTPS)\nClick para ver detalles del certificado"))
         elif url_string.startswith('http://'):
             self._set_ssl_icon("alert-triangle", "#dc3545")
-            self.ssl_text.setText("No seguro")
+            self.ssl_text.setText(tr("No seguro"))
             self.ssl_widget.setStyleSheet("""
                 QWidget {
                     background-color: transparent;
@@ -236,10 +235,10 @@ class ModernStatusBar(QStatusBar):
                     font-weight: bold;
                 }
             """)
-            self.ssl_widget.setToolTip("Conexión no segura (HTTP)")
+            self.ssl_widget.setToolTip(tr("Conexión no segura (HTTP)"))
         elif url_string.startswith('file://'):
             self._set_ssl_icon("folder", None)
-            self.ssl_text.setText("Local")
+            self.ssl_text.setText(tr("Local"))
             self.ssl_widget.setStyleSheet("""
                 QWidget {
                     background-color: transparent;
@@ -248,7 +247,7 @@ class ModernStatusBar(QStatusBar):
                     color: #6c757d;
                 }
             """)
-            self.ssl_widget.setToolTip("Archivo local")
+            self.ssl_widget.setToolTip(tr("Archivo local"))
         else:
             self.ssl_icon.clear()
             self.ssl_text.setText("")
@@ -259,9 +258,9 @@ class ModernStatusBar(QStatusBar):
     def update_load_progress(self, progress):
         """Actualizar progreso de carga (0-100)"""
         if progress < 100:
-            self.load_label.setText(f"Cargando... {progress}%")
+            self.load_label.setText(tr("Cargando... {progress}%", progress=progress))
         else:
-            self.load_label.setText("Completado")
+            self.load_label.setText(tr("Completado"))
             # Limpiar después de 2 segundos
             from PySide6.QtCore import QTimer
             QTimer.singleShot(2000, lambda: self.load_label.setText(""))
@@ -275,7 +274,7 @@ class ModernStatusBar(QStatusBar):
             self.zoom_label.setStyleSheet("QLabel { font-size: 11px; font-weight: bold; color: #007bff; }")
         else:
             self.zoom_label.setStyleSheet("QLabel { font-size: 11px; font-weight: bold; }")
-        self.zoom_label.setToolTip(f"Zoom: {zoom_percent}%\nClick para restablecer a 100%")
+        self.zoom_label.setToolTip(tr("Zoom: {zoom_percent}%\nClick para restablecer a 100%", zoom_percent=zoom_percent))
     def reset_zoom_on_click(self, event):
         """Restablecer zoom al hacer click en el indicador"""
         # Emitir señal para que el navegador restablezca el zoom
@@ -291,24 +290,10 @@ class ModernStatusBar(QStatusBar):
 
         # Información básica (en una implementación real, obtendríamos
         # info del certificado vía QWebEngineCertificateError)
-        info_text = f"""
-        <h3>Información de Seguridad</h3>
-
-        <p><b>Sitio web:</b> {host}</p>
-        <p><b>Protocolo:</b> HTTPS (Seguro)</p>
-
-        <p><b>Conexión:</b></p>
-        <ul>
-            <li>Tu conexión a este sitio está encriptada</li>
-            <li>Los certificados son válidos</li>
-            <li>La identidad del sitio ha sido verificada</li>
-        </ul>
-
-        <p><small>Para ver detalles completos del certificado, abre las herramientas de desarrollador.</small></p>
-        """
+        info_text = tr("\n        <h3>Información de Seguridad</h3>\n\n        <p><b>Sitio web:</b> {host}</p>\n        <p><b>Protocolo:</b> HTTPS (Seguro)</p>\n\n        <p><b>Conexión:</b></p>\n        <ul>\n            <li>Tu conexión a este sitio está encriptada</li>\n            <li>Los certificados son válidos</li>\n            <li>La identidad del sitio ha sido verificada</li>\n        </ul>\n\n        <p><small>Para ver detalles completos del certificado, abre las herramientas de desarrollador.</small></p>\n        ", host=host)
 
         msg = QMessageBox(self)
-        msg.setWindowTitle("Información de Seguridad")
+        msg.setWindowTitle(tr("Información de Seguridad"))
         msg.setTextFormat(Qt.RichText)
         msg.setText(info_text)
         msg.setIcon(QMessageBox.Information)

@@ -11,6 +11,7 @@ Características:
 - Configuración persistente en SQLite
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                                QLabel, QComboBox, QCheckBox, QListWidget, QLineEdit,
                                QGroupBox, QTextEdit, QMessageBox, QTabWidget, QWidget,
@@ -251,7 +252,7 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
             else:  # exact
                 return pattern
         except Exception as e:
-            print(f"[WARNING] Error compiling pattern '{pattern}': {e}")
+            print(tr("[WARNING] Error compiling pattern '{pattern}': {e}", pattern=pattern, e=e))
             return None
     def save_configuration(self):
         """Guardar configuración en la base de datos"""
@@ -366,7 +367,7 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
                     if pattern.search(url):
                         return True
             except Exception as e:
-                print(f"[WARNING] Error matching pattern: {e}")
+                print(tr("[WARNING] Error matching pattern: {e}", e=e))
                 continue
         return False
     def apply_to_profile(self, profile):
@@ -444,7 +445,7 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
             conn.commit()
             conn.close()
         except Exception as e:
-            print(f"[WARNING] Error saving log to database: {e}")
+            print(tr("[WARNING] Error saving log to database: {e}", e=e))
     def add_blocked_pattern(self, pattern, pattern_type='wildcard'):
         """Agregar patrón de bloqueo"""
         try:
@@ -463,7 +464,7 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
             self.load_configuration()
             return True
         except Exception as e:
-            print(f"[ERROR] Error adding blocked pattern: {e}")
+            print(tr("[ERROR] Error adding blocked pattern: {e}", e=e))
             return False
     def remove_blocked_pattern(self, pattern):
         """Eliminar patrón de bloqueo"""
@@ -480,7 +481,7 @@ class NetworkInterceptor(QWebEngineUrlRequestInterceptor):
             self.load_configuration()
             return True
         except Exception as e:
-            print(f"[ERROR] Error removing blocked pattern: {e}")
+            print(tr("[ERROR] Error removing blocked pattern: {e}", e=e))
             return False
     def get_blocked_patterns(self):
         """Obtener lista de patrones bloqueados"""
@@ -517,7 +518,7 @@ class NetworkSettingsDialog(QDialog):
         super().__init__(parent)
         self.interceptor = network_interceptor
 
-        self.setWindowTitle("Configuración de Red")
+        self.setWindowTitle(tr("Configuración de Red"))
         self.setModal(True)
         self.setMinimumSize(700, 500)
 
@@ -528,7 +529,7 @@ class NetworkSettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Configuración de Red e Interceptación")
+        title = QLabel(tr("Configuración de Red e Interceptación"))
         title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
@@ -541,15 +542,15 @@ class NetworkSettingsDialog(QDialog):
 
         # Tab 2: Bloqueo de URLs
         block_tab = self.create_blocking_tab()
-        tabs.addTab(block_tab, "Bloqueo de URLs")
+        tabs.addTab(block_tab, tr("Bloqueo de URLs"))
 
         # Tab 3: Headers
         headers_tab = self.create_headers_tab()
-        tabs.addTab(headers_tab, "Headers HTTP")
+        tabs.addTab(headers_tab, tr("Headers HTTP"))
 
         # Tab 4: Estadísticas
         stats_tab = self.create_stats_tab()
-        tabs.addTab(stats_tab, "Estadísticas")
+        tabs.addTab(stats_tab, tr("Estadísticas"))
 
         layout.addWidget(tabs)
 
@@ -567,26 +568,26 @@ class NetworkSettingsDialog(QDialog):
         layout = QVBoxLayout(widget)
 
         # Selector de User-Agent
-        ua_group = QGroupBox("Seleccionar User-Agent")
+        ua_group = QGroupBox(tr("Seleccionar User-Agent"))
         ua_layout = QVBoxLayout()
 
         self.ua_combo = QComboBox()
         self.ua_combo.addItems([
-            'Chrome (Windows)',
-            'Firefox (Windows)',
-            'Brave (Windows)',
-            'Safari (macOS)',
-            'Edge (Windows)',
-            'Android (Mobile)',
-            'iOS (iPhone)',
-            'Custom (Personalizado)'
+            tr('Chrome (Windows)'),
+            tr('Firefox (Windows)'),
+            tr('Brave (Windows)'),
+            tr('Safari (macOS)'),
+            tr('Edge (Windows)'),
+            tr('Android (Mobile)'),
+            tr('iOS (iPhone)'),
+            tr('Custom (Personalizado)')
         ])
         self.ua_combo.currentTextChanged.connect(self.on_ua_changed)
-        ua_layout.addWidget(QLabel("User-Agent predefinido:"))
+        ua_layout.addWidget(QLabel(tr("User-Agent predefinido:")))
         ua_layout.addWidget(self.ua_combo)
 
         # User-Agent ACTIVO en el navegador (el que se está usando ahora)
-        ua_layout.addWidget(QLabel("\nUser-Agent ACTIVO (en uso ahora):"))
+        ua_layout.addWidget(QLabel(tr("\nUser-Agent ACTIVO (en uso ahora):")))
         self.ua_active = QTextEdit()
         self.ua_active.setReadOnly(True)
         self.ua_active.setMaximumHeight(60)
@@ -594,7 +595,7 @@ class NetworkSettingsDialog(QDialog):
         ua_layout.addWidget(self.ua_active)
 
         # Preview del User-Agent seleccionado (el que se aplicará)
-        ua_layout.addWidget(QLabel("\nPreview del User-Agent seleccionado:"))
+        ua_layout.addWidget(QLabel(tr("\nPreview del User-Agent seleccionado:")))
         self.ua_preview = QTextEdit()
         self.ua_preview.setReadOnly(True)
         self.ua_preview.setMaximumHeight(60)
@@ -603,10 +604,10 @@ class NetworkSettingsDialog(QDialog):
 
         # Custom User-Agent
         self.custom_ua_input = QLineEdit()
-        self.custom_ua_input.setPlaceholderText("Ingresa un User-Agent personalizado...")
+        self.custom_ua_input.setPlaceholderText(tr("Ingresa un User-Agent personalizado..."))
         self.custom_ua_input.setEnabled(False)
         self.custom_ua_input.textChanged.connect(self.update_ua_preview)
-        ua_layout.addWidget(QLabel("\nUser-Agent personalizado:"))
+        ua_layout.addWidget(QLabel(tr("\nUser-Agent personalizado:")))
         ua_layout.addWidget(self.custom_ua_input)
 
         ua_group.setLayout(ua_layout)
@@ -614,8 +615,8 @@ class NetworkSettingsDialog(QDialog):
 
         # Info
         info_label = QLabel(
-            "Tip: Cambiar el User-Agent puede ayudar a acceder a sitios que bloquean "
-            "ciertos navegadores o para testing de compatibilidad."
+            tr("Tip: Cambiar el User-Agent puede ayudar a acceder a sitios que bloquean "
+            "ciertos navegadores o para testing de compatibilidad.")
         )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-top: 10px; }")
@@ -629,7 +630,7 @@ class NetworkSettingsDialog(QDialog):
         layout = QVBoxLayout(widget)
 
         # Lista de URLs bloqueadas
-        block_group = QGroupBox("URLs y Patrones Bloqueados")
+        block_group = QGroupBox(tr("URLs y Patrones Bloqueados"))
         block_layout = QVBoxLayout()
 
         self.blocked_list = QListWidget()
@@ -639,11 +640,11 @@ class NetworkSettingsDialog(QDialog):
         # Botones de gestión
         btn_layout = QHBoxLayout()
 
-        add_btn = QPushButton("Agregar")
+        add_btn = QPushButton(tr("Agregar"))
         add_btn.clicked.connect(self.add_block_pattern)
         btn_layout.addWidget(add_btn)
 
-        remove_btn = QPushButton("Eliminar")
+        remove_btn = QPushButton(tr("Eliminar"))
         remove_btn.clicked.connect(self.remove_block_pattern)
         btn_layout.addWidget(remove_btn)
 
@@ -654,20 +655,20 @@ class NetworkSettingsDialog(QDialog):
         layout.addWidget(block_group)
 
         # Tipo de patrón
-        pattern_group = QGroupBox("Agregar Nuevo Patrón")
+        pattern_group = QGroupBox(tr("Agregar Nuevo Patrón"))
         pattern_layout = QVBoxLayout()
 
         self.pattern_input = QLineEdit()
-        self.pattern_input.setPlaceholderText("Ej: *.doubleclick.net o https://ads.example.com/*")
-        pattern_layout.addWidget(QLabel("Patrón o URL:"))
+        self.pattern_input.setPlaceholderText(tr("Ej: *.doubleclick.net o https://ads.example.com/*"))
+        pattern_layout.addWidget(QLabel(tr("Patrón o URL:")))
         pattern_layout.addWidget(self.pattern_input)
 
         self.pattern_type_combo = QComboBox()
-        self.pattern_type_combo.addItems(['Wildcard (* y ?)', 'Regex (Expresión regular)', 'Exacta'])
-        pattern_layout.addWidget(QLabel("Tipo de patrón:"))
+        self.pattern_type_combo.addItems([tr('Wildcard (* y ?)'), tr('Regex (Expresión regular)'), tr('Exacta')])
+        pattern_layout.addWidget(QLabel(tr("Tipo de patrón:")))
         pattern_layout.addWidget(self.pattern_type_combo)
 
-        quick_add_btn = QPushButton("Agregar Patrón")
+        quick_add_btn = QPushButton(tr("Agregar Patrón"))
         quick_add_btn.clicked.connect(self.quick_add_pattern)
         pattern_layout.addWidget(quick_add_btn)
 
@@ -676,10 +677,10 @@ class NetworkSettingsDialog(QDialog):
 
         # Ejemplos
         examples_label = QLabel(
-            "Ejemplos:\n"
+            tr("Ejemplos:\n"
             "• Wildcard: *.ads.com, *tracker*, https://example.com/ads/*\n"
             "• Regex: ^https?://.*\\.ads\\..*$\n"
-            "• Exacta: https://evil.com/malware.js"
+            "• Exacta: https://evil.com/malware.js")
         )
         examples_label.setWordWrap(True)
         examples_label.setStyleSheet("QWidget { color: #666; font-size: 10px; margin-top: 10px; background-color: #f9f9f9; padding: 8px; border-radius: 4px; }")
@@ -693,24 +694,24 @@ class NetworkSettingsDialog(QDialog):
         layout = QVBoxLayout(widget)
 
         # Headers automáticos
-        auto_group = QGroupBox("Headers Automáticos")
+        auto_group = QGroupBox(tr("Headers Automáticos"))
         auto_layout = QVBoxLayout()
 
-        self.dnt_check = QCheckBox("Enviar header 'Do Not Track' (DNT: 1)")
+        self.dnt_check = QCheckBox(tr("Enviar header 'Do Not Track' (DNT: 1)"))
         self.dnt_check.setChecked(True)
         auto_layout.addWidget(self.dnt_check)
 
-        self.referer_check = QCheckBox("Bloquear Referer (privacidad)")
+        self.referer_check = QCheckBox(tr("Bloquear Referer (privacidad)"))
         auto_layout.addWidget(self.referer_check)
 
         auto_group.setLayout(auto_layout)
         layout.addWidget(auto_group)
 
         # Logging
-        log_group = QGroupBox("Registro de Peticiones")
+        log_group = QGroupBox(tr("Registro de Peticiones"))
         log_layout = QVBoxLayout()
 
-        self.logging_check = QCheckBox("Habilitar logging de peticiones HTTP (para debugging)")
+        self.logging_check = QCheckBox(tr("Habilitar logging de peticiones HTTP (para debugging)"))
         log_layout.addWidget(self.logging_check)
 
         log_group.setLayout(log_layout)
@@ -724,7 +725,7 @@ class NetworkSettingsDialog(QDialog):
         layout = QVBoxLayout(widget)
 
         # Estadísticas
-        stats_group = QGroupBox("Estadísticas de Interceptación")
+        stats_group = QGroupBox(tr("Estadísticas de Interceptación"))
         stats_layout = QVBoxLayout()
 
         self.stats_text = QTextEdit()
@@ -733,12 +734,12 @@ class NetworkSettingsDialog(QDialog):
         stats_layout.addWidget(self.stats_text)
 
         # Botón para actualizar stats
-        refresh_btn = QPushButton("Actualizar Estadísticas")
+        refresh_btn = QPushButton(tr("Actualizar Estadísticas"))
         refresh_btn.clicked.connect(self.update_stats)
         stats_layout.addWidget(refresh_btn)
 
         # Botón para resetear stats
-        reset_btn = QPushButton("Resetear Estadísticas")
+        reset_btn = QPushButton(tr("Resetear Estadísticas"))
         reset_btn.clicked.connect(self.reset_stats)
         stats_layout.addWidget(reset_btn)
 
@@ -767,7 +768,7 @@ class NetworkSettingsDialog(QDialog):
             self.custom_ua_input.setText(self.interceptor.custom_user_agent)
         # Mostrar User-Agent ACTIVO (el que está en uso ahora)
         active_ua = self.interceptor._get_user_agent()
-        self.ua_active.setText(f"{active_ua}\n\n(Tipo: {ua_type})")
+        self.ua_active.setText(tr("{active_ua}\n\n(Tipo: {ua_type})", active_ua=active_ua, ua_type=ua_type))
 
         # Headers
         self.dnt_check.setChecked(self.interceptor.enable_dnt)
@@ -804,7 +805,7 @@ class NetworkSettingsDialog(QDialog):
         selected = self.ua_combo.currentText()
 
         if 'Custom' in selected:
-            ua = self.custom_ua_input.text() or "(vacío - se usará Chrome por defecto)"
+            ua = self.custom_ua_input.text() or tr("(vacío - se usará Chrome por defecto)")
         else:
             # Mapear el texto del combo al tipo de UA
             ua_map = {
@@ -827,7 +828,7 @@ class NetworkSettingsDialog(QDialog):
         pattern = self.pattern_input.text().strip()
 
         if not pattern:
-            QMessageBox.warning(self, "Patrón vacío", "Por favor ingresa un patrón o URL.")
+            QMessageBox.warning(self, tr("Patrón vacío"), tr("Por favor ingresa un patrón o URL."))
             return
         # Determinar tipo
         type_text = self.pattern_type_combo.currentText()
@@ -841,11 +842,11 @@ class NetworkSettingsDialog(QDialog):
         if self.interceptor.add_blocked_pattern(pattern, pattern_type):
             self.pattern_input.clear()
             self.refresh_blocked_list()
-            QMessageBox.information(self, "Patrón agregado",
-                                  f"El patrón '{pattern}' ha sido agregado.")
+            QMessageBox.information(self, tr("Patrón agregado"),
+                                  tr("El patrón '{pattern}' ha sido agregado.", pattern=pattern))
         else:
-            QMessageBox.critical(self, "Error",
-                               "No se pudo agregar el patrón.")
+            QMessageBox.critical(self, tr("Error"),
+                               tr("No se pudo agregar el patrón."))
     def remove_block_pattern(self):
         """Eliminar patrón seleccionado"""
         current_item = self.blocked_list.currentItem()
@@ -855,53 +856,44 @@ class NetworkSettingsDialog(QDialog):
 
         reply = QMessageBox.question(
             self,
-            "Eliminar patrón",
-            f"¿Eliminar el patrón '{pattern}'?",
+            tr("Eliminar patrón"),
+            tr("¿Eliminar el patrón '{pattern}'?", pattern=pattern),
             QMessageBox.Yes | QMessageBox.No
         )
 
         if reply == QMessageBox.Yes:
             if self.interceptor.remove_blocked_pattern(pattern):
                 self.refresh_blocked_list()
-                QMessageBox.information(self, "Patrón eliminado",
-                                      f"El patrón '{pattern}' ha sido eliminado.")
+                QMessageBox.information(self, tr("Patrón eliminado"),
+                                      tr("El patrón '{pattern}' ha sido eliminado.", pattern=pattern))
     def update_stats(self):
         """Actualizar estadísticas"""
         stats = self.interceptor.get_stats()
 
-        stats_text = f"""
-Estadísticas de Interceptación
-
-Total de peticiones: {stats['total_requests']:,}
-Peticiones bloqueadas: {stats['blocked_requests']:,}
-Porcentaje bloqueado: {stats['blocked_percentage']:.2f}%
-
-User-Agent actual: {stats['user_agent']}
-Patrones de bloqueo activos: {stats['patterns_count']}
-        """
+        stats_text = tr("\nEstadísticas de Interceptación\n\nTotal de peticiones: {value:,}\nPeticiones bloqueadas: {value2:,}\nPorcentaje bloqueado: {value3:.2f}%\n\nUser-Agent actual: {value4}\nPatrones de bloqueo activos: {value5}\n        ", value=stats['total_requests'], value2=stats['blocked_requests'], value3=stats['blocked_percentage'], value4=stats['user_agent'], value5=stats['patterns_count'])
 
         self.stats_text.setText(stats_text.strip())
     def reset_stats(self):
         """Resetear estadísticas"""
         reply = QMessageBox.question(
             self,
-            "Resetear estadísticas",
-            "¿Estás seguro de resetear las estadísticas?",
+            tr("Resetear estadísticas"),
+            tr("¿Estás seguro de resetear las estadísticas?"),
             QMessageBox.Yes | QMessageBox.No
         )
 
         if reply == QMessageBox.Yes:
             self.interceptor.reset_stats()
             self.update_stats()
-            QMessageBox.information(self, "Estadísticas reseteadas",
-                                  "Las estadísticas han sido reseteadas.")
+            QMessageBox.information(self, tr("Estadísticas reseteadas"),
+                                  tr("Las estadísticas han sido reseteadas."))
     def apply_settings(self):
         """Aplicar configuración sin cerrar"""
         self.save_settings()
 
         # Actualizar el User-Agent ACTIVO para reflejar el cambio guardado
         active_ua = self.interceptor._get_user_agent()
-        self.ua_active.setText(f"{active_ua}\n\n(Tipo: {self.interceptor.user_agent_type})")
+        self.ua_active.setText(tr("{active_ua}\n\n(Tipo: {user_agent_type})", active_ua=active_ua, user_agent_type=self.interceptor.user_agent_type))
 
         # Actualizar el preview
         self.update_ua_preview()
@@ -934,22 +926,18 @@ Patrones de bloqueo activos: {stats['patterns_count']}
 
                 print(f"[UA-REFRESH] All tabs closed and new tab opened with updated User-Agent: {self.interceptor.user_agent_type}")
 
-                QMessageBox.information(self, "User-Agent actualizado",
-                                      f"User-Agent cambiado a: {self.interceptor.user_agent_type}\n\n"
-                                      f"Se han cerrado todas las pestañas y se ha abierto una nueva\n"
-                                      f"con el User-Agent actualizado.\n\n"
-                                      f"Puedes verificarlo en:\n"
-                                      f"https://www.whatismybrowser.com/detect/what-is-my-user-agent")
+                QMessageBox.information(self, tr("User-Agent actualizado"),
+                                      tr("User-Agent cambiado a: {user_agent_type}\n\nSe han cerrado todas las pestañas y se ha abierto una nueva\ncon el User-Agent actualizado.\n\nPuedes verificarlo en:\nhttps://www.whatismybrowser.com/detect/what-is-my-user-agent", user_agent_type=self.interceptor.user_agent_type))
             except Exception as e:
-                print(f"[ERROR] Could not refresh tabs: {e}")
-                QMessageBox.warning(self, "Configuración aplicada",
-                                  "Los cambios han sido aplicados.\n\n"
-                                  "Por favor, cierra y abre las pestañas manualmente.")
+                print(tr("[ERROR] Could not refresh tabs: {e}", e=e))
+                QMessageBox.warning(self, tr("Configuración aplicada"),
+                                  tr("Los cambios han sido aplicados.\n\n"
+                                  "Por favor, cierra y abre las pestañas manualmente."))
         else:
-            QMessageBox.information(self, "Configuración aplicada",
-                                  "Los cambios han sido aplicados correctamente.\n\n"
+            QMessageBox.information(self, tr("Configuración aplicada"),
+                                  tr("Los cambios han sido aplicados correctamente.\n\n"
                                   "Cierra las pestañas actuales y abre nuevas\n"
-                                  "para que el nuevo User-Agent se aplique.")
+                                  "para que el nuevo User-Agent se aplique."))
     def accept_settings(self):
         """Guardar y cerrar"""
         self.save_settings()

@@ -10,6 +10,7 @@ Características:
 - Estimación de tiempo restante
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                QLabel, QProgressBar, QListWidget, QListWidgetItem,
                                QFrame, QScrollArea, QMessageBox)
@@ -84,7 +85,7 @@ class DownloadPanel(QWidget):
             conn.close()
             print("[DownloadPanel] Database initialized")
         except Exception as e:
-            print(f"[DownloadPanel] Error creating database: {e}")
+            print(tr("[DownloadPanel] Error creating database: {e}", e=e))
     def setup_ui(self):
         """Configurar interfaz de usuario"""
         layout = QVBoxLayout(self)
@@ -94,23 +95,23 @@ class DownloadPanel(QWidget):
         # Header
         header_layout = QHBoxLayout()
 
-        title = QLabel("Descargas")
+        title = QLabel(tr("Descargas"))
         title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         header_layout.addWidget(title)
 
         header_layout.addStretch()
 
         # Botón para limpiar completadas
-        self.clear_btn = QPushButton("Limpiar completadas")
-        self.clear_btn.setToolTip("Eliminar descargas completadas de la lista")
+        self.clear_btn = QPushButton(tr("Limpiar completadas"))
+        self.clear_btn.setToolTip(tr("Eliminar descargas completadas de la lista"))
         clear_btn_connection = self.clear_completed
         self.clear_btn.clicked.connect(clear_btn_connection)
         self._signal_connections['clear_btn'] = clear_btn_connection
         header_layout.addWidget(self.clear_btn)
 
         # Botón para abrir carpeta de descargas
-        self.open_folder_btn = QPushButton("Abrir carpeta")
-        self.open_folder_btn.setToolTip("Abrir carpeta de descargas")
+        self.open_folder_btn = QPushButton(tr("Abrir carpeta"))
+        self.open_folder_btn.setToolTip(tr("Abrir carpeta de descargas"))
         open_folder_btn_connection = self.open_downloads_folder
         self.open_folder_btn.clicked.connect(open_folder_btn_connection)
         self._signal_connections['open_folder_btn'] = open_folder_btn_connection
@@ -138,7 +139,7 @@ class DownloadPanel(QWidget):
         layout.addWidget(scroll_area)
 
         # Mensaje cuando no hay descargas
-        self.empty_label = QLabel("No hay descargas recientes")
+        self.empty_label = QLabel(tr("No hay descargas recientes"))
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet("QWidget { color: #888; font-size: 14px; margin-top: 50px; }")
         self.downloads_layout.addWidget(self.empty_label)
@@ -239,7 +240,7 @@ class DownloadPanel(QWidget):
             conn.close()
             print(f"[DownloadPanel] Saved to history: {filename}")
         except Exception as e:
-            print(f"[DownloadPanel] Error saving to history: {e}")
+            print(tr("[DownloadPanel] Error saving to history: {e}", e=e))
     def load_history(self):
         """Cargar historial de descargas (últimas 10)"""
         try:
@@ -261,7 +262,7 @@ class DownloadPanel(QWidget):
                     pass
             conn.close()
         except Exception as e:
-            print(f"[DownloadPanel] Error loading history: {e}")
+            print(tr("[DownloadPanel] Error loading history: {e}", e=e))
     def _disconnect_signals(self):
         """Desconectar todas las señales para prevenir memory leaks"""
         try:
@@ -296,7 +297,7 @@ class DownloadPanel(QWidget):
                         pass
                     del self._signal_connections[widget_id]
         except Exception as e:
-            print(f"Error al desconectar señales del DownloadPanel: {str(e)}")
+            print(tr("Error al desconectar señales del DownloadPanel: {value}", value=str(e)))
     def closeEvent(self, event):
         """Manejar cierre del panel"""
         self._disconnect_signals()
@@ -364,14 +365,14 @@ class DownloadItemWidget(QWidget):
         self.pause_btn = QPushButton()
         self.pause_btn.setIcon(_themed_icon("pause"))
         self.pause_btn.setFixedSize(32, 32)
-        self.pause_btn.setToolTip("Pausar descarga")
+        self.pause_btn.setToolTip(tr("Pausar descarga"))
         self.pause_btn.clicked.connect(self.toggle_pause)
         top_layout.addWidget(self.pause_btn)
 
         self.cancel_btn = QPushButton()
         self.cancel_btn.setIcon(_themed_icon("ide_close"))
         self.cancel_btn.setFixedSize(32, 32)
-        self.cancel_btn.setToolTip("Cancelar descarga")
+        self.cancel_btn.setToolTip(tr("Cancelar descarga"))
         self.cancel_btn.clicked.connect(self.cancel_download)
         top_layout.addWidget(self.cancel_btn)
 
@@ -400,13 +401,13 @@ class DownloadItemWidget(QWidget):
         # Tercera fila: Info de descarga
         info_layout = QHBoxLayout()
 
-        self.size_label = QLabel("0 KB / 0 KB")
+        self.size_label = QLabel(tr("0 KB / 0 KB"))
         self.size_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         info_layout.addWidget(self.size_label)
 
         info_layout.addStretch()
 
-        self.speed_label = QLabel("0 KB/s")
+        self.speed_label = QLabel(tr("0 KB/s"))
         self.speed_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         info_layout.addWidget(self.speed_label)
 
@@ -419,12 +420,12 @@ class DownloadItemWidget(QWidget):
         # Botones de acción (aparecen cuando termina)
         actions_layout = QHBoxLayout()
 
-        self.open_file_btn = QPushButton("Abrir archivo")
+        self.open_file_btn = QPushButton(tr("Abrir archivo"))
         self.open_file_btn.clicked.connect(self.open_file)
         self.open_file_btn.hide()
         actions_layout.addWidget(self.open_file_btn)
 
-        self.open_folder_btn = QPushButton("Abrir carpeta")
+        self.open_folder_btn = QPushButton(tr("Abrir carpeta"))
         self.open_folder_btn.clicked.connect(self.open_folder)
         self.open_folder_btn.hide()
         actions_layout.addWidget(self.open_folder_btn)
@@ -501,7 +502,7 @@ class DownloadItemWidget(QWidget):
     def on_download_completed(self):
         """Descarga completada"""
         self.progress_bar.setValue(100)
-        self.speed_label.setText("Completado")
+        self.speed_label.setText(tr("Completado"))
         self.time_label.setText("")
 
         # Ocultar botones de control
@@ -533,7 +534,7 @@ class DownloadItemWidget(QWidget):
         print(f"[Download] Completed: {self.filename}")
     def on_download_cancelled(self):
         """Descarga cancelada"""
-        self.speed_label.setText("Cancelada")
+        self.speed_label.setText(tr("Cancelada"))
         self.time_label.setText("")
         self.progress_bar.setStyleSheet("""
             QProgressBar::chunk {
@@ -542,7 +543,7 @@ class DownloadItemWidget(QWidget):
         """)
     def on_download_failed(self):
         """Descarga fallida"""
-        self.speed_label.setText("Error")
+        self.speed_label.setText(tr("Error"))
         self.time_label.setText("")
         self.progress_bar.setStyleSheet("""
             QProgressBar::chunk {
@@ -554,22 +555,22 @@ class DownloadItemWidget(QWidget):
         if self.is_paused:
             self.download.resume()
             self.pause_btn.setIcon(_themed_icon("pause"))
-            self.pause_btn.setToolTip("Pausar descarga")
+            self.pause_btn.setToolTip(tr("Pausar descarga"))
             self.is_paused = False
             self.speed_label.setText("Descargando...")
         else:
             self.download.pause()
             self.pause_btn.setIcon(_themed_icon("play"))
-            self.pause_btn.setToolTip("Reanudar descarga")
+            self.pause_btn.setToolTip(tr("Reanudar descarga"))
             self.is_paused = True
-            self.speed_label.setText("Pausada")
+            self.speed_label.setText(tr("Pausada"))
             self.time_label.setText("")
     def cancel_download(self):
         """Cancelar descarga"""
         reply = QMessageBox.question(
             self,
-            "Cancelar descarga",
-            f"¿Seguro que quieres cancelar la descarga de '{self.filename}'?",
+            tr("Cancelar descarga"),
+            tr("¿Seguro que quieres cancelar la descarga de '{filename}'?", filename=self.filename),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
@@ -580,8 +581,8 @@ class DownloadItemWidget(QWidget):
         if self.path and os.path.exists(self.path):
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.path))
         else:
-            QMessageBox.warning(self, "Archivo no encontrado",
-                              "El archivo descargado ya no existe en la ubicación original.")
+            QMessageBox.warning(self, tr("Archivo no encontrado"),
+                              tr("El archivo descargado ya no existe en la ubicación original."))
     def open_folder(self):
         """Abrir carpeta contenedora"""
         if self.path:

@@ -1,3 +1,4 @@
+from i18n import tr
 from PySide6.QtWidgets import QDockWidget, QVBoxLayout, QToolBar, QPushButton, QTabWidget, QTabBar, QWidget
 
 
@@ -44,7 +45,7 @@ class DevToolsDock(QDockWidget):
         try:
             self.dev_tools_view.page().setBackgroundColor(Qt.black)
         except Exception as e:
-            print(f"Error configuring background color in DevTools: {e}")
+            print(tr("Error configuring background color in DevTools: {e}", e=e))
         # Background styles now inherit from global theme
     def set_browser(self, browser):
         """Set the current browser for DevTools"""

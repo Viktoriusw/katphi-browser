@@ -3,6 +3,7 @@
 Tab Groups Manager - Sistema de agrupación de pestañas similar a Firefox
 """
 
+from i18n import tr
 import json
 import os
 from datetime import datetime
@@ -94,7 +95,7 @@ class TabGroupManager(QObject):
         ("#1976d2", "Blue"),
         ("#388e3c", "Green"),
         ("#f57c00", "Orange"),
-        ("#d32f2f", "Red"),
+        ("#d32f2f", tr("Red")),
         ("#7b1fa2", "Purple"),
         ("#0097a7", "Cyan"),
         ("#c2185b", "Pink"),
@@ -288,11 +289,11 @@ class TabGroupManager(QObject):
                 json.dump(data, f, indent=2, ensure_ascii=False)
             print(f"[TabGroups] Saved {len(self.groups)} groups")
         except Exception as e:
-            print(f"[TabGroups] Error saving groups: {e}")
+            print(tr("[TabGroups] Error saving groups: {e}", e=e))
     def load_groups(self):
         """Cargar grupos desde archivo JSON"""
         if not os.path.exists(self.GROUPS_FILE):
-            print("[TabGroups] No saved groups file")
+            print(tr("[TabGroups] No saved groups file"))
             return
         try:
             with open(self.GROUPS_FILE, 'r', encoding='utf-8') as f:
@@ -306,7 +307,7 @@ class TabGroupManager(QObject):
 
             print(f"[TabGroups] Loaded {len(self.groups)} groups")
         except Exception as e:
-            print(f"[TabGroups] Error loading groups: {e}")
+            print(tr("[TabGroups] Error loading groups: {e}", e=e))
             import traceback
             traceback.print_exc()
     def clear_all_groups(self):

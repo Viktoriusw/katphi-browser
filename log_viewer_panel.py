@@ -13,6 +13,7 @@ Muestra todos los registros del sistema de logging con:
 
 from __future__ import annotations
 
+from i18n import tr
 import html
 import logging
 import os
@@ -46,7 +47,7 @@ _LEVEL_NAMES = {
     logging.DEBUG:    "DEBUG",
     logging.INFO:     "INFO",
     logging.WARNING:  "WARN",
-    logging.ERROR:    "ERROR",
+    logging.ERROR:    tr("ERROR"),
     logging.CRITICAL: "CRIT",
 }
 _BADGE_STYLES = {
@@ -79,9 +80,7 @@ def _format_record_html(record: logging.LogRecord) -> str:
             "".join(tb.format_exception(*record.exc_info))
         )
         exc_html = (
-            f'<div style="margin-left:24px;color:#f87171;'
-            f'font-family:monospace;font-size:11px;white-space:pre-wrap;">'
-            f'{exc_text}</div>'
+            tr("<div style=\"margin-left:24px;color:#f87171;font-family:monospace;font-size:11px;white-space:pre-wrap;\">{exc_text}</div>", exc_text=exc_text)
         )
     return (
         f'<div style="padding:2px 6px;border-bottom:1px solid rgba(255,255,255,0.04);'
@@ -102,9 +101,9 @@ class LogViewerPanel(BasePanel):
 
     def get_tab_definitions(self):
         return [
-            (self._create_live_tab,  "En vivo"),
-            (self._create_file_tab,  "Fichero log"),
-            (self._create_stats_tab, "Estadísticas"),
+            (self._create_live_tab,  tr("En vivo")),
+            (self._create_file_tab,  tr("Fichero log")),
+            (self._create_stats_tab, tr("Estadísticas")),
         ]
     def post_setup_ui(self):
         self.set_object_name("logViewerPanel")
@@ -186,35 +185,35 @@ class LogViewerPanel(BasePanel):
 
         # Filtro por nivel
         self._level_combo = QComboBox()
-        self._level_combo.addItem("Todos",    logging.DEBUG)
-        self._level_combo.addItem("DEBUG",  logging.DEBUG)
-        self._level_combo.addItem("INFO",   logging.INFO)
-        self._level_combo.addItem("WARN",   logging.WARNING)
-        self._level_combo.addItem("ERROR",  logging.ERROR)
-        self._level_combo.addItem("CRIT",   logging.CRITICAL)
+        self._level_combo.addItem(tr("Todos"),    logging.DEBUG)
+        self._level_combo.addItem(tr("DEBUG"),  logging.DEBUG)
+        self._level_combo.addItem(tr("INFO"),   logging.INFO)
+        self._level_combo.addItem(tr("WARN"),   logging.WARNING)
+        self._level_combo.addItem(tr("ERROR"),  logging.ERROR)
+        self._level_combo.addItem(tr("CRIT"),   logging.CRITICAL)
         self._level_combo.setFixedWidth(130)
         self._level_combo.currentIndexChanged.connect(self._on_filter_changed)
-        toolbar.addWidget(QLabel("Nivel:"))
+        toolbar.addWidget(QLabel(tr("Nivel:")))
         toolbar.addWidget(self._level_combo)
 
         # Filtro por módulo
         self._module_input = QLineEdit()
-        self._module_input.setPlaceholderText("módulo... (ej: gentab)")
+        self._module_input.setPlaceholderText(tr("módulo... (ej: gentab)"))
         self._module_input.setFixedWidth(140)
         self._module_input.textChanged.connect(self._on_filter_changed)
-        toolbar.addWidget(QLabel("Módulo:"))
+        toolbar.addWidget(QLabel(tr("Módulo:")))
         toolbar.addWidget(self._module_input)
 
         # Búsqueda
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Buscar en mensajes...")
+        self._search_input.setPlaceholderText(tr("Buscar en mensajes..."))
         self._search_input.textChanged.connect(self._on_filter_changed)
         toolbar.addWidget(self._search_input, 1)
 
         toolbar.addSpacing(8)
 
         # Pausa
-        self._pause_btn = QPushButton("Pausar")
+        self._pause_btn = QPushButton(tr("Pausar"))
         self._pause_btn.setCheckable(True)
         self._pause_btn.toggled.connect(self._on_pause_toggled)
         self._pause_btn.setFixedWidth(90)
@@ -229,7 +228,7 @@ class LogViewerPanel(BasePanel):
         layout.addLayout(toolbar)
 
         # ── Contador de registros ─────────────────────────────────────────────
-        self._count_label = QLabel("0 registros")
+        self._count_label = QLabel(tr("0 registros"))
         layout.addWidget(self._count_label)
 
         # ── Área de logs ──────────────────────────────────────────────────────
@@ -243,23 +242,23 @@ class LogViewerPanel(BasePanel):
         # ── Barra inferior ────────────────────────────────────────────────────
         bottom = QHBoxLayout()
 
-        clear_btn = QPushButton("Limpiar vista")
+        clear_btn = QPushButton(tr("Limpiar vista"))
         clear_btn.clicked.connect(self._clear_view)
         bottom.addWidget(clear_btn)
 
-        export_btn = QPushButton("Exportar filtrado")
+        export_btn = QPushButton(tr("Exportar filtrado"))
         export_btn.clicked.connect(self._export_filtered)
         bottom.addWidget(export_btn)
 
         bottom.addStretch()
 
-        open_file_btn = QPushButton("Abrir katphi_browser.log")
+        open_file_btn = QPushButton(tr("Abrir katphi_browser.log"))
         open_file_btn.clicked.connect(self._open_log_file)
         bottom.addWidget(open_file_btn)
 
         # Informe de error anónimo: solo se envía si el usuario lo confirma
         self._report_btn = self.create_icon_button(
-            "bug", "Informar de un error a Katphi (anónimo; revisas el contenido antes de enviarlo)",
+            "bug", tr("Informar de un error a Katphi (anónimo; revisas el contenido antes de enviarlo)"),
             self._report_bug, size=30, icon_size=16)
         bottom.addWidget(self._report_btn)
 
@@ -283,7 +282,7 @@ class LogViewerPanel(BasePanel):
         self._file_path_label.setWordWrap(True)
         header.addWidget(self._file_path_label, 1)
 
-        reload_btn = QPushButton("Recargar")
+        reload_btn = QPushButton(tr("Recargar"))
         reload_btn.clicked.connect(self._reload_file_tab)
         header.addWidget(reload_btn)
         layout.addLayout(header)
@@ -301,7 +300,7 @@ class LogViewerPanel(BasePanel):
         if not hasattr(self, "_file_view"):
             return
         if not os.path.exists(LOG_FILE_PATH):
-            self._file_view.setPlainText("No se encontró el fichero de log.")
+            self._file_view.setPlainText(tr("No se encontró el fichero de log."))
             return
         try:
             with open(LOG_FILE_PATH, encoding="utf-8", errors="replace") as f:
@@ -311,7 +310,7 @@ class LogViewerPanel(BasePanel):
             self._file_view.setPlainText(tail)
             self._file_view.moveCursor(QTextCursor.End)
         except Exception as exc:
-            self._file_view.setPlainText(f"Error leyendo log: {exc}")
+            self._file_view.setPlainText(tr("Error leyendo log: {exc}", exc=exc))
     # ── Tab "Estadísticas" ────────────────────────────────────────────────────
 
     def _create_stats_tab(self) -> QWidget:
@@ -324,7 +323,7 @@ class LogViewerPanel(BasePanel):
         self._stats_text.setReadOnly(True)
         layout.addWidget(self._stats_text, 1)
 
-        refresh_btn = QPushButton("Actualizar estadísticas")
+        refresh_btn = QPushButton(tr("Actualizar estadísticas"))
         refresh_btn.clicked.connect(self._refresh_stats)
         layout.addWidget(refresh_btn)
 
@@ -344,9 +343,9 @@ class LogViewerPanel(BasePanel):
             mod = r.name.split(".")[0]
             by_module[mod] = by_module.get(mod, 0) + 1
         lines = [
-            f"<h3 style='color:#c7d2fe;'>Estadísticas del buffer en memoria</h3>",
-            f"<p>Total registros: <b style='color:#4ade80;'>{total}</b> / {2000}</p>",
-            "<h4 style='color:#94a3b8;'>Por nivel:</h4><ul>",
+            tr("<h3 style='color:#c7d2fe;'>Estadísticas del buffer en memoria</h3>"),
+            tr("<p>Total registros: <b style='color:#4ade80;'>{total}</b> / {value}</p>", total=total, value=2000),
+            tr("<h4 style='color:#94a3b8;'>Por nivel:</h4><ul>"),
         ]
         for lvl in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
             count = by_level.get(lvl, 0)
@@ -359,18 +358,17 @@ class LogViewerPanel(BasePanel):
         lines.append("</ul>")
 
         top_modules = sorted(by_module.items(), key=lambda x: -x[1])[:15]
-        lines.append("<h4 style='color:#94a3b8;'>Top módulos:</h4><ul>")
+        lines.append(tr("<h4 style='color:#94a3b8;'>Top módulos:</h4><ul>"))
         for mod, count in top_modules:
             lines.append(
-                f'<li style="color:#60a5fa;">{html.escape(mod)}'
-                f'<span style="color:#64748b;"> — {count} registros</span></li>'
+                tr("<li style=\"color:#60a5fa;\">{value}<span style=\"color:#64748b;\"> — {count} registros</span></li>", value=html.escape(mod), count=count)
             )
         lines.append("</ul>")
 
         if os.path.exists(LOG_FILE_PATH):
             size_kb = os.path.getsize(LOG_FILE_PATH) / 1024
             lines.append(
-                f"<p>Tamaño fichero log: <b style='color:#fbbf24;'>{size_kb:.1f} KB</b></p>"
+                tr("<p>Tamaño fichero log: <b style='color:#fbbf24;'>{size_kb:.1f} KB</b></p>", size_kb=size_kb)
             )
             lines.append(f"<p style='color:#475569;font-size:11px;'>{LOG_FILE_PATH}</p>")
         self._stats_text.setHtml("".join(lines))
@@ -444,11 +442,11 @@ class LogViewerPanel(BasePanel):
         handler = get_memory_handler()
         total = len(handler.get_records())
         visible = len(handler.get_records(self._min_level))
-        self._count_label.setText(f"{visible} visibles / {total} totales en buffer")
+        self._count_label.setText(tr("{visible} visibles / {total} totales en buffer", visible=visible, total=total))
     def _on_pause_toggled(self, paused: bool) -> None:
         self._paused = paused
         if hasattr(self, "_pause_btn"):
-            self._pause_btn.setText("Reanudar" if paused else "Pausar")
+            self._pause_btn.setText(tr("Reanudar") if paused else tr("Pausar"))
     def _clear_view(self) -> None:
         if hasattr(self, "_log_view"):
             self._log_view.clear()
@@ -459,13 +457,13 @@ class LogViewerPanel(BasePanel):
         records = handler.get_records()
         filtered = [r for r in records if self._record_passes_filter(r)]
         if not filtered:
-            QMessageBox.information(self, "Exportar", "No hay registros que exportar con el filtro actual.")
+            QMessageBox.information(self, tr("Exportar"), tr("No hay registros que exportar con el filtro actual."))
             return
         filename, _ = QFileDialog.getSaveFileName(
             self,
-            "Exportar log filtrado",
+            tr("Exportar log filtrado"),
             f"katphi_debug_{datetime.now():%Y%m%d_%H%M%S}.log",
-            "Ficheros de log (*.log *.txt)",
+            tr("Ficheros de log (*.log *.txt)"),
         )
         if not filename:
             return
@@ -480,22 +478,22 @@ class LogViewerPanel(BasePanel):
                     if r.exc_info:
                         import traceback as tb
                         f.write("".join(tb.format_exception(*r.exc_info)))
-            QMessageBox.information(self, "Exportar", f"Exportados {len(filtered)} registros a:\n{filename}")
+            QMessageBox.information(self, tr("Exportar"), tr("Exportados {count} registros a:\n{filename}", count=len(filtered), filename=filename))
         except Exception as exc:
-            QMessageBox.warning(self, "Error", f"No se pudo guardar: {exc}")
+            QMessageBox.warning(self, tr("Error"), tr("No se pudo guardar: {exc}", exc=exc))
     def _report_bug(self) -> None:
         """Diálogo de informe de error (vista previa anonimizada + consentimiento)."""
         try:
             import bug_report
             bug_report.show_dialog(self)
         except Exception as exc:
-            _log.error("No se pudo abrir el informe de error: %s", exc)
-            QMessageBox.warning(self, "Informe de error", f"No se pudo abrir el informe: {exc}")
+            _log.error(tr("No se pudo abrir el informe de error: %s"), exc)
+            QMessageBox.warning(self, tr("Informe de error"), tr("No se pudo abrir el informe: {exc}", exc=exc))
 
     def _open_log_file(self) -> None:
         """Abre el fichero .log con el editor/visor predeterminado del sistema."""
         if not os.path.exists(LOG_FILE_PATH):
-            QMessageBox.information(self, "Log", "Todavía no existe el fichero de log.")
+            QMessageBox.information(self, tr("Log"), tr("Todavía no existe el fichero de log."))
             return
         try:
             if sys.platform.startswith("linux"):
@@ -505,4 +503,4 @@ class LogViewerPanel(BasePanel):
             else:
                 os.startfile(LOG_FILE_PATH)
         except Exception as exc:
-            QMessageBox.warning(self, "Error", f"No se pudo abrir el fichero: {exc}\n\nRuta: {LOG_FILE_PATH}")
+            QMessageBox.warning(self, tr("Error"), tr("No se pudo abrir el fichero: {exc}\n\nRuta: {LOG_FILE_PATH}", exc=exc, LOG_FILE_PATH=LOG_FILE_PATH))

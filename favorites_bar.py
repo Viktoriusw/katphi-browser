@@ -3,6 +3,7 @@
 Favorites Bar - Complete implementation similar to Firefox/Chrome
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QToolBar, QMenu, QDialog, QVBoxLayout,
                                QHBoxLayout, QLabel, QLineEdit, QComboBox,
                                QPushButton, QMessageBox, QCheckBox, QWidget,
@@ -61,7 +62,7 @@ def get_favicon_icon(url, favicon_cache=None):
         favicon_cache[url] = default_icon
         return default_icon
     except Exception as e:
-        logger.error(f"Error getting favicon for URL %s: %s", url, e)
+        logger.error(tr("Error getting favicon for URL %s: %s"), url, e)
         return QIcon("icons/bookmark.svg")
 
 def get_favicon_pixmap(url, favicon_cache=None):
@@ -77,7 +78,7 @@ class FavoriteDialog(QDialog):
 
     def __init__(self, parent=None, title="", url="", category="", show_in_bar=True):
         super().__init__(parent)
-        self.setWindowTitle("Add to Favorites")
+        self.setWindowTitle(tr("Add to Favorites"))
         self.setModal(True)
         self.setMinimumWidth(400)
 
@@ -110,15 +111,15 @@ class FavoriteDialog(QDialog):
         layout.addLayout(category_layout)
 
         # Show in favorites bar
-        self.show_in_bar_check = QCheckBox("Show in favorites bar")
+        self.show_in_bar_check = QCheckBox(tr("Show in favorites bar"))
         self.show_in_bar_check.setChecked(show_in_bar)
         layout.addWidget(self.show_in_bar_check)
 
         # Buttons
         button_layout = QHBoxLayout()
-        save_button = QPushButton("Save")
+        save_button = QPushButton(tr("Save"))
         save_button.clicked.connect(self.accept)
-        cancel_button = QPushButton("Cancel")
+        cancel_button = QPushButton(tr("Cancel"))
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(save_button)
         button_layout.addWidget(cancel_button)
@@ -131,12 +132,12 @@ class FavoriteDialog(QDialog):
             cursor.execute("SELECT name FROM categories ORDER BY name")
             categories = cursor.fetchall()
 
-            self.category_combo.addItem("No category")
+            self.category_combo.addItem(tr("No category"))
             for category in categories:
                 self.category_combo.addItem(category[0])
             conn.close()
         except Exception as e:
-            logger.error("Error loading favorite categories from bookmarks.db: %s", e)
+            logger.error(tr("Error loading favorite categories from bookmarks.db: %s"), e)
     def get_values(self):
         """Gets values from the dialog"""
         return {
@@ -157,7 +158,7 @@ class FavoritesBar(QToolBar):
     def __init__(self, parent=None):
         super().__init__("Favorites", parent)
         self.setObjectName("favoritesBar")   # necesario para la regla QSS #id
-        self.setWindowTitle("Favorites Bar")
+        self.setWindowTitle(tr("Favorites Bar"))
         self.setVisible(False)  # Initially hidden
 
         # Configure the bar — compacta, estilo Firefox
@@ -261,7 +262,7 @@ class FavoritesBar(QToolBar):
             # Add button to add current page
             self.add_add_favorite_action()
         except Exception as e:
-            logger.error("Error loading favorites for favorites bar: %s", e)
+            logger.error(tr("Error loading favorites for favorites bar: %s"), e)
     def add_favorite_to_bar(self, title, url, bookmark_id: int = None):
         """Adds a favorite to the bar as a compact button (favicon + title or icon-only)."""
         try:
@@ -297,7 +298,7 @@ class FavoritesBar(QToolBar):
 
             self.addWidget(btn)
         except Exception as e:
-            logger.error("Error adding favorite '%s' (%s) to bar: %s", title, url, e)
+            logger.error(tr("Error adding favorite '%s' (%s) to bar: %s"), title, url, e)
 
     def _on_favicon_ready(self, domain: str, icon) -> None:
         """Actualiza los botones de la barra que esperaban el favicon de *domain*."""
@@ -327,40 +328,40 @@ class FavoritesBar(QToolBar):
         menu = QMenu()
 
         # Open
-        open_action = menu.addAction("Open")
+        open_action = menu.addAction(tr("Open"))
         open_action.triggered.connect(lambda: self.favorite_clicked.emit(url))
 
         # Open in new tab
-        open_new_tab_action = menu.addAction("Open in new tab")
+        open_new_tab_action = menu.addAction(tr("Open in new tab"))
         open_new_tab_action.triggered.connect(lambda: self.open_in_new_tab(url))
 
         menu.addSeparator()
 
         # Edit
-        edit_action = menu.addAction("Edit")
+        edit_action = menu.addAction(tr("Edit"))
         edit_action.triggered.connect(lambda: self.edit_favorite(title, url))
 
         # Remove from bar
-        remove_action = menu.addAction("Remove from favorites bar")
+        remove_action = menu.addAction(tr("Remove from favorites bar"))
         remove_action.triggered.connect(lambda: self.remove_from_bar(title, url))
 
         menu.addSeparator()
 
         # Delete
-        delete_action = menu.addAction("Delete")
+        delete_action = menu.addAction(tr("Delete"))
         delete_action.triggered.connect(lambda: self.delete_favorite(title, url))
 
         return menu
     def add_add_favorite_action(self):
         """Adds the button to add the current page"""
-        add_action = QAction("Añadir", self)
+        add_action = QAction(tr("Añadir"), self)
         try:
             from ui.core.strip_icons import build_nav_icon
             from PySide6.QtCore import QSize
             add_action.setIcon(build_nav_icon("star", None, QSize(14, 14)))
         except Exception:
             pass
-        add_action.setToolTip("Add current page to favorites")
+        add_action.setToolTip(tr("Add current page to favorites"))
         add_action.triggered.connect(self.add_current_page)
         self.addAction(add_action)
     def add_current_page(self):
@@ -380,7 +381,7 @@ class FavoritesBar(QToolBar):
                         values = dialog.get_values()
                         self.save_favorite(values)
         except Exception as e:
-            logger.error("Error adding current page to favorites: %s", e)
+            logger.error(tr("Error adding current page to favorites: %s"), e)
     def save_favorite(self, values):
         """Saves a favorite to the database"""
         try:
@@ -403,10 +404,10 @@ class FavoritesBar(QToolBar):
             # Reload the bar
             self.load_favorites()
 
-            QMessageBox.information(self, "Success", "Favorite saved successfully")
+            QMessageBox.information(self, tr("Success"), tr("Favorite saved successfully"))
         except Exception as e:
-            logger.error("Error saving favorite to bookmarks.db: %s", e)
-            QMessageBox.critical(self, "Error", f"Error saving favorite: {e}")
+            logger.error(tr("Error saving favorite to bookmarks.db: %s"), e)
+            QMessageBox.critical(self, tr("Error"), tr("Error saving favorite: {e}", e=e))
     def edit_favorite(self, title, url):
         """Edits an existing favorite"""
         try:
@@ -432,8 +433,8 @@ class FavoritesBar(QToolBar):
                     self.update_favorite(url, values)
             conn.close()
         except Exception as e:
-            logger.error("Error editing favorite '%s' (%s): %s", title, url, e)
-            QMessageBox.critical(self, "Error", f"Error editing favorite: {e}")
+            logger.error(tr("Error editing favorite '%s' (%s): %s"), title, url, e)
+            QMessageBox.critical(self, tr("Error"), tr("Error editing favorite: {e}", e=e))
     def update_favorite(self, old_url, values):
         """Updates an existing favorite"""
         try:
@@ -457,10 +458,10 @@ class FavoritesBar(QToolBar):
             # Reload the bar
             self.load_favorites()
 
-            QMessageBox.information(self, "Success", "Favorite updated successfully")
+            QMessageBox.information(self, tr("Success"), tr("Favorite updated successfully"))
         except Exception as e:
-            logger.error("Error updating favorite %s -> %s: %s", old_url, values.get('url'), e)
-            QMessageBox.critical(self, "Error", f"Error updating favorite: {e}")
+            logger.error(tr("Error updating favorite %s -> %s: %s"), old_url, values.get('url'), e)
+            QMessageBox.critical(self, tr("Error"), tr("Error updating favorite: {e}", e=e))
     def remove_from_bar(self, title, url):
         """Removes a favorite from the bar (but does not delete it)"""
         try:
@@ -481,15 +482,15 @@ class FavoritesBar(QToolBar):
             # Reload the bar
             self.load_favorites()
 
-            QMessageBox.information(self, "Success", "Favorite removed from bar")
+            QMessageBox.information(self, tr("Success"), tr("Favorite removed from bar"))
         except Exception as e:
-            logger.error("Error removing favorite '%s' (%s) from bar: %s", title, url, e)
-            QMessageBox.critical(self, "Error", f"Error removing favorite from bar: {e}")
+            logger.error(tr("Error removing favorite '%s' (%s) from bar: %s"), title, url, e)
+            QMessageBox.critical(self, tr("Error"), tr("Error removing favorite from bar: {e}", e=e))
     def delete_favorite(self, title, url):
         """Completely deletes a favorite"""
         reply = QMessageBox.question(
-            self, "Confirm deletion", 
-            f"Are you sure you want to delete '{title}'?",
+            self, tr("Confirm deletion"), 
+            tr("Are you sure you want to delete '{title}'?", title=title),
             QMessageBox.Yes | QMessageBox.No
         )
 
@@ -506,10 +507,10 @@ class FavoritesBar(QToolBar):
                 # Reload the bar
                 self.load_favorites()
 
-                QMessageBox.information(self, "Success", "Favorite deleted successfully")
+                QMessageBox.information(self, tr("Success"), tr("Favorite deleted successfully"))
             except Exception as e:
-                logger.error("Error deleting favorite '%s' (%s): %s", title, url, e)
-                QMessageBox.critical(self, "Error", f"Error deleting favorite: {e}")
+                logger.error(tr("Error deleting favorite '%s' (%s): %s"), title, url, e)
+                QMessageBox.critical(self, tr("Error"), tr("Error deleting favorite: {e}", e=e))
     def open_in_new_tab(self, url):
         """Opens a favorite in a new tab"""
         try:
@@ -517,7 +518,7 @@ class FavoritesBar(QToolBar):
             if hasattr(main_window, 'tab_manager'):
                 main_window.tab_manager.add_new_tab(url)
         except Exception as e:
-            logger.error("Error opening favorite in new tab (%s): %s", url, e)
+            logger.error(tr("Error opening favorite in new tab (%s): %s"), url, e)
     def get_favicon(self, url: str):
         """Devuelve el favicon para una URL (caché en memoria/disco)."""
         icon = get_favicon_manager().get(url)
@@ -556,7 +557,7 @@ class FavoritesBar(QToolBar):
             self.addSeparator()
             self.add_add_favorite_action()
         except Exception as e:
-            logger.error("Error cargando barra de favoritos con carpetas: %s", e)
+            logger.error(tr("Error cargando barra de favoritos con carpetas: %s"), e)
             # Fallback al sistema anterior
             self.load_favorites()
     @property
@@ -646,7 +647,7 @@ class FavoritesBar(QToolBar):
 
             self.addWidget(btn)
         except Exception as e:
-            logger.error("Error añadiendo botón de carpeta '%s': %s", folder_node.get("name"), e)
+            logger.error(tr("Error añadiendo botón de carpeta '%s': %s"), folder_node.get("name"), e)
     def _build_folder_submenu(self, menu: QMenu, folder_node: dict) -> None:
         """
         Rellena *menu* de forma recursiva con las subcarpetas y marcadores
@@ -675,9 +676,9 @@ class FavoritesBar(QToolBar):
         """Clic derecho en el área vacía de la barra de favoritos."""
         menu = QMenu(self)
         menu.setStyleSheet(self._FOLDER_MENU_STYLE)
-        a = menu.addAction("Nueva carpeta aquí...")
+        a = menu.addAction(tr("Nueva carpeta aquí..."))
         a.triggered.connect(lambda: self._new_folder_dialog(None))
-        a2 = menu.addAction("Añadir marcador aquí...")
+        a2 = menu.addAction(tr("Añadir marcador aquí..."))
         a2.triggered.connect(lambda: self._new_bookmark_dialog(None))
         menu.exec(self.mapToGlobal(pos))
 
@@ -686,25 +687,25 @@ class FavoritesBar(QToolBar):
         menu = QMenu(self)
         menu.setStyleSheet(self._FOLDER_MENU_STYLE)
 
-        a = menu.addAction("Abrir")
+        a = menu.addAction(tr("Abrir"))
         a.triggered.connect(lambda: self.favorite_clicked.emit(bm_data["url"]))
 
-        a = menu.addAction("Abrir en nueva pestaña")
+        a = menu.addAction(tr("Abrir en nueva pestaña"))
         a.triggered.connect(lambda: self.open_in_new_tab(bm_data["url"]))
 
-        a = menu.addAction("Abrir en nueva ventana")
+        a = menu.addAction(tr("Abrir en nueva ventana"))
         a.triggered.connect(lambda: self._open_in_new_window(bm_data["url"]))
 
         menu.addSeparator()
 
-        a = menu.addAction("Editar marcador...")
+        a = menu.addAction(tr("Editar marcador..."))
         a.triggered.connect(lambda: self._edit_bookmark_dialog(bm_data))
 
-        a = menu.addAction("Copiar URL")
+        a = menu.addAction(tr("Copiar URL"))
         a.triggered.connect(lambda: self._copy_url(bm_data["url"]))
 
         if self.folders_manager:
-            move_menu = menu.addMenu("Mover a")
+            move_menu = menu.addMenu(tr("Mover a"))
             move_menu.setStyleSheet(self._FOLDER_MENU_STYLE)
             self._build_move_to_submenu(
                 move_menu,
@@ -713,7 +714,7 @@ class FavoritesBar(QToolBar):
 
         menu.addSeparator()
 
-        a = menu.addAction("Eliminar")
+        a = menu.addAction(tr("Eliminar"))
         a.triggered.connect(lambda: self._delete_bookmark_by_id(bm_data))
 
         menu.exec(global_pos)
@@ -723,24 +724,24 @@ class FavoritesBar(QToolBar):
         menu = QMenu(self)
         menu.setStyleSheet(self._FOLDER_MENU_STYLE)
 
-        a = menu.addAction("Abrir todo en pestañas")
+        a = menu.addAction(tr("Abrir todo en pestañas"))
         a.triggered.connect(lambda: self._open_all_in_tabs(folder_node))
 
         menu.addSeparator()
 
-        a = menu.addAction("Nuevo marcador aquí...")
+        a = menu.addAction(tr("Nuevo marcador aquí..."))
         a.triggered.connect(lambda: self._new_bookmark_dialog(folder_node["id"]))
 
-        a = menu.addAction("Nueva subcarpeta...")
+        a = menu.addAction(tr("Nueva subcarpeta..."))
         a.triggered.connect(lambda: self._new_folder_dialog(folder_node["id"]))
 
         menu.addSeparator()
 
-        a = menu.addAction("Renombrar carpeta...")
+        a = menu.addAction(tr("Renombrar carpeta..."))
         a.triggered.connect(lambda: self._rename_folder_dialog(folder_node))
 
         if self.folders_manager:
-            move_menu = menu.addMenu("Mover a")
+            move_menu = menu.addMenu(tr("Mover a"))
             move_menu.setStyleSheet(self._FOLDER_MENU_STYLE)
             self._build_move_to_submenu(
                 move_menu,
@@ -750,7 +751,7 @@ class FavoritesBar(QToolBar):
 
         menu.addSeparator()
 
-        a = menu.addAction("Eliminar carpeta...")
+        a = menu.addAction(tr("Eliminar carpeta..."))
         a.triggered.connect(lambda: self._delete_folder_confirmed(folder_node))
 
         menu.exec(global_pos)
@@ -766,14 +767,14 @@ class FavoritesBar(QToolBar):
             else:
                 self.open_in_new_tab(url)
         except Exception as e:
-            logger.error("Error abriendo URL en nueva ventana (%s): %s", url, e)
+            logger.error(tr("Error abriendo URL en nueva ventana (%s): %s"), url, e)
 
     def _copy_url(self, url: str) -> None:
         """Copia una URL al portapapeles."""
         try:
             QApplication.clipboard().setText(url)
         except Exception as e:
-            logger.error("Error copiando URL al portapapeles: %s", e)
+            logger.error(tr("Error copiando URL al portapapeles: %s"), e)
 
     def _open_all_in_tabs(self, folder_node: dict) -> None:
         """Abre todos los marcadores de una carpeta (recursivo) en pestañas nuevas."""
@@ -781,7 +782,7 @@ class FavoritesBar(QToolBar):
             for url in self._collect_all_urls(folder_node):
                 self.open_in_new_tab(url)
         except Exception as e:
-            logger.error("Error abriendo todos los marcadores en pestañas: %s", e)
+            logger.error(tr("Error abriendo todos los marcadores en pestañas: %s"), e)
 
     def _collect_all_urls(self, folder_node: dict) -> list:
         """Devuelve recursivamente todas las URLs de una carpeta."""
@@ -808,12 +809,12 @@ class FavoritesBar(QToolBar):
                 url   = bm_data.get("url", "")
 
             dlg = QDialog(self)
-            dlg.setWindowTitle("Editar marcador")
+            dlg.setWindowTitle(tr("Editar marcador"))
             dlg.setMinimumWidth(380)
             form = QFormLayout(dlg)
             title_edit = QLineEdit(title)
             url_edit   = QLineEdit(url)
-            form.addRow("Nombre:", title_edit)
+            form.addRow(tr("Nombre:"), title_edit)
             form.addRow("URL:", url_edit)
             btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
             btns.accepted.connect(dlg.accept)
@@ -838,8 +839,8 @@ class FavoritesBar(QToolBar):
             conn.close()
             self._reload_bar()
         except Exception as e:
-            logger.error("Error editando marcador: %s", e)
-            QMessageBox.critical(self, "Error", f"Error al editar el marcador: {e}")
+            logger.error(tr("Error editando marcador: %s"), e)
+            QMessageBox.critical(self, tr("Error"), tr("Error al editar el marcador: {e}", e=e))
 
     def _move_bookmark_to_folder(self, bookmark_id, folder_id) -> None:
         """Mueve un marcador a una carpeta diferente."""
@@ -853,14 +854,14 @@ class FavoritesBar(QToolBar):
             conn.close()
             self._reload_bar()
         except Exception as e:
-            logger.error("Error moviendo marcador %s a carpeta %s: %s", bookmark_id, folder_id, e)
+            logger.error(tr("Error moviendo marcador %s a carpeta %s: %s"), bookmark_id, folder_id, e)
 
     def _delete_bookmark_by_id(self, bm_data: dict) -> None:
         """Pide confirmación y elimina un marcador."""
         title = bm_data.get("title", "")
         reply = QMessageBox.question(
-            self, "Confirmar eliminación",
-            f"¿Eliminar el marcador «{title}»?",
+            self, tr("Confirmar eliminación"),
+            tr("¿Eliminar el marcador «{title}»?", title=title),
             QMessageBox.Yes | QMessageBox.No
         )
         if reply != QMessageBox.Yes:
@@ -877,7 +878,7 @@ class FavoritesBar(QToolBar):
             conn.close()
             self._reload_bar()
         except Exception as e:
-            logger.error("Error eliminando marcador: %s", e)
+            logger.error(tr("Error eliminando marcador: %s"), e)
 
     def _new_bookmark_dialog(self, folder_id) -> None:
         """Diálogo para crear un nuevo marcador (prerellena con la página actual)."""
@@ -891,12 +892,12 @@ class FavoritesBar(QToolBar):
                     current_title = tab.page().title()
 
             dlg = QDialog(self)
-            dlg.setWindowTitle("Nuevo marcador")
+            dlg.setWindowTitle(tr("Nuevo marcador"))
             dlg.setMinimumWidth(380)
             form = QFormLayout(dlg)
             title_edit = QLineEdit(current_title)
             url_edit   = QLineEdit(current_url)
-            form.addRow("Nombre:", title_edit)
+            form.addRow(tr("Nombre:"), title_edit)
             form.addRow("URL:", url_edit)
             btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
             btns.accepted.connect(dlg.accept)
@@ -921,7 +922,7 @@ class FavoritesBar(QToolBar):
             conn.close()
             self._reload_bar()
         except Exception as e:
-            logger.error("Error creando marcador: %s", e)
+            logger.error(tr("Error creando marcador: %s"), e)
 
     # ─── Acciones de carpetas ─────────────────────────────────────────────────
 
@@ -930,13 +931,13 @@ class FavoritesBar(QToolBar):
         try:
             if not self.folders_manager:
                 return
-            name, ok = QInputDialog.getText(self, "Nueva carpeta", "Nombre de la carpeta:")
+            name, ok = QInputDialog.getText(self, tr("Nueva carpeta"), tr("Nombre de la carpeta:"))
             if not ok or not name.strip():
                 return
             self.folders_manager.create_folder(name.strip(), parent_id)
             self._reload_bar()
         except Exception as e:
-            logger.error("Error creando carpeta: %s", e)
+            logger.error(tr("Error creando carpeta: %s"), e)
 
     def _rename_folder_dialog(self, folder_node: dict) -> None:
         """Diálogo para renombrar una carpeta."""
@@ -944,7 +945,7 @@ class FavoritesBar(QToolBar):
             if not self.folders_manager:
                 return
             name, ok = QInputDialog.getText(
-                self, "Renombrar carpeta", "Nuevo nombre:",
+                self, tr("Renombrar carpeta"), tr("Nuevo nombre:"),
                 text=folder_node.get("name", "")
             )
             if not ok or not name.strip():
@@ -952,7 +953,7 @@ class FavoritesBar(QToolBar):
             self.folders_manager.rename_folder(folder_node["id"], name.strip())
             self._reload_bar()
         except Exception as e:
-            logger.error("Error renombrando carpeta: %s", e)
+            logger.error(tr("Error renombrando carpeta: %s"), e)
 
     def _move_folder_to(self, folder_id, new_parent_id) -> None:
         """Mueve una carpeta a un nuevo padre."""
@@ -962,14 +963,14 @@ class FavoritesBar(QToolBar):
             self.folders_manager.move_folder(folder_id, new_parent_id)
             self._reload_bar()
         except Exception as e:
-            logger.error("Error moviendo carpeta %s a %s: %s", folder_id, new_parent_id, e)
+            logger.error(tr("Error moviendo carpeta %s a %s: %s"), folder_id, new_parent_id, e)
 
     def _delete_folder_confirmed(self, folder_node: dict) -> None:
         """Pide confirmación y elimina una carpeta con todo su contenido."""
         name = folder_node.get("name", "")
         reply = QMessageBox.question(
-            self, "Eliminar carpeta",
-            f"¿Eliminar la carpeta «{name}» y todo su contenido?",
+            self, tr("Eliminar carpeta"),
+            tr("¿Eliminar la carpeta «{name}» y todo su contenido?", name=name),
             QMessageBox.Yes | QMessageBox.No
         )
         if reply != QMessageBox.Yes:
@@ -979,14 +980,14 @@ class FavoritesBar(QToolBar):
                 self.folders_manager.delete_folder(folder_node["id"], recursive=True)
                 self._reload_bar()
         except Exception as e:
-            logger.error("Error eliminando carpeta '%s': %s", name, e)
+            logger.error(tr("Error eliminando carpeta '%s': %s"), name, e)
 
     def _build_move_to_submenu(self, menu: QMenu, callback, exclude_id=None) -> None:
         """Rellena *menu* con todas las carpetas disponibles como destino de movimiento."""
         try:
             if not self.folders_manager:
                 return
-            a = menu.addAction("\U0001f4c2 Raíz (barra principal)")
+            a = menu.addAction(tr("\U0001f4c2 Raíz (barra principal)"))
             a.triggered.connect(lambda _checked=False: callback(None))
             folders = self.folders_manager.get_all_folders_flat()
             if folders:
@@ -998,7 +999,7 @@ class FavoritesBar(QToolBar):
                 fid = f.id
                 a.triggered.connect(lambda _checked=False, fid=fid: callback(fid))
         except Exception as e:
-            logger.error("Error construyendo submenú 'Mover a': %s", e)
+            logger.error(tr("Error construyendo submenú 'Mover a': %s"), e)
 
     def _reload_bar(self) -> None:
         """Recarga la barra de favoritos completa."""
@@ -1008,4 +1009,4 @@ class FavoritesBar(QToolBar):
             else:
                 self.load_favorites()
         except Exception as e:
-            logger.error("Error recargando barra de favoritos: %s", e)
+            logger.error(tr("Error recargando barra de favoritos: %s"), e)

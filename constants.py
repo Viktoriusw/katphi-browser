@@ -6,6 +6,7 @@ Este módulo centraliza todas las constantes utilizadas en el proyecto
 para evitar strings mágicos y valores hardcodeados dispersos en el código.
 """
 
+from i18n import tr
 import sys
 
 # ============================================================================
@@ -28,7 +29,7 @@ def is_private_mode() -> bool:
 
 APP_NAME = "Katphi"
 APP_TITLE = "Katphi Browser"
-APP_VERSION = "3.6.1"
+APP_VERSION = "3.6.2"
 APP_VENDOR = "Katphi"
 APP_ORGANIZATION = "Katphi"
 
@@ -96,21 +97,21 @@ PLUGIN_ACCESS_ENTERPRISE = "enterprise"
 # ============================================================================
 
 # Mensajes de autenticación
-MSG_AUTH_REQUIRED = "Por favor, inicia sesión para continuar"
+MSG_AUTH_REQUIRED = tr("Por favor, inicia sesión para continuar")
 MSG_LOGIN_SUCCESS = "Login exitoso"
-MSG_LOGIN_FAILED = "Login fallido"
-MSG_LOGOUT_SUCCESS = "Sesión cerrada"
+MSG_LOGIN_FAILED = tr("Login fallido")
+MSG_LOGOUT_SUCCESS = tr("Sesión cerrada")
 
 # Mensajes de plugins
-MSG_PLUGIN_INSTALLED = "Plugin instalado exitosamente"
+MSG_PLUGIN_INSTALLED = tr("Plugin instalado exitosamente")
 MSG_PLUGIN_UNINSTALLED = "Plugin desinstalado"
-MSG_PLUGIN_ERROR = "Error en el plugin"
-MSG_NO_PLUGINS = "No hay plugins disponibles"
+MSG_PLUGIN_ERROR = tr("Error en el plugin")
+MSG_NO_PLUGINS = tr("No hay plugins disponibles")
 
 # Mensajes de red
-MSG_CONNECTION_SUCCESS = "Conectado al servidor"
-MSG_CONNECTION_FAILED = "Error de conexión"
-MSG_CONNECTION_LOST = "Conexión perdida"
+MSG_CONNECTION_SUCCESS = tr("Conectado al servidor")
+MSG_CONNECTION_FAILED = tr("Error de conexión")
+MSG_CONNECTION_LOST = tr("Conexión perdida")
 
 # ============================================================================
 # URLS Y RUTAS
@@ -177,7 +178,7 @@ DEFAULT_LOG_FILE = "katphi_browser.log"
 # Prefijos de log
 LOG_PREFIX_INFO = "[INFO]"
 LOG_PREFIX_WARNING = "[WARNING]"
-LOG_PREFIX_ERROR = "[ERROR]"
+LOG_PREFIX_ERROR = tr("[ERROR]")
 LOG_PREFIX_DEBUG = "[DEBUG]"
 LOG_PREFIX_OK = "[OK]"
 

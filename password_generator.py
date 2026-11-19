@@ -1,3 +1,4 @@
+from i18n import tr
 import string
 
 
@@ -88,7 +89,7 @@ class PasswordGenerator:
                 "ram_usage": f"{self.last_ram_usage}%"
             }
         except Exception as e:
-            logger.error(f"Error generating password: {str(e)}")
+            logger.error(tr("Error generating password: {value}", value=str(e)))
 
             raise
     def get_generation_stats(self):

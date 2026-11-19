@@ -10,6 +10,7 @@ Características:
 - Gestión completa de perfiles (crear, editar, eliminar)
 """
 
+from i18n import N_, tr
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                QLabel, QDialog, QLineEdit, QListWidget, QListWidgetItem,
                                QMessageBox, QDialogButtonBox, QGroupBox, QComboBox,
@@ -115,7 +116,7 @@ class ProfileManager(QObject):
 
         if not profiles:
             # Crear perfil por defecto
-            default_id = self.create_profile("Usuario Principal", "Usuario", "#4a90e2")
+            default_id = self.create_profile(tr("Usuario Principal"), "Usuario", "#4a90e2")
             self.set_default_profile(default_id)
             self.current_profile_id = default_id
         else:
@@ -272,7 +273,7 @@ class ProfileManager(QObject):
             try:
                 shutil.rmtree(profile_path)
             except Exception as e:
-                print(f"Error eliminando directorio del perfil: {e}")
+                print(tr("Error eliminando directorio del perfil: {e}", e=e))
                 return False
         # Eliminar de base de datos
         conn = sqlite3.connect(self.db_path)
@@ -316,7 +317,7 @@ class ProfileDialog(QDialog):
         self.profile_id = profile_id
         self.is_edit_mode = profile_id is not None
 
-        self.setWindowTitle("Editar perfil" if self.is_edit_mode else "Nuevo perfil")
+        self.setWindowTitle(tr("Editar perfil") if self.is_edit_mode else tr("Nuevo perfil"))
         self.setModal(True)
         self.setMinimumWidth(400)
 
@@ -329,16 +330,16 @@ class ProfileDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Editar perfil" if self.is_edit_mode else "Crear nuevo perfil")
+        title = QLabel(tr("Editar perfil") if self.is_edit_mode else tr("Crear nuevo perfil"))
         title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
         # Nombre del perfil
-        name_group = QGroupBox("Nombre del perfil")
+        name_group = QGroupBox(tr("Nombre del perfil"))
         name_layout = QVBoxLayout()
 
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Ej: Trabajo, Personal, Desarrollo...")
+        self.name_input.setPlaceholderText(tr("Ej: Trabajo, Personal, Desarrollo..."))
         self.name_input.setMaxLength(50)
         name_layout.addWidget(self.name_input)
 
@@ -346,47 +347,40 @@ class ProfileDialog(QDialog):
         layout.addWidget(name_group)
 
         # Icono del perfil
-        icon_group = QGroupBox("Icono del perfil")
+        icon_group = QGroupBox(tr("Icono del perfil"))
         icon_layout = QHBoxLayout()
 
         self.icon_combo = QComboBox()
-        self.icon_combo.addItems([
-            "Usuario",
-            "Trabajo",
-            "Personal",
-            "Gaming",
-            "Estudio",
-            "Desarrollo",
-            "Diseño",
-            "Análisis",
-            "Navegación",
-            "Privado"
-        ])
+        # El dato es la categoría que se guarda en la BD (en español, como en
+        # los perfiles existentes); el texto visible se traduce.
+        for key in (N_("Usuario"), N_("Trabajo"), N_("Personal"), N_("Gaming"), N_("Estudio"),
+                    N_("Desarrollo"), N_("Diseño"), N_("Análisis"), N_("Navegación"), N_("Privado")):
+            self.icon_combo.addItem(tr(key), key)
         icon_layout.addWidget(self.icon_combo)
 
         icon_group.setLayout(icon_layout)
         layout.addWidget(icon_group)
 
         # Color del perfil
-        color_group = QGroupBox("Color de acento")
+        color_group = QGroupBox(tr("Color de acento"))
         color_layout = QHBoxLayout()
 
         self.color_combo = QComboBox()
-        self.color_combo.addItem("Azul", "#4a90e2")
-        self.color_combo.addItem("Rojo", "#e74c3c")
-        self.color_combo.addItem("Verde", "#2ecc71")
-        self.color_combo.addItem("Amarillo", "#f39c12")
-        self.color_combo.addItem("Púrpura", "#9b59b6")
-        self.color_combo.addItem("Naranja", "#e67e22")
-        self.color_combo.addItem("Gris", "#7f8c8d")
-        self.color_combo.addItem("Café", "#795548")
+        self.color_combo.addItem(tr("Azul"), "#4a90e2")
+        self.color_combo.addItem(tr("Rojo"), "#e74c3c")
+        self.color_combo.addItem(tr("Verde"), "#2ecc71")
+        self.color_combo.addItem(tr("Amarillo"), "#f39c12")
+        self.color_combo.addItem(tr("Púrpura"), "#9b59b6")
+        self.color_combo.addItem(tr("Naranja"), "#e67e22")
+        self.color_combo.addItem(tr("Gris"), "#7f8c8d")
+        self.color_combo.addItem(tr("Café"), "#795548")
         color_layout.addWidget(self.color_combo)
 
         color_group.setLayout(color_layout)
         layout.addWidget(color_group)
 
         # Preview del perfil
-        preview_group = QGroupBox("Vista previa")
+        preview_group = QGroupBox(tr("Vista previa"))
         preview_layout = QHBoxLayout()
 
         self.preview_label = QLabel()
@@ -427,7 +421,7 @@ class ProfileDialog(QDialog):
             # Buscar icono
             icon_text = profile['icon']
             for i in range(self.icon_combo.count()):
-                if self.icon_combo.itemText(i) == icon_text:
+                if icon_text in (self.icon_combo.itemData(i), self.icon_combo.itemText(i)):
                     self.icon_combo.setCurrentIndex(i)
                     break
             # Buscar color
@@ -438,12 +432,11 @@ class ProfileDialog(QDialog):
                     break
     def update_preview(self):
         """Actualizar vista previa del perfil"""
-        name = self.name_input.text() or "Nuevo perfil"
-        icon = self.icon_combo.currentText() or "Usuario"
+        name = self.name_input.text() or tr("Nuevo perfil")
+        icon = self.icon_combo.currentText() or tr("Usuario")
         color = self.color_combo.currentData() or "#4a90e2"
 
-        self.preview_label.setText(f"<span style='font-size: 16px; font-weight: bold;'>{name}</span> "
-                                   f"<span style='font-size: 12px;'>({icon})</span>")
+        self.preview_label.setText(tr("<span style='font-size: 16px; font-weight: bold;'>{name}</span> <span style='font-size: 12px;'>({icon})</span>", name=name, icon=icon))
         self.preview_label.setStyleSheet(f"""
             QLabel {{
                 padding: 10px;
@@ -458,10 +451,10 @@ class ProfileDialog(QDialog):
         name = self.name_input.text().strip()
 
         if not name:
-            QMessageBox.warning(self, "Nombre requerido",
-                              "Por favor ingresa un nombre para el perfil.")
+            QMessageBox.warning(self, tr("Nombre requerido"),
+                              tr("Por favor ingresa un nombre para el perfil."))
             return
-        icon = self.icon_combo.currentText() or "Usuario"
+        icon = self.icon_combo.currentData() or "Usuario"
         color = self.color_combo.currentData() or "#4a90e2"
 
         if self.is_edit_mode:
@@ -496,7 +489,7 @@ class ProfileSwitcher(QWidget):
         # Botón del perfil actual
         self.profile_button = QPushButton()
         self.profile_button.setFixedSize(36, 36)
-        self.profile_button.setToolTip("Cambiar perfil")
+        self.profile_button.setToolTip(tr("Cambiar perfil"))
         self.profile_button.setStyleSheet("""
             QPushButton {
                 border: 2px solid #ddd;
@@ -520,7 +513,7 @@ class ProfileSwitcher(QWidget):
             name = profile['name']
 
             self.profile_button.setText((name or "?")[:1].upper())
-            self.profile_button.setToolTip(f"Perfil: {name}\nClick para cambiar")
+            self.profile_button.setToolTip(tr("Perfil: {name}\nClick para cambiar", name=name))
             self.profile_button.setStyleSheet(f"""
                 QPushButton {{
                     border: 2px solid {color};
@@ -555,11 +548,11 @@ class ProfileSwitcher(QWidget):
         menu.addSeparator()
 
         # Opción para crear nuevo perfil
-        new_action = menu.addAction("Nuevo perfil...")
+        new_action = menu.addAction(tr("Nuevo perfil..."))
         new_action.triggered.connect(self.create_new_profile)
 
         # Opción para gestionar perfiles
-        manage_action = menu.addAction("Gestionar perfiles...")
+        manage_action = menu.addAction(tr("Gestionar perfiles..."))
         manage_action.triggered.connect(self.manage_profiles)
 
         # Ejecutar menú
@@ -573,8 +566,8 @@ class ProfileSwitcher(QWidget):
         if profile_id != self.profile_manager.current_profile_id:
             reply = QMessageBox.question(
                 self,
-                "Cambiar perfil",
-                "Al cambiar de perfil, se cerrarán todas las pestañas actuales.\n¿Deseas continuar?",
+                tr("Cambiar perfil"),
+                tr("Al cambiar de perfil, se cerrarán todas las pestañas actuales.\n¿Deseas continuar?"),
                 QMessageBox.Yes | QMessageBox.No
             )
 
@@ -601,7 +594,7 @@ class ProfileManagerDialog(QDialog):
         super().__init__(parent)
         self.profile_manager = profile_manager
 
-        self.setWindowTitle("Gestionar perfiles")
+        self.setWindowTitle(tr("Gestionar perfiles"))
         self.setModal(True)
         self.setMinimumSize(500, 400)
 
@@ -612,7 +605,7 @@ class ProfileManagerDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Gestión de perfiles")
+        title = QLabel(tr("Gestión de perfiles"))
         title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
@@ -624,28 +617,28 @@ class ProfileManagerDialog(QDialog):
         # Botones de acción
         buttons_layout = QHBoxLayout()
 
-        new_btn = QPushButton("Nuevo")
+        new_btn = QPushButton(tr("Nuevo"))
         new_btn.clicked.connect(self.new_profile)
         buttons_layout.addWidget(new_btn)
 
-        edit_btn = QPushButton("Editar")
+        edit_btn = QPushButton(tr("Editar"))
         edit_btn.clicked.connect(self.edit_profile)
         buttons_layout.addWidget(edit_btn)
 
-        delete_btn = QPushButton("Eliminar")
+        delete_btn = QPushButton(tr("Eliminar"))
         delete_btn.clicked.connect(self.delete_profile)
         buttons_layout.addWidget(delete_btn)
 
         buttons_layout.addStretch()
 
-        default_btn = QPushButton("Predeterminado")
+        default_btn = QPushButton(tr("Predeterminado"))
         default_btn.clicked.connect(self.set_default)
         buttons_layout.addWidget(default_btn)
 
         layout.addLayout(buttons_layout)
 
         # Botón cerrar
-        close_btn = QPushButton("Cerrar")
+        close_btn = QPushButton(tr("Cerrar"))
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
     def load_profiles(self):
@@ -658,7 +651,7 @@ class ProfileManagerDialog(QDialog):
             if profile['is_default']:
                 item_text += " (predeterminado)"
             if profile['id'] == self.profile_manager.current_profile_id:
-                item_text += " (Activo)"
+                item_text += tr(" (Activo)")
             item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, profile['id'])
             self.profiles_list.addItem(item)
@@ -692,27 +685,26 @@ class ProfileManagerDialog(QDialog):
         if profile_id == self.profile_manager.current_profile_id:
             QMessageBox.warning(
                 self,
-                "No se puede eliminar",
-                "No puedes eliminar el perfil activo. Cambia a otro perfil primero."
+                tr("No se puede eliminar"),
+                tr("No puedes eliminar el perfil activo. Cambia a otro perfil primero.")
             )
             return
         # Confirmar eliminación
         reply = QMessageBox.question(
             self,
-            "Eliminar perfil",
-            f"¿Estás seguro de que deseas eliminar el perfil '{profile['name']}'?\n"
-            "Se eliminarán todos los datos asociados (cookies, historial, etc.).",
+            tr("Eliminar perfil"),
+            tr("¿Estás seguro de que deseas eliminar el perfil '{value}'?\nSe eliminarán todos los datos asociados (cookies, historial, etc.).", value=profile['name']),
             QMessageBox.Yes | QMessageBox.No
         )
 
         if reply == QMessageBox.Yes:
             if self.profile_manager.delete_profile(profile_id):
                 self.load_profiles()
-                QMessageBox.information(self, "Perfil eliminado",
-                                      f"El perfil '{profile['name']}' ha sido eliminado.")
+                QMessageBox.information(self, tr("Perfil eliminado"),
+                                      tr("El perfil '{value}' ha sido eliminado.", value=profile['name']))
             else:
-                QMessageBox.critical(self, "Error",
-                                   "No se pudo eliminar el perfil.")
+                QMessageBox.critical(self, tr("Error"),
+                                   tr("No se pudo eliminar el perfil."))
     def set_default(self):
         """Establecer perfil seleccionado como predeterminado"""
         current_item = self.profiles_list.currentItem()
@@ -722,5 +714,5 @@ class ProfileManagerDialog(QDialog):
         self.profile_manager.set_default_profile(profile_id)
         self.load_profiles()
 
-        QMessageBox.information(self, "Perfil predeterminado",
-                              "El perfil se estableció como predeterminado.")
+        QMessageBox.information(self, tr("Perfil predeterminado"),
+                              tr("El perfil se estableció como predeterminado."))

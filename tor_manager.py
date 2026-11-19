@@ -8,6 +8,7 @@ STOPPED, STARTING, BOOTSTRAPPING(0-100%), CONNECTED, ERROR.
 El proceso Tor muere automáticamente si el proceso Python termina (__OwningControllerProcess).
 """
 
+from i18n import tr
 import logging
 import os
 import platform
@@ -56,7 +57,7 @@ def _hash_control_password(password: str, tor_binary: str = "tor") -> str:
                 if line.startswith("16:"):
                     return line.strip()
     except Exception as e:
-        logger.warning("[TOR] Fallback hash-password falló: %s", e)
+        logger.warning(tr("[TOR] Fallback hash-password falló: %s"), e)
     return ""
 
 
@@ -114,7 +115,7 @@ class TorManager:
                 logger.debug("[TOR] is_socks5_ready(127.0.0.1:%s) -> %s", self.TOR_SOCKS_PORT, ready)
             return ready
         except Exception as e:
-            logger.debug("[TOR] is_socks5_ready falló: %s", e)
+            logger.debug(tr("[TOR] is_socks5_ready falló: %s"), e)
             return False
     def _find_tor_binary(self) -> Optional[str]:
         """Detecta el binario tor en el sistema."""
@@ -134,27 +135,27 @@ class TorManager:
         system = platform.system()
         if system == "Linux":
             return (
-                "Para instalar Tor en Linux:\n\n"
+                tr("Para instalar Tor en Linux:\n\n"
                 "• Debian/Ubuntu: sudo apt install tor\n"
                 "• Fedora: sudo dnf install tor\n"
                 "• Arch: sudo pacman -S tor\n\n"
-                "Luego reinicie el navegador."
+                "Luego reinicie el navegador.")
             )
         if system == "Darwin":
             return (
-                "Para instalar Tor en macOS:\n\n"
+                tr("Para instalar Tor en macOS:\n\n"
                 "• brew install tor\n\n"
-                "O descargue Tor Expert Bundle desde torproject.org"
+                "O descargue Tor Expert Bundle desde torproject.org")
             )
         if system == "Windows":
             return (
-                "Para instalar Tor en Windows:\n\n"
+                tr("Para instalar Tor en Windows:\n\n"
                 "Descargue Tor Expert Bundle desde:\n"
                 "https://www.torproject.org/download/tor/\n\n"
                 "Extraiga y añada la carpeta al PATH, o coloque tor.exe en:\n"
-                "%LOCALAPPDATA%\\Tor\\"
+                "%LOCALAPPDATA%\\Tor\\")
             )
-        return "Instale Tor desde https://www.torproject.org/download/"
+        return tr("Instale Tor desde https://www.torproject.org/download/")
     def get_availability_error(self) -> Optional[str]:
         """
         Retorna mensaje de error si Tor no está disponible.
@@ -162,15 +163,14 @@ class TorManager:
         """
         if not TOR_AVAILABLE:
             return (
-                "La librería 'stem' no está instalada.\n\n"
+                tr("La librería 'stem' no está instalada.\n\n"
                 "Ejecute: pip install stem\n\n"
-                "Luego reinicie el navegador."
+                "Luego reinicie el navegador.")
             )
         tor_path = self._find_tor_binary()
         if not tor_path:
             return (
-                "El binario 'tor' no se encontró en el sistema.\n\n"
-                f"{self._get_install_instructions()}"
+                tr("El binario 'tor' no se encontró en el sistema.\n\n{value}", value=self._get_install_instructions())
             )
         return None
     def start(self, progress_callback: Optional[Callable[[int], None]] = None) -> bool:
@@ -192,14 +192,14 @@ class TorManager:
             logger.error("[TOR] %s", err)
             return False
         if self._process is not None and self._process.poll() is None:
-            logger.debug("[TOR] Proceso Tor ya corriendo (PID=%s)", self._process.pid)
+            logger.debug(tr("[TOR] Proceso Tor ya corriendo (PID=%s)"), self._process.pid)
             self._status = TorStatus.CONNECTED
             return True
         # Tor ya escuchando (p. ej. proceso huérfano tras reinicio) → no lanzar otro
         if self.is_socks5_ready():
             logger.info(
-                "[TOR] SOCKS5 ya activo en 127.0.0.1:%s. "
-                "Reutilizando Tor existente (evitando conflicto de puertos).",
+                tr("[TOR] SOCKS5 ya activo en 127.0.0.1:%s. "
+                "Reutilizando Tor existente (evitando conflicto de puertos)."),
                 self.TOR_SOCKS_PORT,
             )
             self._status = TorStatus.CONNECTED
@@ -207,7 +207,7 @@ class TorManager:
             if progress_callback:
                 progress_callback(100)
             return True
-        logger.debug("[TOR] Iniciando proceso Tor (SOCKS=%s, Control=%s)", self.TOR_SOCKS_PORT, self.TOR_CONTROL_PORT)
+        logger.debug(tr("[TOR] Iniciando proceso Tor (SOCKS=%s, Control=%s)"), self.TOR_SOCKS_PORT, self.TOR_CONTROL_PORT)
         self._status = TorStatus.STARTING
         self._bootstrap_percent = 0
         self._error_message = None
@@ -219,7 +219,7 @@ class TorManager:
         hashed = _hash_control_password(self._control_password, tor_bin)
         if not hashed:
             self._status = TorStatus.ERROR
-            self._error_message = "No se pudo generar hash de contraseña (tor --hash-password)"
+            self._error_message = tr("No se pudo generar hash de contraseña (tor --hash-password)")
             return False
         data_dir = Path.home() / ".katphi" / "tor" / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -286,15 +286,15 @@ class TorManager:
             self._status = TorStatus.ERROR
             self._error_message = str(e)
             logger.error(
-                "[TOR] Error al iniciar Tor: %s. "
-                "Si los puertos %s/%s están ocupados, otro Tor puede estar corriendo.",
+                tr("[TOR] Error al iniciar Tor: %s. "
+                "Si los puertos %s/%s están ocupados, otro Tor puede estar corriendo."),
                 e, self.TOR_SOCKS_PORT, self.TOR_CONTROL_PORT,
             )
             return False
         except Exception as e:
             self._status = TorStatus.ERROR
             self._error_message = str(e)
-            logger.exception("[TOR] Error inesperado: %s", e)
+            logger.exception(tr("[TOR] Error inesperado: %s"), e)
             return False
 
         # Leer la salida hasta "Bootstrapped 100%". Si stop() termina el
@@ -312,16 +312,16 @@ class TorManager:
                     bootstrapped = True
                     break
         except Exception as e:
-            logger.debug("[TOR] Lectura de la salida de Tor interrumpida: %s", e)
+            logger.debug(tr("[TOR] Lectura de la salida de Tor interrumpida: %s"), e)
 
         if self._cancel_requested or self._process is not proc:
-            logger.info("[TOR] Bootstrap cancelado por el usuario")
+            logger.info(tr("[TOR] Bootstrap cancelado por el usuario"))
             self._status = TorStatus.STOPPED
             return False
         if not bootstrapped:
             self._status = TorStatus.ERROR
-            self._error_message = last_problem or "Tor terminó inesperadamente"
-            logger.error("[TOR] Tor no completó el bootstrap: %s", self._error_message)
+            self._error_message = last_problem or tr("Tor terminó inesperadamente")
+            logger.error(tr("[TOR] Tor no completó el bootstrap: %s"), self._error_message)
             self.stop()
             return False
 
@@ -346,17 +346,17 @@ class TorManager:
                 return False
             if proc.poll() is not None:
                 self._status = TorStatus.ERROR
-                self._error_message = "Tor terminó inesperadamente"
+                self._error_message = tr("Tor terminó inesperadamente")
                 return False
             if self.is_socks5_ready():
-                logger.debug("[TOR] Puerto SOCKS5 listo tras %.1fs", time.time() - start)
+                logger.debug(tr("[TOR] Puerto SOCKS5 listo tras %.1fs"), time.time() - start)
                 self._status = TorStatus.CONNECTED
                 self._bootstrap_percent = 100
                 if progress_callback:
                     progress_callback(100)
                 return True
             time.sleep(0.2)
-        logger.error("[TOR] Timeout (10s) esperando puerto SOCKS5 en 127.0.0.1:%s", self.TOR_SOCKS_PORT)
+        logger.error(tr("[TOR] Timeout (10s) esperando puerto SOCKS5 en 127.0.0.1:%s"), self.TOR_SOCKS_PORT)
         self._status = TorStatus.ERROR
         self._error_message = "Timeout esperando puerto SOCKS5"
         self.stop()
@@ -388,9 +388,9 @@ class TorManager:
                 with Controller.from_port(port=self.TOR_CONTROL_PORT) as ctrl:
                     ctrl.authenticate(password=self._control_password)
                     ctrl.signal(Signal.HALT)
-                logger.info("[TOR] Tor detenido vía ControlPort (HALT)")
+                logger.info(tr("[TOR] Tor detenido vía ControlPort (HALT)"))
             except Exception as e:
-                logger.debug("[TOR] No se pudo detener Tor vía ControlPort: %s", e)
+                logger.debug(tr("[TOR] No se pudo detener Tor vía ControlPort: %s"), e)
         os.environ.pop(_CONTROL_PW_ENV, None)
         self._status = TorStatus.STOPPED
         self._bootstrap_percent = 0
@@ -408,7 +408,7 @@ class TorManager:
                 ctrl.signal(Signal.NEWNYM)
             return True
         except Exception as e:
-            logger.error("[TOR] Error en NEWNYM: %s", e)
+            logger.error(tr("[TOR] Error en NEWNYM: %s"), e)
             return False
     @property
     def status(self) -> TorStatus:

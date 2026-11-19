@@ -4,6 +4,7 @@ Unified Plugin Panel - Panel unificado SIMPLIFICADO para gestión de plugins
 Versión rediseñada: Solo Tienda y Gestión
 """
 
+from i18n import tr
 from typing import Optional
 import html
 import logging
@@ -39,6 +40,10 @@ class UnifiedPluginPanel(BasePanel):
         self.plugin_manager = plugin_manager
         self.plugins_loaded = False
 
+        # Estado de la prueba gratuita (/licenses/me/trial), cacheado 60 s
+        self._trial = None
+        self._trial_fetched_at = 0.0
+
         # Contador para prevenir bucle infinito
         self._ui_init_attempts = 0
         self._max_ui_init_attempts = 3
@@ -64,14 +69,14 @@ class UnifiedPluginPanel(BasePanel):
         if self.plugin_manager.auth_manager:
             self.plugin_manager.auth_manager.auth_state_changed.connect(self.on_auth_state_changed)
             self.plugin_manager.auth_manager.login_successful.connect(self.on_login_successful)
-            print("[UnifiedPluginPanel] Conectado a señales de autenticación")
+            print(tr("[UnifiedPluginPanel] Conectado a señales de autenticación"))
         # Cargar plugins después de que las pestañas estén listas
         QTimer.singleShot(500, self.initial_load)
     def get_tab_definitions(self):
         """Definir SOLO 2 pestañas: Tienda y Gestión"""
         return [
             (self.create_store_tab, "store", "Tienda"),
-            (self.create_management_tab, "ide_gear", "Gestión"),
+            (self.create_management_tab, "ide_gear", tr("Gestión")),
         ]
 
     # Tamaño compacto de los botones-icono, igual que en el resto de paneles
@@ -126,6 +131,18 @@ class UnifiedPluginPanel(BasePanel):
             QFrame#storeCard QLabel#storeBadge[kind="premium"] {{
                 color: {c['warning']}; border: 1px solid {c['warning']};
             }}
+            QFrame#storeCard QLabel#storeBadge[kind="trial"] {{
+                color: {c['accent']}; border: 1px solid {c['accent']};
+            }}
+            QLabel#storeCardTrial {{ font-size: 11px; font-weight: 600; color: {c['accent']}; }}
+            QFrame#storeTrialBanner {{
+                background: {c['accent_subtle']};
+                border: 1px solid {c['accent']};
+                border-radius: 6px;
+            }}
+            QFrame#storeTrialBanner QLabel {{ background: transparent; border: none; }}
+            QLabel#storeTrialTitle {{ font-size: 12px; font-weight: 600; color: {c['accent']}; }}
+            QLabel#storeTrialText {{ font-size: 11px; color: {c['text_primary']}; }}
             QPushButton#katphiIconBtn[kind="danger"]:hover {{
                 border-color: {c['error']}; background: {c['error_subtle']};
             }}
@@ -195,10 +212,79 @@ class UnifiedPluginPanel(BasePanel):
     def initial_load(self):
         """Carga inicial de plugins"""
         if not self.plugins_loaded:
-            print("[UnifiedPluginPanel] Iniciando carga inicial de plugins...")
+            print(tr("[UnifiedPluginPanel] Iniciando carga inicial de plugins..."))
             self.plugins_loaded = True
             self.load_available_plugins()
             self.refresh_management_tab()
+    # ==================== PRUEBA GRATUITA ====================
+
+    def _get_trial(self, force: bool = False):
+        """Estado de la prueba gratuita de la cuenta, o None."""
+        import time as _time
+        auth = self.plugin_manager.auth_manager
+        if not auth or not auth.auth_state.is_authenticated:
+            self._trial = None
+            return None
+        if not force and self._trial_fetched_at and _time.time() - self._trial_fetched_at < 60:
+            return self._trial
+        backend = getattr(auth, "backend", None)
+        trial = None
+        if backend is not None and hasattr(backend, "get_trial_status"):
+            try:
+                trial = backend.get_trial_status()
+            except Exception as e:
+                logger.warning(tr("No se pudo consultar la prueba gratuita: {e}", e=e))
+        self._trial = trial
+        self._trial_fetched_at = _time.time()
+        return trial
+
+    def _trial_for(self, plugin_id: str):
+        """La prueba activa si cubre este plugin, si no None."""
+        trial = self._trial
+        if trial and trial.get("active") and plugin_id in trial.get("plugin_ids", ()):
+            return trial
+        return None
+
+    @staticmethod
+    def _trial_end_text(trial) -> str:
+        from datetime import datetime
+        try:
+            return datetime.fromisoformat(str(trial.get("ends_at"))).strftime("%d/%m/%Y")
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _days_text(days: int) -> str:
+        return tr("1 día") if days == 1 else tr("{days} días", days=days)
+
+    def _create_trial_banner(self, trial) -> QWidget:
+        """Aviso superior de la tienda con la prueba gratuita activa."""
+        widget = QWidget()
+        widget.setObjectName("storeCardWrap")
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        frame = QFrame()
+        frame.setObjectName("storeTrialBanner")
+        inner = QVBoxLayout(frame)
+        inner.setContentsMargins(10, 8, 10, 8)
+        inner.setSpacing(2)
+        days = trial.get("days_remaining", 0)
+        title = QLabel(tr("Prueba gratuita activa: te quedan {value}", value=self._days_text(days)))
+        title.setObjectName("storeTrialTitle")
+        title.setWordWrap(True)
+        inner.addWidget(title)
+        end = self._trial_end_text(trial)
+        text = QLabel(
+            tr("Puedes instalar y usar todos los plugins premium")
+            + (tr(" hasta el {end}", end=end) if end else "")
+            + tr(". Después, suscríbete solo a los que quieras seguir usando.")
+        )
+        text.setObjectName("storeTrialText")
+        text.setWordWrap(True)
+        inner.addWidget(text)
+        layout.addWidget(frame)
+        return widget
+
     # ==================== PESTAÑA TIENDA ====================
 
     def create_store_tab(self):
@@ -208,10 +294,10 @@ class UnifiedPluginPanel(BasePanel):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        layout.addLayout(self._make_header("Tienda de plugins", [
-            ("key", "Refrescar licencias — actualiza el estado de tus suscripciones desde el servidor",
+        layout.addLayout(self._make_header(tr("Tienda de plugins"), [
+            ("key", tr("Refrescar licencias — actualiza el estado de tus suscripciones desde el servidor"),
              self.refresh_licenses_from_backend),
-            ("refresh", "Actualizar", self.load_available_plugins),
+            ("refresh", tr("Actualizar"), self.load_available_plugins),
         ]))
 
         # Lista de plugins
@@ -229,7 +315,7 @@ class UnifiedPluginPanel(BasePanel):
         layout.addWidget(self.progress_bar)
 
         # Etiqueta de estado
-        self.status_label = QLabel("Cargando plugins...")
+        self.status_label = QLabel(tr("Cargando plugins..."))
         self.status_label.setObjectName("storeStatus")
         layout.addWidget(self.status_label)
 
@@ -244,13 +330,13 @@ class UnifiedPluginPanel(BasePanel):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        layout.addLayout(self._make_header("Mis plugins", [
-            ("refresh", "Actualizar", self.refresh_management_tab),
+        layout.addLayout(self._make_header(tr("Mis plugins"), [
+            ("refresh", tr("Actualizar"), self.refresh_management_tab),
         ]))
 
         # Descripción
         desc_label = QLabel(
-            "Plugins instalados localmente. Inicia sesión para ver el estado de tus suscripciones."
+            tr("Plugins instalados localmente. Inicia sesión para ver el estado de tus suscripciones.")
         )
         desc_label.setObjectName("storeHint")
         desc_label.setWordWrap(True)
@@ -261,10 +347,10 @@ class UnifiedPluginPanel(BasePanel):
         self.management_table.setObjectName("storeTable")
         self.management_table.setColumnCount(6)
         self.management_table.setHorizontalHeaderLabels([
-            "Plugin", "Estado", "Expira", "Instalado", "", ""
+            tr("Plugin"), tr("Estado"), tr("Expira"), tr("Instalado"), "", ""
         ])
-        self.management_table.horizontalHeaderItem(4).setToolTip("Instalar / desinstalar")
-        self.management_table.horizontalHeaderItem(5).setToolTip("Información")
+        self.management_table.horizontalHeaderItem(4).setToolTip(tr("Instalar / desinstalar"))
+        self.management_table.horizontalHeaderItem(5).setToolTip(tr("Información"))
         self.management_table.verticalHeader().setVisible(False)
         self.management_table.verticalHeader().setDefaultSectionSize(self._BTN_SIZE + 12)
         self.management_table.setShowGrid(False)
@@ -326,6 +412,9 @@ class UnifiedPluginPanel(BasePanel):
             and self.plugin_manager.auth_manager.auth_state.is_authenticated
         )
 
+        if is_authenticated:
+            self._get_trial()
+
         # Siempre mostrar plugins instalados localmente
         local_ids = self.plugin_manager.get_installed_plugins()
 
@@ -348,7 +437,7 @@ class UnifiedPluginPanel(BasePanel):
                     id=plugin_id,
                     name=_meta.get("name", plugin_id.replace("_", " ").title()),
                     version=_meta.get("version", "—"),
-                    description=_meta.get("description", "Plugin instalado localmente"),
+                    description=_meta.get("description", tr("Plugin instalado localmente")),
                     author=_meta.get("author", "—"),
                     price=float(_meta.get("price", 0.0)),
                     category=_meta.get("category", "local"),
@@ -372,7 +461,7 @@ class UnifiedPluginPanel(BasePanel):
                     if access_info.access_level in [PluginAccessLevel.PREMIUM, PluginAccessLevel.TRIAL]:
                         self._add_plugin_to_management_table(plugin_info, access_info)
             except Exception as e:
-                logger.warning(f"No se pudieron cargar plugins del backend: {e}")
+                logger.warning(tr("No se pudieron cargar plugins del backend: {e}", e=e))
 
         if self.management_table.rowCount() == 0:
             self._show_no_subscriptions_message()
@@ -386,14 +475,17 @@ class UnifiedPluginPanel(BasePanel):
         self._set_colored_item(row, 0, f"<b>{html.escape(plugin_info.name)}</b>", "text_primary")
 
         # Columna 1: Estado
-        if access_info.access_level == PluginAccessLevel.PREMIUM:
+        trial = self._trial_for(plugin_info.id) if access_info.is_licensed else None
+        if trial:
+            self._set_colored_item(row, 1, tr("Prueba ({value}d)", value=trial.get('days_remaining', 0)), "warning")
+        elif access_info.access_level == PluginAccessLevel.PREMIUM:
             self._set_colored_item(row, 1, "Premium", "success")
         elif access_info.access_level == PluginAccessLevel.TRIAL:
-            self._set_colored_item(row, 1, f"Prueba ({access_info.trial_remaining}d)", "warning")
+            self._set_colored_item(row, 1, tr("Prueba ({trial_remaining}d)", trial_remaining=access_info.trial_remaining), "warning")
         elif access_info.access_level == PluginAccessLevel.FREE:
-            self._set_colored_item(row, 1, "Gratis", "text_secondary")
+            self._set_colored_item(row, 1, tr("Gratis"), "text_secondary")
         else:  # NONE (sin sesión/licencia) o EXPIRED
-            self._set_colored_item(row, 1, "Sin acceso — inicia sesión", "error")
+            self._set_colored_item(row, 1, tr("Sin acceso — inicia sesión"), "error")
 
         # Columna 2: Fecha de expiración
         expires_text = "N/A"
@@ -408,39 +500,39 @@ class UnifiedPluginPanel(BasePanel):
                         expires_date = datetime.fromisoformat(str(access_info.license_info.expires_at).replace('Z', '+00:00'))
                     expires_text = expires_date.strftime('%Y-%m-%d')
             except Exception as e:
-                logger.warning(f"Error parsing expires_at: {e}")
+                logger.warning(tr("Error parsing expires_at: {e}", e=e))
                 expires_text = "N/A"
         self._set_colored_item(row, 2, expires_text, "text_secondary")
 
         # Columna 3: Instalado (Si/No)
         is_installed = self.plugin_manager.is_plugin_installed(plugin_info.id)
         if is_installed:
-            self._set_colored_item(row, 3, "Sí", "success")
+            self._set_colored_item(row, 3, tr("Sí"), "success")
         else:
-            self._set_colored_item(row, 3, "No", "text_secondary")
+            self._set_colored_item(row, 3, tr("No"), "text_secondary")
 
         # Columna 4: Botón de Acción (Instalar/Desinstalar)
         if is_installed:
             action_btn = self._icon_btn(
-                "ide_trash", "Desinstalar",
+                "ide_trash", tr("Desinstalar"),
                 lambda checked=False, pid=plugin_info.id: self.uninstall_plugin(pid),
                 kind="danger")
         else:
             action_btn = self._icon_btn(
-                "download", "Instalar",
+                "download", tr("Instalar"),
                 lambda checked=False, pid=plugin_info.id: self.install_plugin(pid),
                 kind="primary")
         self.management_table.setCellWidget(row, 4, self._cell_button(action_btn))
 
         # Columna 5: Botón de Información
         info_btn = self._icon_btn(
-            "info", "Ver información del plugin",
+            "info", tr("Ver información del plugin"),
             lambda checked=False, pinfo=plugin_info: self.show_plugin_info_simple(pinfo))
         self.management_table.setCellWidget(row, 5, self._cell_button(info_btn))
     def _show_auth_required_message(self):
         """Mostrar mensaje de que se requiere autenticación"""
         self.management_table.setRowCount(1)
-        self._set_colored_item(0, 0, "Por favor, inicia sesión para ver tus plugins suscritos",
+        self._set_colored_item(0, 0, tr("Por favor, inicia sesión para ver tus plugins suscritos"),
                                "text_secondary")
         self.management_table.setSpan(0, 0, 1, 6)
     def _show_no_subscriptions_message(self):
@@ -448,7 +540,7 @@ class UnifiedPluginPanel(BasePanel):
         self.management_table.setRowCount(1)
         self._set_colored_item(
             0, 0,
-            "No tienes plugins suscritos. Visita la pestaña Tienda para ver los plugins disponibles.",
+            tr("No tienes plugins suscritos. Visita la pestaña Tienda para ver los plugins disponibles."),
             "text_secondary")
         self.management_table.setSpan(0, 0, 1, 6)
     def show_plugin_info_simple(self, plugin_info: PluginInfo):
@@ -456,29 +548,25 @@ class UnifiedPluginPanel(BasePanel):
         QMessageBox.information(
             self,
             f"{plugin_info.name}",
-            f"<b>Nombre:</b> {plugin_info.name}<br>"
-            f"<b>Versión:</b> {plugin_info.version}<br>"
-            f"<b>Autor:</b> {plugin_info.author}<br><br>"
-            f"<b>Descripción:</b><br>{plugin_info.description}<br><br>"
-            f"<b>Características:</b><br>• " + "<br>• ".join(plugin_info.features[:5] if plugin_info.features else ["No disponible"])
+            tr("<b>Nombre:</b> {name}<br><b>Versión:</b> {version}<br><b>Autor:</b> {author}<br><br><b>Descripción:</b><br>{description}<br><br><b>Características:</b><br>• ", name=plugin_info.name, version=plugin_info.version, author=plugin_info.author, description=tr(plugin_info.description or "")) + "<br>• ".join([tr(x) for x in plugin_info.features[:5]] if plugin_info.features else [tr("No disponible")])
         )
     # ==================== ACCIONES DE PLUGINS ====================
 
     def install_plugin(self, plugin_id: str):
         """Instalar un plugin"""
         if not self.plugin_manager.auth_manager or not self.plugin_manager.auth_manager.auth_state.is_authenticated:
-            QMessageBox.warning(self, "Autenticación Requerida", 
-                               "Por favor, inicia sesión para instalar plugins.")
+            QMessageBox.warning(self, tr("Autenticación Requerida"), 
+                               tr("Por favor, inicia sesión para instalar plugins."))
             return
         # Verificar si ya está instalado
         if self.plugin_manager.is_plugin_installed(plugin_id):
-            QMessageBox.information(self, "Plugin Ya Instalado", 
-                                   f"El plugin '{plugin_id}' ya está instalado.")
+            QMessageBox.information(self, tr("Plugin Ya Instalado"), 
+                                   tr("El plugin '{plugin_id}' ya está instalado.", plugin_id=plugin_id))
             return
         # Iniciar instalación
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
-        self.status_label.setText(f"Descargando {plugin_id}...")
+        self.status_label.setText(tr("Descargando {plugin_id}...", plugin_id=plugin_id))
 
         success = self.plugin_manager.install_plugin(
             plugin_id, 
@@ -486,16 +574,15 @@ class UnifiedPluginPanel(BasePanel):
         )
 
         if not success:
-            QMessageBox.warning(self, "Error de Instalación", 
-                               "No se pudo iniciar la instalación del plugin.")
+            QMessageBox.warning(self, tr("Error de Instalación"), 
+                               tr("No se pudo iniciar la instalación del plugin."))
             self.progress_bar.setVisible(False)
-            self.status_label.setText("Error de instalación")
+            self.status_label.setText(tr("Error de instalación"))
     def uninstall_plugin(self, plugin_id: str):
         """Desinstalar un plugin"""
         reply = QMessageBox.question(
-            self, "Confirmar Desinstalación",
-            f"¿Estás seguro de que quieres desinstalar el plugin '{plugin_id}'?\n\n"
-            f"Esto eliminará todos sus archivos.",
+            self, tr("Confirmar Desinstalación"),
+            tr("¿Estás seguro de que quieres desinstalar el plugin '{plugin_id}'?\n\nEsto eliminará todos sus archivos.", plugin_id=plugin_id),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -504,13 +591,13 @@ class UnifiedPluginPanel(BasePanel):
             success = self.plugin_manager.uninstall_plugin(plugin_id)
 
             if success:
-                QMessageBox.information(self, "Desinstalación Exitosa", 
-                                       f"Plugin '{plugin_id}' ha sido desinstalado exitosamente.")
+                QMessageBox.information(self, tr("Desinstalación Exitosa"), 
+                                       tr("Plugin '{plugin_id}' ha sido desinstalado exitosamente.", plugin_id=plugin_id))
                 self.refresh_management_tab()
                 self.load_available_plugins()
             else:
-                QMessageBox.warning(self, "Error", 
-                                   f"No se pudo desinstalar el plugin '{plugin_id}'.")
+                QMessageBox.warning(self, tr("Error"), 
+                                   tr("No se pudo desinstalar el plugin '{plugin_id}'.", plugin_id=plugin_id))
     # ==================== CARGA DE PLUGINS PARA TIENDA ====================
 
     def load_available_plugins(self):
@@ -524,15 +611,15 @@ class UnifiedPluginPanel(BasePanel):
                 QTimer.singleShot(1000, self.load_available_plugins)
             return
         self._ui_init_attempts = 0
-        self.status_label.setText("Cargando plugins desde el servidor...")
+        self.status_label.setText(tr("Cargando plugins desde el servidor..."))
         self.plugin_list.clear()
 
         if not self.plugin_manager.auth_manager:
-            self.status_label.setText("Error: Sistema de autenticación no disponible")
+            self.status_label.setText(tr("Error: Sistema de autenticación no disponible"))
             return
         if not self.plugin_manager.auth_manager.auth_state.is_authenticated:
             print("[UnifiedPluginPanel] User not authenticated")
-            self.status_label.setText("Por favor, inicia sesión para ver los plugins disponibles")
+            self.status_label.setText(tr("Por favor, inicia sesión para ver los plugins disponibles"))
             auth_item = QListWidgetItem()
             auth_widget = self.create_auth_required_widget()
             auth_item.setSizeHint(auth_widget.sizeHint())
@@ -545,17 +632,24 @@ class UnifiedPluginPanel(BasePanel):
             print(f"[UnifiedPluginPanel] Loaded {len(plugins) if plugins else 0} plugins")
 
             if not plugins or len(plugins) == 0:
-                self.status_label.setText("No hay plugins disponibles en el servidor")
+                self.status_label.setText(tr("No hay plugins disponibles en el servidor"))
                 return
+            trial = self._get_trial(force=True)
+            if trial and trial.get("active"):
+                banner_item = QListWidgetItem()
+                banner = self._create_trial_banner(trial)
+                banner_item.setSizeHint(banner.sizeHint())
+                self.plugin_list.addItem(banner_item)
+                self.plugin_list.setItemWidget(banner_item, banner)
             for plugin_info in plugins:
                 print(f"[UnifiedPluginPanel] Adding plugin: {plugin_info.name}")
                 self.add_plugin_to_list(plugin_info)
-            self.status_label.setText(f"Cargados {len(plugins)} plugins disponibles")
+            self.status_label.setText(tr("Cargados {count} plugins disponibles", count=len(plugins)))
         except Exception as e:
-            print(f"[UnifiedPluginPanel] ERROR loading plugins: {e}")
+            print(tr("[UnifiedPluginPanel] ERROR loading plugins: {e}", e=e))
             import traceback
             traceback.print_exc()
-            self.status_label.setText(f"Error al cargar plugins: {str(e)}")
+            self.status_label.setText(tr("Error al cargar plugins: {value}", value=str(e)))
     def add_plugin_to_list(self, plugin_info: PluginInfo):
         """Agregar un plugin a la lista de la tienda"""
         if not hasattr(self, 'plugin_list'):
@@ -573,6 +667,7 @@ class UnifiedPluginPanel(BasePanel):
         layout.setContentsMargins(0, 0, 0, 0)
 
         access_info = self.plugin_manager.get_plugin_access(plugin_info.id)
+        is_free = access_info.access_level == PluginAccessLevel.FREE
         has_subscription = access_info.access_level in [PluginAccessLevel.PREMIUM, PluginAccessLevel.TRIAL]
         is_installed = self.plugin_manager.is_plugin_installed(plugin_info.id)
 
@@ -591,10 +686,16 @@ class UnifiedPluginPanel(BasePanel):
         name_label.setObjectName("storeCardName")
         header_layout.addWidget(name_label)
 
+        trial = self._trial_for(plugin_info.id) if access_info.is_licensed else None
+
         if is_installed:
-            badge_text, badge_kind = "INSTALADO", "installed"
+            badge_text, badge_kind = tr("INSTALADO"), "installed"
+        elif trial:
+            badge_text, badge_kind = tr("PRUEBA"), "trial"
+        elif is_free:
+            badge_text, badge_kind = tr("GRATIS"), "installed"
         elif has_subscription:
-            badge_text, badge_kind = "SUSCRITO", "subscribed"
+            badge_text, badge_kind = tr("SUSCRITO"), "subscribed"
         else:
             badge_text, badge_kind = "PREMIUM", "premium"
         status_badge = QLabel(badge_text)
@@ -605,29 +706,40 @@ class UnifiedPluginPanel(BasePanel):
         header_layout.addStretch()
 
         header_layout.addWidget(self._icon_btn(
-            "info", "Más información",
+            "info", tr("Más información"),
             lambda checked=False, pinfo=plugin_info: self.show_plugin_info_simple(pinfo)))
 
         # Suscrito pero sin instalar: instalar directamente desde la tienda
-        if has_subscription and not is_installed:
+        if (has_subscription or is_free) and not is_installed:
             header_layout.addWidget(self._icon_btn(
-                "download", "Instalar",
+                "download", tr("Instalar"),
                 lambda checked=False, pid=plugin_info.id: self.install_plugin(pid),
                 kind="primary"))
 
         # Botón de URL del sitio web (se abre en el navegador Katphi)
         header_layout.addWidget(self._icon_btn(
-            "link", "Ver en la web",
+            "link", tr("Ver en la web"),
             lambda checked=False, pid=plugin_info.id: self.open_plugin_in_browser(pid)))
 
         container_layout.addLayout(header_layout)
 
         # Descripción
-        desc_label = QLabel(plugin_info.description)
+        desc_label = QLabel(tr(plugin_info.description or ""))
         desc_label.setObjectName("storeCardDesc")
         desc_label.setWordWrap(True)
         desc_label.setMaximumHeight(44)
         container_layout.addWidget(desc_label)
+
+        if trial:
+            days = trial.get("days_remaining", 0)
+            end = self._trial_end_text(trial)
+            trial_label = QLabel(
+                tr("Prueba gratuita: quedan {value}", value=self._days_text(days))
+                + (tr(" (hasta el {end})", end=end) if end else "")
+            )
+            trial_label.setObjectName("storeCardTrial")
+            trial_label.setWordWrap(True)
+            container_layout.addWidget(trial_label)
 
         layout.addWidget(container)
 
@@ -645,16 +757,16 @@ class UnifiedPluginPanel(BasePanel):
             if hasattr(main_window, 'browser_widget'):
                 # Crear nueva pestaña con la URL
                 main_window.browser_widget.tabs_widget.add_tab(url)
-                QMessageBox.information(self, "Abriendo en Navegador", 
-                                       f"Se ha abierto una nueva pestaña con el plugin '{plugin_id}'.")
+                QMessageBox.information(self, tr("Abriendo en Navegador"), 
+                                       tr("Se ha abierto una nueva pestaña con el plugin '{plugin_id}'.", plugin_id=plugin_id))
             else:
-                QMessageBox.warning(self, "Error", 
-                                   "No se pudo abrir en el navegador. Abriendo en navegador externo...")
+                QMessageBox.warning(self, tr("Error"), 
+                                   tr("No se pudo abrir en el navegador. Abriendo en navegador externo..."))
                 QDesktopServices.openUrl(QUrl(url))
         except Exception as e:
-            print(f"[UnifiedPluginPanel] Error opening plugin in browser: {e}")
-            QMessageBox.warning(self, "Error", 
-                               f"No se pudo abrir la URL del plugin:\n{str(e)}")
+            print(tr("[UnifiedPluginPanel] Error opening plugin in browser: {e}", e=e))
+            QMessageBox.warning(self, tr("Error"), 
+                               tr("No se pudo abrir la URL del plugin:\n{value}", value=str(e)))
     def create_auth_required_widget(self) -> QWidget:
         """Widget para mostrar que se requiere autenticación"""
         widget = QWidget()
@@ -674,13 +786,13 @@ class UnifiedPluginPanel(BasePanel):
         title_icon_label.setObjectName("storeLockIcon")
         title_icon_label.setPixmap(self._themed_pixmap("lock", 16))
         title_layout.addWidget(title_icon_label)
-        title_label = QLabel("Autenticación requerida")
+        title_label = QLabel(tr("Autenticación requerida"))
         title_label.setObjectName("storeCardName")
         title_layout.addWidget(title_label)
         title_layout.addStretch()
         container_layout.addLayout(title_layout)
 
-        desc_label = QLabel("Para acceder a los plugins disponibles, necesitas iniciar sesión con tu cuenta de usuario.")
+        desc_label = QLabel(tr("Para acceder a los plugins disponibles, necesitas iniciar sesión con tu cuenta de usuario."))
         desc_label.setObjectName("storeCardDesc")
         desc_label.setWordWrap(True)
         container_layout.addWidget(desc_label)
@@ -694,25 +806,25 @@ class UnifiedPluginPanel(BasePanel):
         hacen en un hilo; el resultado vuelve por _licenses_refresh_done
         (conexión encolada) y la UI se toca solo en el hilo de la GUI.
         """
-        print("[UnifiedPluginPanel] Refrescando licencias desde el backend...")
+        print(tr("[UnifiedPluginPanel] Refrescando licencias desde el backend..."))
 
         if self._licenses_refresh_running:
-            print("[UnifiedPluginPanel] Refresco de licencias ya en curso")
+            print(tr("[UnifiedPluginPanel] Refresco de licencias ya en curso"))
             return
         try:
             from backend_integration import backend_integration
 
             if not backend_integration.is_authenticated():
-                QMessageBox.warning(self, "No Autenticado", 
-                                  "Debes iniciar sesión para refrescar las licencias.")
+                QMessageBox.warning(self, tr("No Autenticado"), 
+                                  tr("Debes iniciar sesión para refrescar las licencias."))
                 return
         except Exception as e:
-            print(f"[UnifiedPluginPanel] Error al refrescar licencias: {e}")
-            QMessageBox.critical(self, "Error", f"Error al refrescar licencias:\n{str(e)}")
+            print(tr("[UnifiedPluginPanel] Error al refrescar licencias: {e}", e=e))
+            QMessageBox.critical(self, tr("Error"), tr("Error al refrescar licencias:\n{value}", value=str(e)))
             return
         self._licenses_refresh_running = True
         if self.status_label:
-            self.status_label.setText("Refrescando licencias...")
+            self.status_label.setText(tr("Refrescando licencias..."))
 
         def _worker():
             try:
@@ -725,14 +837,14 @@ class UnifiedPluginPanel(BasePanel):
             threading.Thread(target=_worker, name="katphi-refresh-licenses", daemon=True).start()
         except Exception as e:
             self._licenses_refresh_running = False
-            QMessageBox.critical(self, "Error", f"Error al refrescar licencias:\n{str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error al refrescar licencias:\n{value}", value=str(e)))
     def _on_licenses_refreshed(self, success: bool, count: int, error: str):
         """Resultado del refresco de licencias (hilo de la GUI)"""
         self._licenses_refresh_running = False
 
         if error:
-            print(f"[UnifiedPluginPanel] Error al refrescar licencias: {error}")
-            QMessageBox.critical(self, "Error", f"Error al refrescar licencias:\n{error}")
+            print(tr("[UnifiedPluginPanel] Error al refrescar licencias: {error}", error=error))
+            QMessageBox.critical(self, tr("Error"), tr("Error al refrescar licencias:\n{error}", error=error))
             return
         if success:
             # Las licencias de AuthManager (las que usa el panel) se
@@ -742,17 +854,16 @@ class UnifiedPluginPanel(BasePanel):
                 if am:
                     am._load_user_entitlements()
             except Exception as e:
-                print(f"[UnifiedPluginPanel] No se pudieron recargar las licencias locales: {e}")
+                print(tr("[UnifiedPluginPanel] No se pudieron recargar las licencias locales: {e}", e=e))
             self.refresh_all_after_login()
-            QMessageBox.information(self, "Licencias Actualizadas",
-                                  f"Las licencias se han actualizado correctamente.\n\n"
-                                  f"Licencias activas: {count}")
-            print(f"[UnifiedPluginPanel] Licencias refrescadas: {count} activas")
+            QMessageBox.information(self, tr("Licencias Actualizadas"),
+                                  tr("Las licencias se han actualizado correctamente.\n\nLicencias activas: {count}", count=count))
+            print(tr("[UnifiedPluginPanel] Licencias refrescadas: {count} activas", count=count))
         else:
             if self.status_label:
-                self.status_label.setText("No se pudieron refrescar las licencias")
-            QMessageBox.warning(self, "Error",
-                              "No se pudieron refrescar las licencias. Verifica tu conexión.")
+                self.status_label.setText(tr("No se pudieron refrescar las licencias"))
+            QMessageBox.warning(self, tr("Error"),
+                              tr("No se pudieron refrescar las licencias. Verifica tu conexión."))
     # ==================== MANEJADORES DE SEÑALES ====================
 
     def on_plugin_installed(self, plugin_id: str):
@@ -761,36 +872,36 @@ class UnifiedPluginPanel(BasePanel):
         if hasattr(self, 'progress_bar'):
             self.progress_bar.setVisible(False)
         if hasattr(self, 'status_label'):
-            self.status_label.setText(f"Plugin '{plugin_id}' instalado exitosamente")
-        QMessageBox.information(self, "Instalación Exitosa",
-                               f"Plugin '{plugin_id}' ha sido instalado exitosamente!")
+            self.status_label.setText(tr("Plugin '{plugin_id}' instalado exitosamente", plugin_id=plugin_id))
+        QMessageBox.information(self, tr("Instalación Exitosa"),
+                               tr("Plugin '{plugin_id}' ha sido instalado exitosamente!", plugin_id=plugin_id))
         self.refresh_management_tab()
         self.load_available_plugins()
     def on_plugin_uninstalled(self, plugin_id: str):
         """Manejar desinstalación de plugin"""
         print(f"[UnifiedPluginPanel] Plugin '{plugin_id}' uninstalled")
         if hasattr(self, 'status_label'):
-            self.status_label.setText(f"Plugin '{plugin_id}' desinstalado")
+            self.status_label.setText(tr("Plugin '{plugin_id}' desinstalado", plugin_id=plugin_id))
         self.refresh_management_tab()
         self.load_available_plugins()
     def on_plugin_error(self, plugin_id: str, error: str):
         """Manejar error de plugin"""
-        print(f"[UnifiedPluginPanel] Error en plugin '{plugin_id}': {error}")
+        print(tr("[UnifiedPluginPanel] Error en plugin '{plugin_id}': {error}", plugin_id=plugin_id, error=error))
         if hasattr(self, 'progress_bar'):
             self.progress_bar.setVisible(False)
         if hasattr(self, 'status_label'):
-            self.status_label.setText(f"Error: {error}")
-        QMessageBox.warning(self, "Error de Plugin", 
-                           f"Error en plugin '{plugin_id}':\n\n{error}")
+            self.status_label.setText(tr("Error: {error}", error=error))
+        QMessageBox.warning(self, tr("Error de Plugin"), 
+                           tr("Error en plugin '{plugin_id}':\n\n{error}", plugin_id=plugin_id, error=error))
     def on_access_granted(self, plugin_id: str):
         """Manejar acceso concedido a plugin"""
         print(f"[UnifiedPluginPanel] Access granted to plugin '{plugin_id}'")
         if hasattr(self, 'status_label'):
-            self.status_label.setText(f"Acceso concedido a plugin '{plugin_id}'")
+            self.status_label.setText(tr("Acceso concedido a plugin '{plugin_id}'", plugin_id=plugin_id))
         self._schedule_refresh(300)
     def on_auth_state_changed(self, is_authenticated: bool):
         """Manejar cambio en el estado de autenticación"""
-        print(f"[UnifiedPluginPanel] Estado de autenticación cambió: {is_authenticated}")
+        print(tr("[UnifiedPluginPanel] Estado de autenticación cambió: {is_authenticated}", is_authenticated=is_authenticated))
 
         if is_authenticated:
             self._schedule_refresh(1000)
@@ -801,7 +912,7 @@ class UnifiedPluginPanel(BasePanel):
             if hasattr(self, 'management_table') and self.management_table:
                 self._show_auth_required_message()
             if hasattr(self, 'status_label') and self.status_label:
-                self.status_label.setText("Por favor, inicia sesión")
+                self.status_label.setText(tr("Por favor, inicia sesión"))
     def on_login_successful(self):
         """Manejar login exitoso"""
         print("[UnifiedPluginPanel] Login exitoso detectado - recargando plugins...")
@@ -812,10 +923,10 @@ class UnifiedPluginPanel(BasePanel):
         self._refresh_timer.start(max(delay_ms, self._refresh_timer.remainingTime()))
     def refresh_all_after_login(self):
         """Refrescar TODO el panel después del login"""
-        print("[UnifiedPluginPanel] Refrescando panel completo después del login...")
+        print(tr("[UnifiedPluginPanel] Refrescando panel completo después del login..."))
 
         if hasattr(self, 'load_available_plugins'):
             self.load_available_plugins()
         if hasattr(self, 'refresh_management_tab'):
             self.refresh_management_tab()
-        print("[UnifiedPluginPanel] Panel refrescado completamente")
+        print(tr("[UnifiedPluginPanel] Panel refrescado completamente"))

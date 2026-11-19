@@ -6,6 +6,7 @@ Genera sugerencias basadas en el análisis de la sesión de navegación.
 Respeta cooldowns, límites por sesión y las preferencias de privacidad.
 """
 
+from i18n import tr
 import logging
 import time
 from dataclasses import dataclass, field
@@ -105,8 +106,8 @@ class ProactiveSuggestionEngine(QObject):
         if intent == SessionIntent.RESEARCH:
             suggestions.append(SuggestionModel(
                 type=SuggestionType.SUMMARIZE_TABS,
-                title="Crear resumen de investigación",
-                description="Genera un resumen consolidado de tus pestañas de investigación con GenTab",
+                title=tr("Crear resumen de investigación"),
+                description=tr("Genera un resumen consolidado de tus pestañas de investigación con GenTab"),
                 icon="edit",
                 action_payload={"intent": "research", "action": "summarize"},
                 confidence=confidence,
@@ -114,8 +115,8 @@ class ProactiveSuggestionEngine(QObject):
         elif intent == SessionIntent.SHOPPING:
             suggestions.append(SuggestionModel(
                 type=SuggestionType.COMPARE_PRODUCTS,
-                title="Comparar productos",
-                description="Crea una tabla comparativa de los productos que estás viendo",
+                title=tr("Comparar productos"),
+                description=tr("Crea una tabla comparativa de los productos que estás viendo"),
                 icon="tag",
                 action_payload={"intent": "shopping", "action": "compare"},
                 confidence=confidence,
@@ -123,8 +124,8 @@ class ProactiveSuggestionEngine(QObject):
         elif intent == SessionIntent.CODING:
             suggestions.append(SuggestionModel(
                 type=SuggestionType.CREATE_DOC,
-                title="Generar documentación",
-                description="Documenta automáticamente lo que estás investigando",
+                title=tr("Generar documentación"),
+                description=tr("Documenta automáticamente lo que estás investigando"),
                 icon="code",
                 action_payload={"intent": "coding", "action": "document"},
                 confidence=confidence,
@@ -132,8 +133,8 @@ class ProactiveSuggestionEngine(QObject):
         elif intent == SessionIntent.NEWS:
             suggestions.append(SuggestionModel(
                 type=SuggestionType.SUMMARIZE_TABS,
-                title="Briefing de noticias",
-                description="Resume las noticias que estás leyendo en un briefing rápido",
+                title=tr("Briefing de noticias"),
+                description=tr("Resume las noticias que estás leyendo en un briefing rápido"),
                 icon="file-text",
                 action_payload={"intent": "news", "action": "briefing"},
                 confidence=confidence,
@@ -141,8 +142,8 @@ class ProactiveSuggestionEngine(QObject):
         elif intent == SessionIntent.TRAVEL:
             suggestions.append(SuggestionModel(
                 type=SuggestionType.CREATE_GENTAB,
-                title="Crear itinerario de viaje",
-                description="Organiza tu investigación de viaje en un itinerario interactivo",
+                title=tr("Crear itinerario de viaje"),
+                description=tr("Organiza tu investigación de viaje en un itinerario interactivo"),
                 icon="target",
                 action_payload={"intent": "travel", "action": "itinerary"},
                 confidence=confidence,
@@ -150,8 +151,8 @@ class ProactiveSuggestionEngine(QObject):
         elif intent == SessionIntent.ENTERTAINMENT:
             suggestions.append(SuggestionModel(
                 type=SuggestionType.CREATE_GENTAB,
-                title="Crear lista de reproducción",
-                description="Organiza tu contenido de entretenimiento en una lista",
+                title=tr("Crear lista de reproducción"),
+                description=tr("Organiza tu contenido de entretenimiento en una lista"),
                 icon="play",
                 action_payload={"intent": "entertainment", "action": "playlist"},
                 confidence=confidence,
@@ -165,8 +166,8 @@ class ProactiveSuggestionEngine(QObject):
             if domain_counts.get(top_domain, 0) >= 3:
                 suggestions.append(SuggestionModel(
                     type=SuggestionType.SUMMARIZE_TABS,
-                    title="Agrupar pestañas similares",
-                    description=f"Tienes {domain_counts[top_domain]} pestañas de {top_domain}. ¿Quieres agruparlas?",
+                    title=tr("Agrupar pestañas similares"),
+                    description=tr("Tienes {value} pestañas de {top_domain}. ¿Quieres agruparlas?", value=domain_counts[top_domain], top_domain=top_domain),
                     icon="folder",
                     action_payload={"action": "group", "domain": top_domain},
                     confidence=min(1.0, domain_counts[top_domain] / tab_count),
@@ -175,8 +176,8 @@ class ProactiveSuggestionEngine(QObject):
         if tab_count >= 3 and intent != SessionIntent.GENERAL:
             suggestions.append(SuggestionModel(
                 type=SuggestionType.CREATE_GENTAB,
-                title="Crear GenTab inteligente",
-                description="Genera una app interactiva basada en el contexto de tus pestañas",
+                title=tr("Crear GenTab inteligente"),
+                description=tr("Genera una app interactiva basada en el contexto de tus pestañas"),
                 icon="ide_ai_sparkles",
                 action_payload={"intent": intent.value, "action": "gentab"},
                 confidence=confidence * 0.9,
@@ -218,7 +219,7 @@ class ProactiveSuggestionEngine(QObject):
         self._dismissals[key] = self._dismissals.get(key, 0) + 1
         self._last_shown[key] = time.time()
         self._save_history()
-        logger.info("Sugerencia '%s' descartada (%d veces)", key, self._dismissals[key])
+        logger.info(tr("Sugerencia '%s' descartada (%d veces)"), key, self._dismissals[key])
     def record_acceptance(self, suggestion_type: SuggestionType) -> None:
         """Registra que el usuario aceptó una sugerencia.
 
@@ -230,7 +231,7 @@ class ProactiveSuggestionEngine(QObject):
         self._suggestions_shown += 1
         self._last_shown[key] = time.time()
         self._save_history()
-        logger.info("Sugerencia '%s' aceptada (%d veces)", key, self._acceptances[key])
+        logger.info(tr("Sugerencia '%s' aceptada (%d veces)"), key, self._acceptances[key])
     def reset_session(self) -> None:
         """Reinicia contadores de sesión (no persistentes)."""
         self._suggestions_shown = 0
@@ -336,7 +337,7 @@ class SuggestionToast(QFrame):
         self._desc_label.setWordWrap(True)
         text_layout.addWidget(self._desc_label)
 
-        self._action_btn = QPushButton("Aceptar")
+        self._action_btn = QPushButton(tr("Aceptar"))
         self._action_btn.setObjectName("toastAction")
         self._action_btn.setCursor(Qt.PointingHandCursor)
         self._action_btn.clicked.connect(self._on_accept)

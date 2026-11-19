@@ -14,6 +14,7 @@ Proveedores soportados:
 API idéntica: LLMClient(config).chat(messages, max_tokens, temperature)
 """
 
+from i18n import tr
 import json
 import re
 import logging
@@ -44,7 +45,7 @@ class _ProxySession(requests.Session):
 
     def request(self, method, url, **kwargs):
         if self._aborted:
-            raise LLMError("Petición cancelada")
+            raise LLMError(tr("Petición cancelada"))
         if kwargs.get("proxies") is None:
             proxies = requests_proxies(str(url))
             if proxies:
@@ -116,7 +117,7 @@ ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_API_VERSION = "2023-06-01"
 HUGGINGFACE_BASE_URL = "https://api-inference.huggingface.co"
 # Endpoint OpenAI-compatible (Serverless Inference — modelos de texto)
-HUGGINGFACE_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
+HUGGINGFACE_ROUTER_URL = tr("https://router.huggingface.co/v1/chat/completions")
 OLLAMA_DEFAULT_URL = "http://localhost:11434"
 # Ollama usa por defecto un contexto pequeño (2k-4k) y recorta el prompt en silencio.
 # Se fija num_ctx explícitamente: el del modelo, limitado para no disparar la RAM/VRAM.
@@ -258,7 +259,7 @@ OPENAI_COMPAT_PROVIDERS: Dict[str, Dict] = {
         "context": 128000,
         "max_output": None,
         "model_prefixes": None,
-        "key_placeholder": "API key de Mistral",
+        "key_placeholder": tr("API key de Mistral"),
         "key_url": "https://console.mistral.ai/api-keys",
     },
     PROVIDER_XAI: {
@@ -474,12 +475,12 @@ class LLMClient:
             payload["max_tokens"] = max_tokens
         if self.config.provider == PROVIDER_LLMAPI:
             if not self.config.llmapi_key:
-                raise LLMError("API key de llmapi.ai no configurada")
-            url = f"{LLMAPI_BASE_URL}/v1/chat/completions"
+                raise LLMError(tr("API key de llmapi.ai no configurada"))
+            url = tr("{LLMAPI_BASE_URL}/v1/chat/completions", LLMAPI_BASE_URL=LLMAPI_BASE_URL)
             payload["model"] = self.config.llmapi_model
             headers = self.get_headers()
         else:
-            url = f"{self.config.local_url.rstrip('/')}/v1/chat/completions"
+            url = tr("{value}/v1/chat/completions", value=self.config.local_url.rstrip('/'))
             model_id = self._detect_local_model()
             if model_id:
                 payload["model"] = model_id
@@ -564,7 +565,7 @@ class LLMClient:
     # ── Implementaciones locales ──────────────────────────────────────────────
 
     def _chat_local(self, messages, max_tokens, temperature) -> str:
-        url = f"{self.config.local_url.rstrip('/')}/v1/chat/completions"
+        url = tr("{value}/v1/chat/completions", value=self.config.local_url.rstrip('/'))
         model_id = self._detect_local_model()
         payload: Dict = {
             "messages": messages,
@@ -584,8 +585,8 @@ class LLMClient:
             return False, f"HTTP {resp.status_code}"
         models = resp.json().get("data", [])
         if not models:
-            return False, "Servidor responde pero sin modelos cargados"
-        return True, f"Conectado — modelo: {models[0].get('id', '?')}"
+            return False, tr("Servidor responde pero sin modelos cargados")
+        return True, tr("Conectado — modelo: {value}", value=models[0].get('id', '?'))
     def _list_models_local(self) -> List[str]:
         url = f"{self.config.local_url.rstrip('/')}/v1/models"
         resp = self._session.get(url, timeout=8)
@@ -678,8 +679,8 @@ class LLMClient:
 
     def _chat_llmapi(self, messages, max_tokens, temperature) -> str:
         if not self.config.llmapi_key:
-            raise LLMError("API key de llmapi.ai no configurada")
-        url = f"{LLMAPI_BASE_URL}/v1/chat/completions"
+            raise LLMError(tr("API key de llmapi.ai no configurada"))
+        url = tr("{LLMAPI_BASE_URL}/v1/chat/completions", LLMAPI_BASE_URL=LLMAPI_BASE_URL)
         payload = {
             "model": self.config.llmapi_model,
             "messages": messages,
@@ -692,7 +693,7 @@ class LLMClient:
         return self._parse_response(resp)
     def _test_llmapi(self) -> tuple:
         if not self.config.llmapi_key:
-            return False, "API key vacía — introduce tu clave de llmapi.ai"
+            return False, tr("API key vacía — introduce tu clave de llmapi.ai")
         resp = self._session.post(
             f"{LLMAPI_BASE_URL}/v1/chat/completions",
             json={
@@ -705,7 +706,7 @@ class LLMClient:
             timeout=20,
         )
         if resp.status_code == 200:
-            return True, f"Conectado a llmapi.ai — modelo: {self.config.llmapi_model}"
+            return True, tr("Conectado a llmapi.ai — modelo: {llmapi_model}", llmapi_model=self.config.llmapi_model)
         try:
             err = resp.json().get("error", {}).get("message", resp.text[:200])
         except Exception:
@@ -749,7 +750,7 @@ class LLMClient:
     def _chat_anthropic(self, messages: List[Dict], max_tokens: Optional[int], temperature: float) -> str:
         """Llamada síncrona a la API de Anthropic."""
         if not self.config.anthropic_key:
-            raise LLMError("API key de Anthropic no configurada")
+            raise LLMError(tr("API key de Anthropic no configurada"))
         url = f"{ANTHROPIC_BASE_URL}/v1/messages"
         payload = self._build_anthropic_payload(messages, max_tokens, temperature, stream=False)
 
@@ -762,13 +763,13 @@ class LLMClient:
                 detail = err.get("error", {}).get("message", resp.text[:400])
             except Exception:
                 detail = resp.text[:400]
-            raise LLMError(f"Anthropic API error {resp.status_code}: {detail}")
+            raise LLMError(tr("Anthropic API error {status_code}: {detail}", status_code=resp.status_code, detail=detail))
         data = resp.json()
         if data.get("stop_reason") == "refusal":
             raise LLMError(self._anthropic_refusal_message(data.get("stop_details")))
         content_blocks = data.get("content", [])
         if not content_blocks:
-            raise LLMError("Respuesta vacía de Anthropic")
+            raise LLMError(tr("Respuesta vacía de Anthropic"))
         return "".join(block.get("text", "") for block in content_blocks if block.get("type") == "text")
     def _stream_anthropic(
         self,
@@ -783,7 +784,7 @@ class LLMClient:
           - message_stop        → fin de stream
         """
         if not self.config.anthropic_key:
-            raise LLMError("API key de Anthropic no configurada")
+            raise LLMError(tr("API key de Anthropic no configurada"))
         url = f"{ANTHROPIC_BASE_URL}/v1/messages"
         payload = self._build_anthropic_payload(messages, max_tokens, temperature, stream=True)
 
@@ -798,7 +799,7 @@ class LLMClient:
                 detail = resp.json().get("error", {}).get("message", resp.text[:200])
             except Exception:
                 detail = resp.text[:200]
-            raise LLMError(f"Anthropic stream error {resp.status_code}: {detail}")
+            raise LLMError(tr("Anthropic stream error {status_code}: {detail}", status_code=resp.status_code, detail=detail))
         current_event = None
         for raw_line in resp.iter_lines():
             if not raw_line:
@@ -825,7 +826,7 @@ class LLMClient:
                         err = json.loads(data_str).get("error", {}).get("message", data_str)
                     except json.JSONDecodeError:
                         err = data_str
-                    raise LLMError(f"Anthropic stream error: {err}")
+                    raise LLMError(tr("Anthropic stream error: {err}", err=err))
                 if current_event != "content_block_delta":
                     continue
                 try:
@@ -840,7 +841,7 @@ class LLMClient:
     @staticmethod
     def _anthropic_refusal_message(stop_details) -> str:
         explanation = (stop_details or {}).get("explanation") if isinstance(stop_details, dict) else None
-        return "Claude ha rechazado responder a esta petición" + (f": {explanation}" if explanation else ".")
+        return tr("Claude ha rechazado responder a esta petición") + (f": {explanation}" if explanation else ".")
     def _list_models_anthropic(self) -> List[str]:
         """Modelos disponibles para la API key (GET /v1/models); sin key, la lista sugerida."""
         if not self.config.anthropic_key:
@@ -855,17 +856,16 @@ class LLMClient:
     def _test_anthropic(self) -> tuple:
         """Valida API key y modelo con GET /v1/models/{id} (no consume tokens)."""
         if not self.config.anthropic_key:
-            return False, "API key de Anthropic vacía — introduce tu clave sk-ant-..."
+            return False, tr("API key de Anthropic vacía — introduce tu clave sk-ant-...")
         try:
             url = f"{ANTHROPIC_BASE_URL}/v1/models/{self.config.anthropic_model}"
             resp = self._session.get(url, headers=self.get_headers(), timeout=20)
             if resp.status_code == 200:
-                return True, f"Conectado a Anthropic — modelo: {self.config.anthropic_model}"
+                return True, tr("Conectado a Anthropic — modelo: {anthropic_model}", anthropic_model=self.config.anthropic_model)
             if resp.status_code == 401:
-                return False, "Anthropic: API key no válida (HTTP 401)"
+                return False, tr("Anthropic: API key no válida (HTTP 401)")
             if resp.status_code == 404:
-                return False, (f"API key válida, pero el modelo '{self.config.anthropic_model}' "
-                               "no existe o no está disponible para tu cuenta")
+                return False, (tr("API key válida, pero el modelo '{anthropic_model}' no existe o no está disponible para tu cuenta", anthropic_model=self.config.anthropic_model))
             err = ""
             try:
                 err = resp.json().get("error", {}).get("message", resp.text[:200])
@@ -873,9 +873,9 @@ class LLMClient:
                 err = resp.text[:200]
             return False, f"HTTP {resp.status_code}: {err}"
         except requests.exceptions.ConnectionError:
-            return False, "Sin conexión a api.anthropic.com — verifica tu red"
+            return False, tr("Sin conexión a api.anthropic.com — verifica tu red")
         except requests.exceptions.Timeout:
-            return False, "Timeout — la API de Anthropic no respondió en 20s"
+            return False, tr("Timeout — la API de Anthropic no respondió en 20s")
         except Exception as e:
             return False, str(e)
     # ── Implementaciones HuggingFace ──────────────────────────────────────────
@@ -886,7 +886,7 @@ class LLMClient:
         Usa el router serverless de HuggingFace que admite el formato messages estándar.
         """
         if not self.config.huggingface_key:
-            raise LLMError("API key de HuggingFace no configurada")
+            raise LLMError(tr("API key de HuggingFace no configurada"))
         payload: Dict = {
             "model": self.config.huggingface_model,
             "messages": messages,
@@ -912,7 +912,7 @@ class LLMClient:
         Streaming SSE desde HuggingFace Inference Router (formato OpenAI-compatible).
         """
         if not self.config.huggingface_key:
-            raise LLMError("API key de HuggingFace no configurada")
+            raise LLMError(tr("API key de HuggingFace no configurada"))
         payload: Dict = {
             "model": self.config.huggingface_model,
             "messages": messages,
@@ -949,7 +949,7 @@ class LLMClient:
     def _test_huggingface(self) -> tuple:
         """Prueba la conexión con HuggingFace enviando un mensaje mínimo."""
         if not self.config.huggingface_key:
-            return False, "API key vacía — introduce tu token HuggingFace (hf_...)"
+            return False, tr("API key vacía — introduce tu token HuggingFace (hf_...)")
         try:
             resp = self._session.post(
                 HUGGINGFACE_ROUTER_URL,
@@ -963,7 +963,7 @@ class LLMClient:
                 timeout=25,
             )
             if resp.status_code == 200:
-                return True, f"Conectado a HuggingFace — modelo: {self.config.huggingface_model}"
+                return True, tr("Conectado a HuggingFace — modelo: {huggingface_model}", huggingface_model=self.config.huggingface_model)
             try:
                 err_body = resp.json()
                 err = err_body.get("error", resp.text[:200])
@@ -973,9 +973,9 @@ class LLMClient:
                 err = resp.text[:200]
             return False, f"HTTP {resp.status_code}: {err}"
         except requests.exceptions.ConnectionError:
-            return False, "Sin conexión a router.huggingface.co — verifica tu red"
+            return False, tr("Sin conexión a router.huggingface.co — verifica tu red")
         except requests.exceptions.Timeout:
-            return False, "Timeout — HuggingFace no respondió en 25s (modelo frío)"
+            return False, tr("Timeout — HuggingFace no respondió en 25s (modelo frío)")
         except Exception as e:
             return False, str(e)
     # ── Implementaciones cloud OpenAI-compatible (OpenAI, DeepSeek...) ────────
@@ -985,7 +985,7 @@ class LLMClient:
     def _compat_require_key(self) -> str:
         key = self.config.compat_key(self.config.provider)
         if not key:
-            raise LLMError(f"API key de {self._compat_spec()['label']} no configurada")
+            raise LLMError(tr("API key de {value} no configurada", value=self._compat_spec()['label']))
         return key
     def _build_compat_payload(self, messages, max_tokens, temperature, stream: bool) -> Dict:
         spec = self._compat_spec()
@@ -1003,11 +1003,11 @@ class LLMClient:
     def _compat_error(self, resp: requests.Response) -> str:
         label = self._compat_spec()["label"]
         if resp.status_code == 401:
-            return f"{label}: API key no válida (HTTP 401)"
+            return tr("{label}: API key no válida (HTTP 401)", label=label)
         if resp.status_code == 402:
-            return f"{label}: saldo insuficiente en la cuenta (HTTP 402)"
+            return tr("{label}: saldo insuficiente en la cuenta (HTTP 402)", label=label)
         if resp.status_code == 429:
-            return f"{label}: límite de uso o de cuota alcanzado (HTTP 429)"
+            return tr("{label}: límite de uso o de cuota alcanzado (HTTP 429)", label=label)
         try:
             err = resp.json().get("error", {})
             detail = err.get("message", "") if isinstance(err, dict) else str(err)
@@ -1068,7 +1068,7 @@ class LLMClient:
         """Valida la API key consultando /models (no consume tokens)."""
         spec = self._compat_spec()
         if not self.config.compat_key(self.config.provider):
-            return False, f"API key vacía — introduce tu clave de {spec['label']}"
+            return False, tr("API key vacía — introduce tu clave de {value}", value=spec['label'])
         try:
             try:
                 models = self._list_models_compat()
@@ -1079,15 +1079,15 @@ class LLMClient:
                 self._chat_compat([{"role": "user", "content": "Hi"}], 5, 0.0)
                 models = []
         except requests.exceptions.ConnectionError:
-            return False, f"Sin conexión a {spec['base_url']} — verifica tu red"
+            return False, tr("Sin conexión a {value} — verifica tu red", value=spec['base_url'])
         except requests.exceptions.Timeout:
-            return False, f"Timeout — {spec['label']} no respondió"
+            return False, tr("Timeout — {value} no respondió", value=spec['label'])
         except LLMError as e:
             return False, str(e)
         model = self.config.compat_model(self.config.provider)
         if models and model not in models:
-            return False, f"API key válida, pero el modelo '{model}' no está disponible para tu cuenta"
-        return True, f"Conectado a {spec['label']} — modelo: {model}"
+            return False, tr("API key válida, pero el modelo '{model}' no está disponible para tu cuenta", model=model)
+        return True, tr("Conectado a {value} — modelo: {model}", value=spec['label'], model=model)
     # ── Implementaciones Ollama ───────────────────────────────────────────────
 
     def _ollama_base(self) -> str:
@@ -1109,7 +1109,7 @@ class LLMClient:
             self._cached_model_id = models[0] if models else ""
         if not self._cached_model_id:
             raise LLMError(
-                "Ollama no tiene modelos instalados — descarga uno con: ollama pull llama3.2"
+                tr("Ollama no tiene modelos instalados — descarga uno con: ollama pull llama3.2")
             )
         return self._cached_model_id
     def _ollama_context_window(self) -> int:
@@ -1164,7 +1164,7 @@ class LLMClient:
             raise LLMError(self._ollama_error(resp))
         content = resp.json().get("message", {}).get("content", "")
         if not content:
-            raise LLMError("Respuesta vacía de Ollama")
+            raise LLMError(tr("Respuesta vacía de Ollama"))
         return content
     def _stream_ollama(self, messages, max_tokens, temperature) -> Iterator[str]:
         """Streaming NDJSON de Ollama: una línea JSON por fragmento, la última con done=true."""
@@ -1193,15 +1193,15 @@ class LLMClient:
         try:
             models = self._list_models_ollama()
         except requests.exceptions.ConnectionError:
-            return False, f"Sin conexión a {base} — ¿está Ollama ejecutándose? (ollama serve)"
+            return False, tr("Sin conexión a {base} — ¿está Ollama ejecutándose? (ollama serve)", base=base)
         except requests.exceptions.Timeout:
-            return False, f"Timeout — Ollama no respondió en {base}"
+            return False, tr("Timeout — Ollama no respondió en {base}", base=base)
         if not models:
-            return False, "Ollama responde pero no hay modelos instalados (ollama pull llama3.2)"
+            return False, tr("Ollama responde pero no hay modelos instalados (ollama pull llama3.2)")
         model = self.config.ollama_model
         if model and model not in models and f"{model}:latest" not in models:
-            return False, f"El modelo '{model}' no está instalado en Ollama. Disponibles: {', '.join(models[:5])}"
-        return True, f"Conectado a Ollama — modelo: {model or models[0]}"
+            return False, tr("El modelo '{model}' no está instalado en Ollama. Disponibles: {value}", model=model, value=', '.join(models[:5]))
+        return True, tr("Conectado a Ollama — modelo: {value}", value=model or models[0])
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -1212,11 +1212,11 @@ class LLMClient:
                 detail = resp.json().get("error", {}).get("message", "")
             except Exception:
                 detail = resp.text[:400]
-            raise LLMError(f"Error del servidor: {resp.status_code}" + (f" — {detail}" if detail else ""))
+            raise LLMError(tr("Error del servidor: {status_code}", status_code=resp.status_code) + (f" — {detail}" if detail else ""))
         data = resp.json()
         choices = data.get("choices", [])
         if not choices:
-            raise LLMError("Respuesta vacía del servidor")
+            raise LLMError(tr("Respuesta vacía del servidor"))
         return choices[0]["message"]["content"]
 
 

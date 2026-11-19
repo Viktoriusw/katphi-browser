@@ -1,3 +1,4 @@
+from i18n import tr
 from datetime import datetime
 
 
@@ -15,7 +16,7 @@ class HistoryManager:
     def show_history(self, tab_manager):
         dialog = QDialog()
 
-        dialog.setWindowTitle("History")
+        dialog.setWindowTitle(tr("History"))
 
         dialog.resize(600, 400)
 
@@ -45,7 +46,7 @@ class HistoryManager:
     def show_history(self, tab_manager):
         dialog = QDialog()
 
-        dialog.setWindowTitle("History")
+        dialog.setWindowTitle(tr("History"))
 
         dialog.resize(600, 400)
 
@@ -69,7 +70,7 @@ class HistoryManager:
     def clear_history(self):
         """Limpiar todo el historial de navegación"""
         self.history.clear()
-        print("[HistoryManager] Historial limpiado")
+        print(tr("[HistoryManager] Historial limpiado"))
 
 
 class HistoryPanel(QWidget):
@@ -87,7 +88,7 @@ class HistoryPanel(QWidget):
 
         # Header
         header_layout = QHBoxLayout()
-        title = QLabel("Historial")
+        title = QLabel(tr("Historial"))
         title.setFont(QFont("Segoe UI", 12, QFont.Bold))
         header_layout.addWidget(title)
 
@@ -99,7 +100,7 @@ class HistoryPanel(QWidget):
             clear_btn.setIconSize(_QSize(16, 16))
         except Exception:
             pass
-        clear_btn.setToolTip("Limpiar historial")
+        clear_btn.setToolTip(tr("Limpiar historial"))
         clear_btn.setFixedSize(30, 30)
         clear_btn.clicked.connect(self.clear_history)
         header_layout.addWidget(clear_btn)
@@ -107,16 +108,16 @@ class HistoryPanel(QWidget):
 
         # Recuperar la sesión anterior (las pestañas no se reabren solas al
         # arrancar; solo si el usuario lo pide, y una vez)
-        self.restore_session_btn = QPushButton("Restaurar sesión anterior")
+        self.restore_session_btn = QPushButton(tr("Restaurar sesión anterior"))
         self.restore_session_btn.setToolTip(
-            "Reabre las pestañas que tenías abiertas al cerrar el navegador")
+            tr("Reabre las pestañas que tenías abiertas al cerrar el navegador"))
         self.restore_session_btn.clicked.connect(self.restore_previous_session)
         layout.addWidget(self.restore_session_btn)
         self.update_restore_button()
 
         # Search
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Buscar en el historial...")
+        self.search_input.setPlaceholderText(tr("Buscar en el historial..."))
         self.search_input.textChanged.connect(self.filter_history)
         layout.addWidget(self.search_input)
 
@@ -136,7 +137,7 @@ class HistoryPanel(QWidget):
         self.restore_session_btn.setVisible(count > 0)
         if count:
             self.restore_session_btn.setText(
-                f"Restaurar sesión anterior ({count} pestaña{'s' if count != 1 else ''})")
+                tr("Restaurar sesión anterior ({count} pestaña{value})", count=count, value='s' if count != 1 else ''))
 
     def restore_previous_session(self):
         win = self._main_window()

@@ -13,6 +13,7 @@ Manejo avanzado de errores, timeouts y validación de conectividad
 """
 
 
+from i18n import tr
 import requests
 
 import jwt
@@ -113,20 +114,20 @@ def check_plugin_zip_members(zip_ref, max_total: int = MAX_PLUGIN_UNCOMPRESSED_B
     """
     infos = zip_ref.infolist()
     if len(infos) > MAX_PLUGIN_ZIP_ENTRIES:
-        return f"demasiadas entradas en el ZIP ({len(infos)})"
+        return tr("demasiadas entradas en el ZIP ({count})", count=len(infos))
     total = 0
     for info in infos:
         name = info.filename
         normalized = name.replace("\\", "/")
         if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
-            return f"ruta absoluta en el ZIP: {name}"
+            return tr("ruta absoluta en el ZIP: {name}", name=name)
         if any(part == ".." for part in normalized.split("/")):
-            return f"ruta con '..' en el ZIP: {name}"
+            return tr("ruta con '..' en el ZIP: {name}", name=name)
         if info.file_size < 0:
-            return f"tamaño inválido en el ZIP: {name}"
+            return tr("tamaño inválido en el ZIP: {name}", name=name)
         total += info.file_size
         if total > max_total:
-            return f"tamaño descomprimido por encima del límite ({max_total // (1024 * 1024)} MB)"
+            return tr("tamaño descomprimido por encima del límite ({value} MB)", value=max_total // (1024 * 1024))
     return None
 
 
@@ -421,7 +422,7 @@ class BackendIntegration(QObject):
         except Exception as e:
             self._connection_check_running = False
 
-            logger.warning(f"Could not start connection check thread: {e}")
+            logger.warning(tr("Could not start connection check thread: {e}", e=e))
     def _apply_connection_result(self, connected: bool, error: str = ""):
         """Aplicar en el hilo de la GUI el resultado de la comprobación de conectividad"""
 
@@ -443,7 +444,7 @@ class BackendIntegration(QObject):
             if connected:
                 logger.info(f"Connection status changed: {connected}")
             else:
-                logger.warning(f"Connection lost: {error}")
+                logger.warning(tr("Connection lost: {error}", error=error))
             # D-005: la restauración de sesión falló por red; reintentar una
             # vez ahora que hay conexión.
             if connected and self._restore_pending:
@@ -514,38 +515,38 @@ class BackendIntegration(QObject):
 
                         # Validación básica: debe ser un dict o list
                         if not isinstance(data, (dict, list)):
-                            logger.warning(f"Unexpected response type: {type(data)}")
+                            logger.warning(tr("Unexpected response type: {value}", value=type(data)))
                             return BackendResponse(False, error=BackendError.INVALID_RESPONSE,
-                                                 status_code=response.status_code, message="Invalid response structure")
+                                                 status_code=response.status_code, message=tr("Invalid response structure"))
                         return BackendResponse(True, data, status_code=response.status_code)
                     except json.JSONDecodeError:
                         return BackendResponse(False, error=BackendError.INVALID_RESPONSE, 
 
-                                            status_code=200, message="Invalid JSON response")
+                                            status_code=200, message=tr("Invalid JSON response"))
                 elif response.status_code == 401:
                     return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
-                                        status_code=401, message="Authentication failed")
+                                        status_code=401, message=tr("Authentication failed"))
                 elif response.status_code == 403:
                     return BackendResponse(False, error=BackendError.AUTHORIZATION_ERROR,
 
-                                        status_code=403, message="Access denied")
+                                        status_code=403, message=tr("Access denied"))
                 elif response.status_code == 404:
                     return BackendResponse(False, error=BackendError.PLUGIN_NOT_FOUND,
 
-                                        status_code=404, message="Resource not found")
+                                        status_code=404, message=tr("Resource not found"))
                 elif response.status_code >= 500:
-                    logger.error(f"Server error {response.status_code}: {response.text}")
+                    logger.error(tr("Server error {status_code}: {text_}", status_code=response.status_code, text_=response.text))
 
                     return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                        status_code=response.status_code, message=f"Server error: {response.text}")
+                                        status_code=response.status_code, message=tr("Server error: {text_}", text_=response.text))
                 else:
                     return BackendResponse(False, error=BackendError.INVALID_RESPONSE,
 
-                                        status_code=response.status_code, message=f"Unexpected status: {response.status_code}")
+                                        status_code=response.status_code, message=tr("Unexpected status: {status_code}", status_code=response.status_code))
             except requests.exceptions.Timeout:
-                logger.warning(f"Timeout on attempt {attempt + 1}/{max_attempts}")
+                logger.warning(tr("Timeout on attempt {value}/{max_attempts}", value=attempt + 1, max_attempts=max_attempts))
 
                 if attempt < max_attempts - 1:
                     # Backoff exponencial: delay = initial * (backoff ^ attempt), limitado a max_delay
@@ -560,9 +561,9 @@ class BackendIntegration(QObject):
                     continue
                 return BackendResponse(False, error=BackendError.TIMEOUT_ERROR, 
 
-                                     message="Request timeout after all retries")
+                                     message=tr("Request timeout after all retries"))
             except requests.exceptions.ConnectionError as e:
-                logger.warning(f"Connection error on attempt {attempt + 1}/{max_attempts}: {e}")
+                logger.warning(tr("Connection error on attempt {value}/{max_attempts}: {e}", value=attempt + 1, max_attempts=max_attempts, e=e))
 
                 if attempt < max_attempts - 1:
                     # Backoff exponencial para errores de conexión
@@ -577,9 +578,9 @@ class BackendIntegration(QObject):
                     continue
                 return BackendResponse(False, error=BackendError.NETWORK_ERROR, 
 
-                                     message="Connection failed after all retries")
+                                     message=tr("Connection failed after all retries"))
             except Exception as e:
-                logger.error(f"Unexpected error on attempt {attempt + 1}/{max_attempts}: {e}")
+                logger.error(tr("Unexpected error on attempt {value}/{max_attempts}: {e}", value=attempt + 1, max_attempts=max_attempts, e=e))
 
                 if attempt < max_attempts - 1:
                     # Backoff exponencial para errores inesperados
@@ -594,8 +595,8 @@ class BackendIntegration(QObject):
                     continue
                 return BackendResponse(False, error=BackendError.NETWORK_ERROR, 
 
-                                     message=f"Error after all retries: {str(e)}")
-        return BackendResponse(False, error=BackendError.NETWORK_ERROR, message="Max retries exceeded")
+                                     message=tr("Error after all retries: {value}", value=str(e)))
+        return BackendResponse(False, error=BackendError.NETWORK_ERROR, message=tr("Max retries exceeded"))
     def is_authenticated(self) -> bool:
         """Verificar si el usuario está autenticado con validación de token"""
 
@@ -634,7 +635,7 @@ class BackendIntegration(QObject):
 
         try:
             if not self.access_token or not self.refresh_token:
-                logger.warning("Cannot save tokens: tokens are missing")
+                logger.warning(tr("Cannot save tokens: tokens are missing"))
 
                 return
             # Guardar tokens (cifrados)
@@ -665,7 +666,7 @@ class BackendIntegration(QObject):
 
             logger.info("Tokens saved successfully to QSettings")
         except Exception as e:
-            logger.error(f"Error saving tokens: {e}")
+            logger.error(tr("Error saving tokens: {e}", e=e))
     def _restore_session(self):
         """
 
@@ -694,7 +695,7 @@ class BackendIntegration(QObject):
             encrypted_refresh = self.settings.value("refresh_token")
 
             if not encrypted_access or not encrypted_refresh:
-                logger.info("No saved session found")
+                logger.info(tr("No saved session found"))
 
                 # Sin tokens no hay sesión que restaurar: AuthManager descarta
                 # el estado optimista que cargó de sus credenciales guardadas.
@@ -709,7 +710,7 @@ class BackendIntegration(QObject):
 
             # Verificar que el descifrado fue exitoso
             if not self.access_token or not self.refresh_token:
-                logger.warning("Failed to decrypt tokens")
+                logger.warning(tr("Failed to decrypt tokens"))
 
                 self.access_token = None
 
@@ -747,13 +748,13 @@ class BackendIntegration(QObject):
                 elif self.refresh_token is None:
                     # _refresh_token llamó a logout(): el backend rechazó el
                     # refresh token (y ya se borraron los tokens guardados)
-                    logger.warning("Refresh token rejected by backend, saved session cleared")
+                    logger.warning(tr("Refresh token rejected by backend, saved session cleared"))
 
                     self._on_restore_auth_rejected()
 
                     return
                 else:
-                    logger.warning("Token refresh failed (network/server), keeping saved session")
+                    logger.warning(tr("Token refresh failed (network/server), keeping saved session"))
 
                     self._on_restore_network_failure()
 
@@ -812,17 +813,17 @@ class BackendIntegration(QObject):
 
                 logger.info(f"AUTO-LOGIN successful for: {user_email}")
             elif user_response.error in (BackendError.AUTHENTICATION_ERROR, BackendError.AUTHORIZATION_ERROR):
-                logger.warning(f"Saved session rejected by backend: {user_response.message}")
+                logger.warning(tr("Saved session rejected by backend: {message}", message=user_response.message))
 
                 self._on_restore_auth_rejected()
             else:
-                logger.warning(f"Token validation failed (network/server), keeping saved session: {user_response.message}")
+                logger.warning(tr("Token validation failed (network/server), keeping saved session: {message}", message=user_response.message))
 
                 self._on_restore_network_failure()
         except Exception as e:
             # Error inesperado (datos corruptos, respuesta sin campos...): no
             # es un rechazo de credenciales, así que no se borra la sesión.
-            logger.error(f"Error restoring session: {e}")
+            logger.error(tr("Error restoring session: {e}", e=e))
 
             self.current_user = None
 
@@ -872,7 +873,7 @@ class BackendIntegration(QObject):
 
             logger.info("Saved tokens cleared")
         except Exception as e:
-            logger.error(f"Error clearing saved tokens: {e}")
+            logger.error(tr("Error clearing saved tokens: {e}", e=e))
     # ============================================
 
     # FIN DE MÉTODOS DE PERSISTENCIA
@@ -887,13 +888,13 @@ class BackendIntegration(QObject):
         if not email or not password:
             return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
-                                message="User ID and password are required")
+                                message=tr("User ID and password are required"))
         # Verificar conectividad
 
         if not self.is_connected:
             return BackendResponse(False, error=BackendError.NETWORK_ERROR, 
 
-                                message="No connection to backend server")
+                                message=tr("No connection to backend server"))
         # Realizar login con timeout adecuado (desde config)
 
         auth_timeout = self.config.get_timeout('auth')  # 15 segundos por defecto
@@ -944,7 +945,7 @@ class BackendIntegration(QObject):
 
                         return BackendResponse(False, error=BackendError.USER_NOT_VERIFIED,
 
-                                            message="User email not verified")
+                                            message=tr("User email not verified"))
                     # Cargar datos del usuario
 
                     self._load_user_data()
@@ -963,26 +964,26 @@ class BackendIntegration(QObject):
 
                     return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
-                                        message="Failed to get user information")
+                                        message=tr("Failed to get user information"))
             except Exception as e:
-                logger.error(f"Error processing login response: {e}")
+                logger.error(tr("Error processing login response: {e}", e=e))
 
                 self.logout()
 
                 return BackendResponse(False, error=BackendError.INVALID_RESPONSE,
 
-                                    message="Error processing server response")
+                                    message=tr("Error processing server response"))
         else:
             # Manejar errores específicos
 
             if response.error == BackendError.AUTHENTICATION_ERROR:
                 return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
-                                    message="Invalid email or password")
+                                    message=tr("Invalid email or password"))
             elif response.error == BackendError.USER_NOT_VERIFIED:
                 return BackendResponse(False, error=BackendError.USER_NOT_VERIFIED,
 
-                                    message="Email not verified. Please check your email.")
+                                    message=tr("Email not verified. Please check your email."))
             else:
                 return BackendResponse(False, error=response.error, message=response.message)
     def _compute_token_expiry(self, token: str, fallback_minutes: int = 30) -> datetime:
@@ -1001,7 +1002,7 @@ class BackendIntegration(QObject):
             if exp:
                 return datetime.fromtimestamp(exp)
         except Exception as e:
-            logger.warning(f"No se pudo leer 'exp' del token, usando fallback de {fallback_minutes}min: {e}")
+            logger.warning(tr("No se pudo leer 'exp' del token, usando fallback de {fallback_minutes}min: {e}", fallback_minutes=fallback_minutes, e=e))
         return datetime.now() + timedelta(minutes=fallback_minutes)
     def _refresh_token(self) -> bool:
         """Refrescar token de acceso (thread-safe)"""
@@ -1036,7 +1037,7 @@ class BackendIntegration(QObject):
 
                     return True
                 else:
-                    logger.warning(f"Failed to refresh token: {response.error}")
+                    logger.warning(tr("Failed to refresh token: {error}", error=response.error))
 
                     # Solo cerrar sesión si el backend rechazó explícitamente el
                     # refresh token (credenciales inválidas de verdad). Ante un
@@ -1046,7 +1047,7 @@ class BackendIntegration(QObject):
                         self.logout()
                     return False
             except Exception as e:
-                logger.error(f"Error refreshing token: {e}")
+                logger.error(tr("Error refreshing token: {e}", e=e))
 
                 # Error inesperado (no confirmado como credenciales inválidas):
                 # no cerramos sesión, solo falla este intento de refresco.
@@ -1060,7 +1061,7 @@ class BackendIntegration(QObject):
 
                 self._make_request("POST", "/auth/logout")
         except Exception as e:
-            logger.warning(f"Error during logout: {e}")
+            logger.warning(tr("Error during logout: {e}", e=e))
         # Limpiar estado completamente
 
         self.current_user = None
@@ -1130,9 +1131,9 @@ class BackendIntegration(QObject):
 
                 logger.info(f"Loaded {len(self.available_plugins)} plugins")
             except Exception as e:
-                logger.error(f"Error processing plugins data: {e}")
+                logger.error(tr("Error processing plugins data: {e}", e=e))
 
-                self.error_occurred.emit("Error processing plugins data")
+                self.error_occurred.emit(tr("Error processing plugins data"))
         else:
             logger.error(f"Failed to load plugins: {response.message}")
 
@@ -1151,9 +1152,13 @@ class BackendIntegration(QObject):
             try:
                 licenses_data = response.data
 
+                # Solo los campos conocidos: un campo nuevo en la respuesta del
+                # backend no debe romper la carga de licencias.
+                known = set(BackendLicense.__dataclass_fields__)
                 self.user_licenses = [
 
-                    BackendLicense(**license) for license in licenses_data
+                    BackendLicense(**{k: v for k, v in license.items() if k in known})
+                    for license in licenses_data
                 ]
 
                 # Actualizar diccionario de licencias
@@ -1174,9 +1179,9 @@ class BackendIntegration(QObject):
 
                 self._check_license_expiration()
             except Exception as e:
-                logger.error(f"Error processing licenses data: {e}")
+                logger.error(tr("Error processing licenses data: {e}", e=e))
 
-                self.error_occurred.emit("Error processing licenses data")
+                self.error_occurred.emit(tr("Error processing licenses data"))
         else:
             logger.error(f"Failed to load licenses: {response.message}")
 
@@ -1189,6 +1194,26 @@ class BackendIntegration(QObject):
         """Obtener licencias del usuario"""
 
         return self.user_licenses
+    def get_trial_status(self) -> Optional[Dict[str, Any]]:
+        """Estado de la prueba gratuita de la cuenta (/licenses/me/trial).
+        Devuelve None si no hay sesión o el backend no responde."""
+        if not self.is_authenticated():
+            return None
+        try:
+            response = self._make_request("GET", "/licenses/me/trial")
+        except Exception as e:
+            logger.warning(tr("No se pudo consultar la prueba gratuita: {e}", e=e))
+            return None
+        if not response.success or not isinstance(response.data, dict):
+            return None
+        data = response.data
+        return {
+            "active": bool(data.get("active")),
+            "trial_days": int(data.get("trial_days") or 0),
+            "days_remaining": int(data.get("days_remaining") or 0),
+            "ends_at": data.get("ends_at"),
+            "plugin_ids": set(data.get("plugin_ids") or []),
+        }
     def has_plugin_access(self, plugin_id: str) -> bool:
         """
 
@@ -1229,7 +1254,7 @@ class BackendIntegration(QObject):
                         expires_date = datetime.fromisoformat(license.expires_at.replace('Z', '+00:00'))
 
                         if datetime.now() >= expires_date:
-                            logger.warning(f"License for {plugin_id} has expired")
+                            logger.warning(tr("License for {plugin_id} has expired", plugin_id=plugin_id))
 
                             # Actualizar caché con resultado negativo
 
@@ -1237,7 +1262,7 @@ class BackendIntegration(QObject):
 
                             return False
                     except Exception as e:
-                        logger.warning(f"Error parsing expiration date for {plugin_id}: {e}")
+                        logger.warning(tr("Error parsing expiration date for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
                 # Licencia válida, actualizar caché
 
                 self._update_license_cache(plugin_id, license, True)
@@ -1317,7 +1342,7 @@ class BackendIntegration(QObject):
 
                 return plugin_data.get("has_access", False)
         except Exception as e:
-            logger.error(f"Error verifying plugin access: {e}")
+            logger.error(tr("Error verifying plugin access: {e}", e=e))
         return False
     def download_plugin(self, plugin_id: str) -> BackendResponse:
         """
@@ -1334,15 +1359,16 @@ class BackendIntegration(QObject):
 
             return BackendResponse(False, error=BackendError.INVALID_RESPONSE,
 
-                                message="Invalid plugin id")
+                                message=tr("Invalid plugin id"))
         if not self.is_authenticated():
             return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
-                                message="User not authenticated")
-        if not self.has_plugin_access(plugin_id):
+                                message=tr("User not authenticated"))
+        from plugin_policy import is_free_plugin
+        if not is_free_plugin(plugin_id) and not self.has_plugin_access(plugin_id):
             return BackendResponse(False, error=BackendError.LICENSE_REQUIRED,
 
-                                message=f"No access to plugin {plugin_id}")
+                                message=tr("No access to plugin {plugin_id}", plugin_id=plugin_id))
         try:
             # Usar requests directamente para descargar archivo ZIP binario
 
@@ -1375,7 +1401,7 @@ class BackendIntegration(QObject):
 
                         return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                            message="Downloaded plugin exceeds the maximum allowed size")
+                                            message=tr("Downloaded plugin exceeds the maximum allowed size"))
                     chunks.append(chunk)
                 downloaded_content = b"".join(chunks)
 
@@ -1409,7 +1435,7 @@ class BackendIntegration(QObject):
                         if backup_success:
                             logger.info(f"Backup created for existing plugin: {plugin_id}")
                         else:
-                            logger.warning(f"Failed to create backup for: {plugin_id}")
+                            logger.warning(tr("Failed to create backup for: {plugin_id}", plugin_id=plugin_id))
                     # PASO 2: OBTENER CHECKSUM DEL SERVIDOR
 
                     expected_checksum = None
@@ -1424,13 +1450,13 @@ class BackendIntegration(QObject):
                         else:
                             # G-001: fail closed. Sin checksum del servidor no se
                             # instala nada (antes se instalaba sin validar).
-                            logger.error(f"No checksum available for {plugin_id}, installation rejected")
+                            logger.error(tr("No checksum available for {plugin_id}, installation rejected", plugin_id=plugin_id))
 
                             return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                                message="No se pudo verificar la integridad del plugin "
+                                                message=tr("No se pudo verificar la integridad del plugin "
                                                         "(el servidor no devolvió su checksum). "
-                                                        "Instalación cancelada; inténtalo de nuevo más tarde.")
+                                                        "Instalación cancelada; inténtalo de nuevo más tarde."))
                     # PASO 3: CALCULAR CHECKSUM DEL ARCHIVO DESCARGADO
 
                     zip_content = downloaded_content
@@ -1451,7 +1477,7 @@ class BackendIntegration(QObject):
 
                             return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                                message="Plugin integrity check failed. Download may be corrupted.")
+                                                message=tr("Plugin integrity check failed. Download may be corrupted."))
                         logger.info(f"Checksum validation passed for {plugin_id}")
                     # PASO 5: VALIDAR QUE ES UN ZIP VÁLIDO
 
@@ -1472,7 +1498,7 @@ class BackendIntegration(QObject):
 
                                 return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                                    message="Downloaded plugin is empty")
+                                                    message=tr("Downloaded plugin is empty"))
                             # Verificar que tenga plugin.py o __init__.py
 
                             has_plugin_file = any('plugin.py' in f or '__init__.py' in f for f in file_list)
@@ -1489,7 +1515,7 @@ class BackendIntegration(QObject):
 
                                 return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                                    message=f"Plugin ZIP rejected: {zip_problem}")
+                                                    message=tr("Plugin ZIP rejected: {zip_problem}", zip_problem=zip_problem))
                             bad_file = test_zip.testzip()
 
                             if bad_file:
@@ -1497,14 +1523,14 @@ class BackendIntegration(QObject):
 
                                 return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                                    message=f"Plugin ZIP is corrupted: {bad_file}")
+                                                    message=tr("Plugin ZIP is corrupted: {bad_file}", bad_file=bad_file))
                         logger.info(f"ZIP validation passed for {plugin_id} ({len(file_list)} files)")
                     except zipfile.BadZipFile:
                         logger.error(f"Invalid ZIP file for {plugin_id}")
 
                         return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                            message="Downloaded file is not a valid ZIP")
+                                            message=tr("Downloaded file is not a valid ZIP"))
                     # PASO 6: PREPARAR DIRECTORIO (eliminar existente si hay)
 
                     if plugin_dir.exists():
@@ -1571,7 +1597,7 @@ class BackendIntegration(QObject):
                         "metadata": metadata
                     })
                 except Exception as e:
-                    logger.error(f"Error saving/extracting plugin {plugin_id}: {e}")
+                    logger.error(tr("Error saving/extracting plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
                     import traceback
 
@@ -1579,39 +1605,39 @@ class BackendIntegration(QObject):
 
                     return BackendResponse(False, error=BackendError.NETWORK_ERROR,
 
-                                        message=f"Error saving plugin: {e}")
+                                        message=tr("Error saving plugin: {e}", e=e))
             elif http_response.status_code == 403:
                 logger.error(f"Access denied for plugin {plugin_id}")
 
                 return BackendResponse(False, error=BackendError.LICENSE_REQUIRED,
 
-                                    message="No access to this plugin. Purchase required.")
+                                    message=tr("No access to this plugin. Purchase required."))
             elif http_response.status_code == 401:
                 logger.error(f"Authentication failed when downloading plugin {plugin_id}")
 
                 return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
-                                    message="Authentication failed. Please login again.")
+                                    message=tr("Authentication failed. Please login again."))
             else:
                 logger.error(f"Download failed with status {http_response.status_code}")
 
                 return BackendResponse(False, error=BackendError.SERVER_ERROR,
 
-                                    message=f"Download failed: HTTP {http_response.status_code}")
+                                    message=tr("Download failed: HTTP {status_code}", status_code=http_response.status_code))
         except requests.exceptions.Timeout:
             logger.error(f"Timeout downloading plugin {plugin_id}")
 
             return BackendResponse(False, error=BackendError.TIMEOUT_ERROR,
 
-                                message="Download timeout. Please try again.")
+                                message=tr("Download timeout. Please try again."))
         except requests.exceptions.ConnectionError as e:
-            logger.error(f"Connection error downloading plugin {plugin_id}: {e}")
+            logger.error(tr("Connection error downloading plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             return BackendResponse(False, error=BackendError.NETWORK_ERROR,
 
-                                message="Connection error. Check your network.")
+                                message=tr("Connection error. Check your network."))
         except Exception as e:
-            logger.error(f"Unexpected error downloading plugin {plugin_id}: {e}")
+            logger.error(tr("Unexpected error downloading plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             import traceback
 
@@ -1619,7 +1645,7 @@ class BackendIntegration(QObject):
 
             return BackendResponse(False, error=BackendError.NETWORK_ERROR,
 
-                                message=f"Error downloading plugin: {e}")
+                                message=tr("Error downloading plugin: {e}", e=e))
     # ============================================
 
     # MÉTODOS AUXILIARES PARA SEGURIDAD DE PLUGINS
@@ -1673,7 +1699,7 @@ class BackendIntegration(QObject):
 
             return True
         except Exception as e:
-            logger.error(f"Error creating backup for {plugin_id}: {e}")
+            logger.error(tr("Error creating backup for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             return False
     def _cleanup_old_backups(self, plugin_id: str, backup_dir: Path, keep: int = 5):
@@ -1701,7 +1727,7 @@ class BackendIntegration(QObject):
 
                     logger.info(f"Removed old backup: {old_backup.name}")
         except Exception as e:
-            logger.warning(f"Error cleaning up old backups: {e}")
+            logger.warning(tr("Error cleaning up old backups: {e}", e=e))
     def _get_plugin_checksum(self, plugin_id: str) -> Optional[str]:
         """
 
@@ -1720,15 +1746,15 @@ class BackendIntegration(QObject):
                 # Solo se acepta un SHA-256 hexadecimal bien formado
                 if isinstance(checksum, str) and re.fullmatch(r"[0-9a-fA-F]{64}", checksum.strip()):
                     return checksum.strip().lower()
-                logger.warning(f"Malformed checksum for plugin {plugin_id}")
+                logger.warning(tr("Malformed checksum for plugin {plugin_id}", plugin_id=plugin_id))
 
                 return None
             else:
-                logger.warning(f"No checksum available for plugin {plugin_id}")
+                logger.warning(tr("No checksum available for plugin {plugin_id}", plugin_id=plugin_id))
 
                 return None
         except Exception as e:
-            logger.warning(f"Error getting checksum for {plugin_id}: {e}")
+            logger.warning(tr("Error getting checksum for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             return None
     def _extract_plugin_version(self, plugin_dir: Path) -> Optional[str]:
@@ -1784,7 +1810,7 @@ class BackendIntegration(QObject):
         if not self.is_authenticated():
             return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
-                                message="User not authenticated")
+                                message=tr("User not authenticated"))
         try:
             response = self._make_request("POST", "/licenses/purchase", 
 
@@ -1802,11 +1828,11 @@ class BackendIntegration(QObject):
 
                 return BackendResponse(False, error=response.error, message=response.message)
         except Exception as e:
-            logger.error(f"Error purchasing license for {plugin_id}: {e}")
+            logger.error(tr("Error purchasing license for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             return BackendResponse(False, error=BackendError.NETWORK_ERROR,
 
-                                message=f"Error purchasing license: {e}")
+                                message=tr("Error purchasing license: {e}", e=e))
     def get_connection_status(self) -> Dict[str, Any]:
         """Obtener estado de la conexión"""
 
@@ -1853,7 +1879,7 @@ class BackendIntegration(QObject):
         """
 
         if not self.is_authenticated():
-            logger.warning("Cannot refresh licenses: User not authenticated")
+            logger.warning(tr("Cannot refresh licenses: User not authenticated"))
 
             return False
         try:
@@ -1875,7 +1901,7 @@ class BackendIntegration(QObject):
 
             return True
         except Exception as e:
-            logger.error(f"Error refreshing licenses: {e}")
+            logger.error(tr("Error refreshing licenses: {e}", e=e))
 
             return False
     def get_user_info(self) -> Optional[BackendUser]:
@@ -1916,7 +1942,7 @@ class BackendIntegration(QObject):
                 return True
             return False
         except Exception as e:
-            logger.error(f"Error refreshing access token: {e}")
+            logger.error(tr("Error refreshing access token: {e}", e=e))
             return False
     # ============================================
 
@@ -1955,7 +1981,7 @@ class BackendIntegration(QObject):
                     if days_remaining <= 0:
                         # Licencia expirada
 
-                        logger.warning(f"License expired for {license.plugin_id}")
+                        logger.warning(tr("License expired for {plugin_id}", plugin_id=license.plugin_id))
 
                         self.license_expired.emit(license.plugin_id)
                     elif days_remaining <= 7:
@@ -1965,9 +1991,9 @@ class BackendIntegration(QObject):
 
                         self.license_expiring_soon.emit(license.plugin_id, days_remaining)
                 except Exception as e:
-                    logger.error(f"Error checking expiration for {license.plugin_id}: {e}")
+                    logger.error(tr("Error checking expiration for {plugin_id}: {e}", plugin_id=license.plugin_id, e=e))
         except Exception as e:
-            logger.error(f"Error in license expiration check: {e}")
+            logger.error(tr("Error in license expiration check: {e}", e=e))
     def renew_license(self, plugin_id: str) -> BackendResponse:
         """
 
@@ -1980,7 +2006,7 @@ class BackendIntegration(QObject):
         if not self.is_authenticated():
             return BackendResponse(False, error=BackendError.AUTHENTICATION_ERROR,
 
-                                message="User not authenticated")
+                                message=tr("User not authenticated"))
         try:
             # Llamar al endpoint de renovación en el backend
 
@@ -1999,17 +2025,17 @@ class BackendIntegration(QObject):
 
                 return BackendResponse(True, data=response.data,
 
-                                    message=f"License for {plugin_id} renewed successfully")
+                                    message=tr("License for {plugin_id} renewed successfully", plugin_id=plugin_id))
             else:
                 logger.error(f"Failed to renew license for {plugin_id}: {response.message}")
 
                 return response
         except Exception as e:
-            logger.error(f"Error renewing license for {plugin_id}: {e}")
+            logger.error(tr("Error renewing license for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             return BackendResponse(False, error=BackendError.NETWORK_ERROR,
 
-                                message=f"Error renewing license: {e}")
+                                message=tr("Error renewing license: {e}", e=e))
     def get_expiring_licenses(self, days_threshold: int = 7) -> List[BackendLicense]:
         """
 
@@ -2035,9 +2061,9 @@ class BackendIntegration(QObject):
                     if 0 <= days_remaining <= days_threshold:
                         expiring_licenses.append(license)
                 except Exception as e:
-                    logger.error(f"Error checking {license.plugin_id}: {e}")
+                    logger.error(tr("Error checking {plugin_id}: {e}", plugin_id=license.plugin_id, e=e))
         except Exception as e:
-            logger.error(f"Error getting expiring licenses: {e}")
+            logger.error(tr("Error getting expiring licenses: {e}", e=e))
         return expiring_licenses
 
 

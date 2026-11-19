@@ -8,6 +8,7 @@ usando sentence-transformers (local) con un almacén vectorial en memoria
 faltan dependencias pesadas.
 """
 
+from i18n import tr
 import hashlib
 import importlib.util
 import logging
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 _SENTENCE_TRANSFORMERS_OK = importlib.util.find_spec("sentence_transformers") is not None
 
 if not _SENTENCE_TRANSFORMERS_OK:
-    logger.warning("sentence-transformers no disponible; se usará fallback por keywords")
+    logger.warning(tr("sentence-transformers no disponible; se usará fallback por keywords"))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -118,15 +119,15 @@ class EmbeddingProvider:
         if self._model is not None:
             return
         if not self._available:
-            raise RuntimeError("sentence-transformers no está instalado")
+            raise RuntimeError(tr("sentence-transformers no está instalado"))
         try:
             from sentence_transformers import SentenceTransformer
 
             self._model = SentenceTransformer(self._model_name)
-            logger.info("Modelo de embeddings '%s' cargado", self._model_name)
+            logger.info(tr("Modelo de embeddings '%s' cargado"), self._model_name)
         except Exception as exc:
             self._available = False
-            raise RuntimeError(f"No se pudo cargar el modelo: {exc}") from exc
+            raise RuntimeError(tr("No se pudo cargar el modelo: {exc}", exc=exc)) from exc
     def encode(self, texts: List[str]) -> np.ndarray:
         """Codifica una lista de textos en vectores.
 
@@ -300,5 +301,5 @@ class IndexWorker(QThread):
                 )
             self.indexing_done.emit(self._tab_id)
         except Exception as exc:
-            logger.error("Error indexando pestaña %s: %s", self._tab_id, exc)
+            logger.error(tr("Error indexando pestaña %s: %s"), self._tab_id, exc)
             self.indexing_error.emit(str(exc))

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from i18n import tr
 import os as _os
 import shutil as _sh
 import tempfile as _tf
@@ -13,7 +14,7 @@ try:
 except Exception:
     _TAB_CLOSE_SVG = ""
 
-"""
+tr("""
 Modern Theme Styles — Sistema de diseño unificado (Arc/Brave-inspired)
 
 Filosofía: "cada píxel tiene un propósito". Interfaz que se retira y deja
@@ -24,7 +25,7 @@ Tokens de diseño:
 - RADIUS: radios consistentes en toda la app
 - HEIGHTS: alturas fijas para componentes
 - DARK / LIGHT: paletas de 3 superficies + 1 acento
-"""
+""")
 
 # ─── Design Tokens ────────────────────────────────────────────────────────────
 

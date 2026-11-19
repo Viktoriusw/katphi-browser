@@ -15,6 +15,7 @@ Uso con Qt (una vez, al arrancar, tras crear QApplication):
     apply_qt_application_proxy()
 """
 
+from i18n import tr
 import logging
 from typing import Dict, Optional
 from urllib.parse import urlparse
@@ -86,6 +87,6 @@ def apply_qt_application_proxy() -> None:
         QNetworkProxy.setApplicationProxy(
             QNetworkProxy(QNetworkProxy.Socks5Proxy, "127.0.0.1", tor_socks_port())
         )
-        logger.info("[TOR] Proxy de aplicación Qt -> SOCKS5 127.0.0.1:%s", tor_socks_port())
+        logger.info(tr("[TOR] Proxy de aplicación Qt -> SOCKS5 127.0.0.1:%s"), tor_socks_port())
     else:
         QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.NoProxy))

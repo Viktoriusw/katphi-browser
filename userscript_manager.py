@@ -12,6 +12,7 @@ Características:
 - Almacenamiento persistente en SQLite
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                                QLabel, QListWidget, QListWidgetItem, QTextEdit,
                                QLineEdit, QGroupBox, QTabWidget, QWidget,
@@ -349,7 +350,7 @@ class UserScriptManager(QObject):
 
             return script_id
         except Exception as e:
-            print(f"[ERROR] Error importing script: {e}")
+            print(tr("[ERROR] Error importing script: {e}", e=e))
             return None
     def export_script(self, script_id, file_path):
         """Exportar script a archivo"""
@@ -361,7 +362,7 @@ class UserScriptManager(QObject):
                 f.write(script['code'])
             return True
         except Exception as e:
-            print(f"[ERROR] Error exporting script: {e}")
+            print(tr("[ERROR] Error exporting script: {e}", e=e))
             return False
     def _parse_metadata(self, code):
         """Parsear metadatos de un script (comentarios ==UserScript==)"""
@@ -427,7 +428,7 @@ class UserScriptManager(QObject):
         examples = [
             {
                 'name': 'Ad Blocker Simple',
-                'description': 'Oculta elementos de publicidad comunes',
+                'description': tr('Oculta elementos de publicidad comunes'),
                 'author': 'Katphi',
                 'version': AD_BLOCKER_SIMPLE_VERSION,
                 'match_patterns': '*://*/*',
@@ -436,7 +437,7 @@ class UserScriptManager(QObject):
             },
             {
                 'name': 'Auto HD YouTube',
-                'description': 'Fuerza calidad HD en videos de YouTube',
+                'description': tr('Fuerza calidad HD en videos de YouTube'),
                 'author': 'Katphi',
                 'version': '1.0',
                 'match_patterns': '*://www.youtube.com/*',
@@ -485,7 +486,7 @@ class UserScriptManager(QObject):
             },
             {
                 'name': 'Disable Right-Click Protection',
-                'description': 'Habilita click derecho en sitios que lo bloquean',
+                'description': tr('Habilita click derecho en sitios que lo bloquean'),
                 'author': 'Katphi',
                 'version': '1.0',
                 'match_patterns': '*://*/*',
@@ -522,7 +523,7 @@ class UserScriptManager(QObject):
             },
             {
                 'name': 'Remove Paywalls',
-                'description': 'Intenta eliminar paywalls de sitios de noticias',
+                'description': tr('Intenta eliminar paywalls de sitios de noticias'),
                 'author': 'Katphi',
                 'version': '1.0',
                 'match_patterns': '*://*/*',
@@ -636,7 +637,7 @@ class UserScriptDialog(QDialog):
         self.script_manager = script_manager
         self.current_script_id = None
 
-        self.setWindowTitle("UserScripts Manager")
+        self.setWindowTitle(tr("UserScripts Manager"))
         self.setModal(True)
         self.setMinimumSize(900, 600)
 
@@ -650,7 +651,7 @@ class UserScriptDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Gestión de UserScripts")
+        title = QLabel(tr("Gestión de UserScripts"))
         title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
@@ -659,20 +660,20 @@ class UserScriptDialog(QDialog):
 
         # Tab 1: Mis Scripts
         scripts_tab = self.create_scripts_tab()
-        tabs.addTab(scripts_tab, "Mis Scripts")
+        tabs.addTab(scripts_tab, tr("Mis Scripts"))
 
         # Tab 2: Editor
         editor_tab = self.create_editor_tab()
-        tabs.addTab(editor_tab, "Editor")
+        tabs.addTab(editor_tab, tr("Editor"))
 
         # Tab 3: Ejemplos
         examples_tab = self.create_examples_tab()
-        tabs.addTab(examples_tab, "Scripts de Ejemplo")
+        tabs.addTab(examples_tab, tr("Scripts de Ejemplo"))
 
         layout.addWidget(tabs)
 
         # Botón cerrar
-        close_btn = QPushButton("Cerrar")
+        close_btn = QPushButton(tr("Cerrar"))
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
     def create_scripts_tab(self):
@@ -689,35 +690,35 @@ class UserScriptDialog(QDialog):
         # Botones
         buttons_layout = QHBoxLayout()
 
-        new_btn = QPushButton("Nuevo")
+        new_btn = QPushButton(tr("Nuevo"))
         new_btn.clicked.connect(self.new_script)
         buttons_layout.addWidget(new_btn)
 
-        edit_btn = QPushButton("Editar")
+        edit_btn = QPushButton(tr("Editar"))
         edit_btn.clicked.connect(self.edit_script)
         buttons_layout.addWidget(edit_btn)
 
-        delete_btn = QPushButton("Eliminar")
+        delete_btn = QPushButton(tr("Eliminar"))
         delete_btn.clicked.connect(self.delete_script)
         buttons_layout.addWidget(delete_btn)
 
         buttons_layout.addStretch()
 
-        import_btn = QPushButton("Importar")
+        import_btn = QPushButton(tr("Importar"))
         import_btn.clicked.connect(self.import_script)
         buttons_layout.addWidget(import_btn)
 
-        export_btn = QPushButton("Exportar")
+        export_btn = QPushButton(tr("Exportar"))
         export_btn.clicked.connect(self.export_script)
         buttons_layout.addWidget(export_btn)
 
         layout.addLayout(buttons_layout)
 
         # Info del script seleccionado
-        info_group = QGroupBox("Información del Script")
+        info_group = QGroupBox(tr("Información del Script"))
         info_layout = QVBoxLayout()
 
-        self.info_label = QLabel("Selecciona un script para ver su información")
+        self.info_label = QLabel(tr("Selecciona un script para ver su información"))
         self.info_label.setWordWrap(True)
         info_layout.addWidget(self.info_label)
 
@@ -731,26 +732,26 @@ class UserScriptDialog(QDialog):
         layout = QVBoxLayout(widget)
 
         # Metadata
-        meta_group = QGroupBox("Metadatos del Script")
+        meta_group = QGroupBox(tr("Metadatos del Script"))
         meta_layout = QVBoxLayout()
 
         # Nombre
         name_layout = QHBoxLayout()
-        name_layout.addWidget(QLabel("Nombre:"))
+        name_layout.addWidget(QLabel(tr("Nombre:")))
         self.editor_name = QLineEdit()
         name_layout.addWidget(self.editor_name)
         meta_layout.addLayout(name_layout)
 
         # Descripción
         desc_layout = QHBoxLayout()
-        desc_layout.addWidget(QLabel("Descripción:"))
+        desc_layout.addWidget(QLabel(tr("Descripción:")))
         self.editor_desc = QLineEdit()
         desc_layout.addWidget(self.editor_desc)
         meta_layout.addLayout(desc_layout)
 
         # Match pattern
         match_layout = QHBoxLayout()
-        match_layout.addWidget(QLabel("Match Pattern:"))
+        match_layout.addWidget(QLabel(tr("Match Pattern:")))
         self.editor_match = QLineEdit()
         self.editor_match.setPlaceholderText("*://*/*")
         match_layout.addWidget(self.editor_match)
@@ -758,7 +759,7 @@ class UserScriptDialog(QDialog):
 
         # Run-at
         runat_layout = QHBoxLayout()
-        runat_layout.addWidget(QLabel("Run At:"))
+        runat_layout.addWidget(QLabel(tr("Run At:")))
         self.editor_runat = QComboBox()
         self.editor_runat.addItems(['document-start', 'document-ready', 'document-end'])
         self.editor_runat.setCurrentText('document-end')
@@ -769,7 +770,7 @@ class UserScriptDialog(QDialog):
         layout.addWidget(meta_group)
 
         # Editor de código
-        code_label = QLabel("Código JavaScript:")
+        code_label = QLabel(tr("Código JavaScript:"))
         layout.addWidget(code_label)
 
         self.code_editor = QPlainTextEdit()
@@ -792,11 +793,11 @@ class UserScriptDialog(QDialog):
         # Botones del editor
         editor_buttons = QHBoxLayout()
 
-        save_btn = QPushButton("Guardar")
+        save_btn = QPushButton(tr("Guardar"))
         save_btn.clicked.connect(self.save_script)
         editor_buttons.addWidget(save_btn)
 
-        clear_btn = QPushButton("Limpiar")
+        clear_btn = QPushButton(tr("Limpiar"))
         clear_btn.clicked.connect(self.clear_editor)
         editor_buttons.addWidget(clear_btn)
 
@@ -810,15 +811,15 @@ class UserScriptDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        layout.addWidget(QLabel("Scripts de ejemplo precargados:"))
+        layout.addWidget(QLabel(tr("Scripts de ejemplo precargados:")))
 
         info = QLabel(
-            "Los siguientes scripts de ejemplo ya están instalados y listos para usar:\n\n"
+            tr("Los siguientes scripts de ejemplo ya están instalados y listos para usar:\n\n"
             "• Ad Blocker Simple - Bloquea publicidad común\n"
             "• Auto HD YouTube - Fuerza calidad HD en YouTube\n"
             "• Disable Right-Click Protection - Habilita click derecho\n"
             "• Remove Paywalls - Intenta eliminar paywalls de noticias\n\n"
-            "Puedes activar/desactivar estos scripts desde la pestaña 'Mis Scripts'."
+            "Puedes activar/desactivar estos scripts desde la pestaña 'Mis Scripts'.")
         )
         info.setWordWrap(True)
         info.setStyleSheet("QWidget { background-color: #f9f9f9; padding: 15px; border-radius: 8px; }")
@@ -843,15 +844,7 @@ class UserScriptDialog(QDialog):
         script = self.script_manager.get_script(script_id)
 
         if script:
-            info = f"""
-<b>Nombre:</b> {script['name']}<br>
-<b>Descripción:</b> {script['description']}<br>
-<b>Autor:</b> {script['author']}<br>
-<b>Versión:</b> {script['version']}<br>
-<b>Match Patterns:</b> {script['match_patterns']}<br>
-<b>Run At:</b> {script['run_at']}<br>
-<b>Estado:</b> {'Activo' if script['enabled'] else 'Desactivado'}<br>
-            """
+            info = tr("\n<b>Nombre:</b> {value}<br>\n<b>Descripción:</b> {value2}<br>\n<b>Autor:</b> {value3}<br>\n<b>Versión:</b> {value4}<br>\n<b>Match Patterns:</b> {value5}<br>\n<b>Run At:</b> {value6}<br>\n<b>Estado:</b> {value7}<br>\n            ", value=script['name'], value2=script['description'], value3=script['author'], value4=script['version'], value5=script['match_patterns'], value6=script['run_at'], value7=tr('Activo') if script['enabled'] else tr('Desactivado'))
             self.info_label.setText(info)
         # Toggle al hacer click en checkbox
         enabled = item.checkState() == Qt.Checked
@@ -864,8 +857,8 @@ class UserScriptDialog(QDialog):
         """Editar script seleccionado"""
         current_item = self.scripts_list.currentItem()
         if not current_item:
-            QMessageBox.warning(self, "No hay script seleccionado",
-                              "Por favor selecciona un script para editar.")
+            QMessageBox.warning(self, tr("No hay script seleccionado"),
+                              tr("Por favor selecciona un script para editar."))
             return
         script_id = current_item.data(Qt.UserRole)
         script = self.script_manager.get_script(script_id)
@@ -887,27 +880,27 @@ class UserScriptDialog(QDialog):
 
         reply = QMessageBox.question(
             self,
-            "Eliminar script",
-            f"¿Eliminar el script '{script['name']}'?",
+            tr("Eliminar script"),
+            tr("¿Eliminar el script '{value}'?", value=script['name']),
             QMessageBox.Yes | QMessageBox.No
         )
 
         if reply == QMessageBox.Yes:
             self.script_manager.delete_script(script_id)
-            QMessageBox.information(self, "Script eliminado",
-                                  f"El script '{script['name']}' ha sido eliminado.")
+            QMessageBox.information(self, tr("Script eliminado"),
+                                  tr("El script '{value}' ha sido eliminado.", value=script['name']))
     def save_script(self):
         """Guardar script desde el editor"""
         name = self.editor_name.text().strip()
         code = self.code_editor.toPlainText().strip()
 
         if not name:
-            QMessageBox.warning(self, "Nombre requerido",
-                              "Por favor ingresa un nombre para el script.")
+            QMessageBox.warning(self, tr("Nombre requerido"),
+                              tr("Por favor ingresa un nombre para el script."))
             return
         if not code:
-            QMessageBox.warning(self, "Código requerido",
-                              "Por favor ingresa el código del script.")
+            QMessageBox.warning(self, tr("Código requerido"),
+                              tr("Por favor ingresa el código del script."))
             return
         if self.current_script_id:
             # Actualizar script existente
@@ -919,8 +912,8 @@ class UserScriptDialog(QDialog):
                 match_patterns=self.editor_match.text() or '*://*/*',
                 run_at=self.editor_runat.currentText()
             )
-            QMessageBox.information(self, "Script actualizado",
-                                  f"El script '{name}' ha sido actualizado.")
+            QMessageBox.information(self, tr("Script actualizado"),
+                                  tr("El script '{name}' ha sido actualizado.", name=name))
         else:
             # Crear nuevo script
             self.script_manager.create_script(
@@ -930,8 +923,8 @@ class UserScriptDialog(QDialog):
                 match_patterns=self.editor_match.text() or '*://*/*',
                 run_at=self.editor_runat.currentText()
             )
-            QMessageBox.information(self, "Script creado",
-                                  f"El script '{name}' ha sido creado.")
+            QMessageBox.information(self, tr("Script creado"),
+                                  tr("El script '{name}' ha sido creado.", name=name))
         self.clear_editor()
     def clear_editor(self):
         """Limpiar editor"""
@@ -945,40 +938,40 @@ class UserScriptDialog(QDialog):
         """Importar script desde archivo"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Importar UserScript",
+            tr("Importar UserScript"),
             "",
-            "JavaScript Files (*.js);;All Files (*.*)"
+            tr("JavaScript Files (*.js);;All Files (*.*)")
         )
 
         if file_path:
             script_id = self.script_manager.import_script(file_path)
             if script_id:
-                QMessageBox.information(self, "Script importado",
-                                      "El script ha sido importado correctamente.")
+                QMessageBox.information(self, tr("Script importado"),
+                                      tr("El script ha sido importado correctamente."))
             else:
-                QMessageBox.critical(self, "Error",
-                                   "No se pudo importar el script.")
+                QMessageBox.critical(self, tr("Error"),
+                                   tr("No se pudo importar el script."))
     def export_script(self):
         """Exportar script a archivo"""
         current_item = self.scripts_list.currentItem()
         if not current_item:
-            QMessageBox.warning(self, "No hay script seleccionado",
-                              "Por favor selecciona un script para exportar.")
+            QMessageBox.warning(self, tr("No hay script seleccionado"),
+                              tr("Por favor selecciona un script para exportar."))
             return
         script_id = current_item.data(Qt.UserRole)
         script = self.script_manager.get_script(script_id)
 
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Exportar UserScript",
+            tr("Exportar UserScript"),
             f"{script['name']}.js",
-            "JavaScript Files (*.js);;All Files (*.*)"
+            tr("JavaScript Files (*.js);;All Files (*.*)")
         )
 
         if file_path:
             if self.script_manager.export_script(script_id, file_path):
-                QMessageBox.information(self, "Script exportado",
-                                      f"El script ha sido exportado a:\n{file_path}")
+                QMessageBox.information(self, tr("Script exportado"),
+                                      tr("El script ha sido exportado a:\n{file_path}", file_path=file_path))
             else:
-                QMessageBox.critical(self, "Error",
-                                   "No se pudo exportar el script.")
+                QMessageBox.critical(self, tr("Error"),
+                                   tr("No se pudo exportar el script."))

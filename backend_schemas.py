@@ -2,6 +2,7 @@
 Esquemas de validación para respuestas del backend.
 Previene inyección de datos maliciosos validando la estructura JSON.
 """
+from i18n import tr
 from typing import Any, Dict, List, Optional, Union
 import logging
 
@@ -158,7 +159,7 @@ def validate_plugin_list(data: Dict) -> Dict:
                 if isinstance(plugin, dict):
                     validated_plugins.append(validate_plugin_info(plugin))
                 else:
-                    logger.warning(f"Invalid plugin entry in list: {type(plugin)}")
+                    logger.warning(tr("Invalid plugin entry in list: {value}", value=type(plugin)))
             validated['plugins'] = validated_plugins
         return validated
     except ValidationError as e:
@@ -180,5 +181,5 @@ def safe_validate(data: Any, validator_func, default: Any = None) -> Any:
     try:
         return validator_func(data)
     except (ValidationError, Exception) as e:
-        logger.warning(f"Validation failed, using default: {e}")
+        logger.warning(tr("Validation failed, using default: {e}", e=e))
         return default

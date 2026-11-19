@@ -10,6 +10,7 @@ Características:
 - Opción de restaurar sesión anterior al inicio
 """
 
+from i18n import tr
 import json
 import os
 import sys
@@ -65,8 +66,8 @@ class SessionManager:
             return False
         reply = QMessageBox.question(
             self.parent,
-            "Recuperar sesión",
-            "El navegador se cerró inesperadamente.\n¿Deseas restaurar la sesión anterior?",
+            tr("Recuperar sesión"),
+            tr("El navegador se cerró inesperadamente.\n¿Deseas restaurar la sesión anterior?"),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
@@ -89,16 +90,16 @@ class SessionManager:
 
             QMessageBox.information(
                 self.parent,
-                "Sesión restaurada",
-                "La sesión anterior ha sido restaurada correctamente."
+                tr("Sesión restaurada"),
+                tr("La sesión anterior ha sido restaurada correctamente.")
             )
             return True
         except Exception as e:
-            print(f"[SessionManager] Error restoring crash session: {e}")
+            print(tr("[SessionManager] Error restoring crash session: {e}", e=e))
             QMessageBox.warning(
                 self.parent,
-                "Error",
-                f"No se pudo restaurar la sesión: {e}"
+                tr("Error"),
+                tr("No se pudo restaurar la sesión: {e}", e=e)
             )
             return False
     def clear_crash_recovery(self):
@@ -108,7 +109,7 @@ class SessionManager:
             if crash_file.exists():
                 crash_file.unlink()
         except Exception as e:
-            print(f"[SessionManager] Error clearing crash recovery: {e}")
+            print(tr("[SessionManager] Error clearing crash recovery: {e}", e=e))
     def autosave_current_session(self):
         """Auto-guardar sesión actual (para recuperación de crash)"""
         if self.private_mode:
@@ -125,7 +126,7 @@ class SessionManager:
             with open(self.LAST_SESSION_FILE, 'w', encoding='utf-8') as f:
                 json.dump(session_data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[SessionManager] Error autosaving session: {e}")
+            print(tr("[SessionManager] Error autosaving session: {e}", e=e))
     def capture_session(self):
         """Capturar estado completo de la sesión actual"""
         if not self.parent or not hasattr(self.parent, 'tab_manager'):
@@ -242,8 +243,8 @@ class SessionManager:
         if self.private_mode:
             QMessageBox.information(
                 self.parent,
-                "Ventana privada",
-                "En una ventana privada no se guardan sesiones en disco."
+                tr("Ventana privada"),
+                tr("En una ventana privada no se guardan sesiones en disco.")
             )
             return False
         try:
@@ -262,16 +263,16 @@ class SessionManager:
                 json.dump(session_data, f, indent=2, ensure_ascii=False)
             QMessageBox.information(
                 self.parent,
-                "Sesión guardada",
-                f"La sesión '{session_name}' ha sido guardada correctamente."
+                tr("Sesión guardada"),
+                tr("La sesión '{session_name}' ha sido guardada correctamente.", session_name=session_name)
             )
             return True
         except Exception as e:
-            print(f"[SessionManager] Error saving named session: {e}")
+            print(tr("[SessionManager] Error saving named session: {e}", e=e))
             QMessageBox.warning(
                 self.parent,
-                "Error",
-                f"No se pudo guardar la sesión: {e}"
+                tr("Error"),
+                tr("No se pudo guardar la sesión: {e}", e=e)
             )
             return False
     def get_saved_sessions(self):
@@ -293,7 +294,7 @@ class SessionManager:
                     'tab_count': len(session_data.get('tabs', []))
                 })
             except Exception as e:
-                print(f"[SessionManager] Error reading session {session_file}: {e}")
+                print(tr("[SessionManager] Error reading session {session_file}: {e}", session_file=session_file, e=e))
         # Ordenar por timestamp (más reciente primero)
         sessions.sort(key=lambda x: x['timestamp'], reverse=True)
         return sessions
@@ -305,8 +306,8 @@ class SessionManager:
             # Preguntar si cerrar pestañas actuales
             reply = QMessageBox.question(
                 self.parent,
-                "Restaurar sesión",
-                "¿Deseas cerrar las pestañas actuales antes de restaurar la sesión?",
+                tr("Restaurar sesión"),
+                tr("¿Deseas cerrar las pestañas actuales antes de restaurar la sesión?"),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes
             )
@@ -328,11 +329,11 @@ class SessionManager:
                     tab_manager.close_tab(idx)
             return True
         except Exception as e:
-            print(f"[SessionManager] Error restoring named session: {e}")
+            print(tr("[SessionManager] Error restoring named session: {e}", e=e))
             QMessageBox.warning(
                 self.parent,
-                "Error",
-                f"No se pudo restaurar la sesión: {e}"
+                tr("Error"),
+                tr("No se pudo restaurar la sesión: {e}", e=e)
             )
             return False
     def delete_named_session(self, filepath):
@@ -341,7 +342,7 @@ class SessionManager:
             Path(filepath).unlink()
             return True
         except Exception as e:
-            print(f"[SessionManager] Error deleting session: {e}")
+            print(tr("[SessionManager] Error deleting session: {e}", e=e))
             return False
     def show_session_manager_dialog(self):
         """Mostrar diálogo de gestión de sesiones"""
@@ -365,7 +366,7 @@ class SessionManagerDialog(QDialog):
         super().__init__(parent)
         self.session_manager = session_manager
 
-        self.setWindowTitle("Gestor de sesiones")
+        self.setWindowTitle(tr("Gestor de sesiones"))
         self.setMinimumSize(600, 400)
 
         self.setup_ui()
@@ -375,7 +376,7 @@ class SessionManagerDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Sesiones guardadas")
+        title = QLabel(tr("Sesiones guardadas"))
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(title)
 
@@ -387,19 +388,19 @@ class SessionManagerDialog(QDialog):
         # Botones de acción
         buttons_layout = QHBoxLayout()
 
-        save_btn = QPushButton("Guardar sesión actual")
+        save_btn = QPushButton(tr("Guardar sesión actual"))
         save_btn.clicked.connect(self.save_current)
         buttons_layout.addWidget(save_btn)
 
-        restore_btn = QPushButton("Restaurar")
+        restore_btn = QPushButton(tr("Restaurar"))
         restore_btn.clicked.connect(self.restore_selected)
         buttons_layout.addWidget(restore_btn)
 
-        delete_btn = QPushButton("Eliminar")
+        delete_btn = QPushButton(tr("Eliminar"))
         delete_btn.clicked.connect(self.delete_selected)
         buttons_layout.addWidget(delete_btn)
 
-        close_btn = QPushButton("Cerrar")
+        close_btn = QPushButton(tr("Cerrar"))
         close_btn.clicked.connect(self.close)
         buttons_layout.addWidget(close_btn)
 
@@ -410,7 +411,7 @@ class SessionManagerDialog(QDialog):
         sessions = self.session_manager.get_saved_sessions()
 
         for session in sessions:
-            item_text = f"{session['name']} - {session['tab_count']} pestañas - {session['timestamp'][:19]}"
+            item_text = tr("{value} - {value2} pestañas - {value3}", value=session['name'], value2=session['tab_count'], value3=session['timestamp'][:19])
             self.sessions_list.addItem(item_text)
 
             # Guardar filepath en item data
@@ -422,8 +423,8 @@ class SessionManagerDialog(QDialog):
 
         name, ok = QInputDialog.getText(
             self,
-            "Guardar sesión",
-            "Nombre de la sesión:"
+            tr("Guardar sesión"),
+            tr("Nombre de la sesión:")
         )
 
         if ok and name:
@@ -444,8 +445,8 @@ class SessionManagerDialog(QDialog):
             return
         reply = QMessageBox.question(
             self,
-            "Eliminar sesión",
-            "¿Estás seguro de eliminar esta sesión?",
+            tr("Eliminar sesión"),
+            tr("¿Estás seguro de eliminar esta sesión?"),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )

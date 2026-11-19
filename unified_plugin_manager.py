@@ -13,6 +13,7 @@ Sistema de gestión de plugins con validación agresiva y manejo robusto de erro
 """
 
 
+from i18n import tr
 import os
 
 
@@ -211,11 +212,11 @@ class PluginDownloader(QThread):
             from backend_integration import backend_integration
 
             if not backend_integration.is_authenticated():
-                self.error_occurred.emit("Usuario debe estar autenticado para descargar plugins")
+                self.error_occurred.emit(tr("Usuario debe estar autenticado para descargar plugins"))
 
                 return
             if not backend_integration.has_plugin_access(self.plugin_id):
-                self.error_occurred.emit("No tienes acceso a este plugin. Por favor, compra la suscripción primero.")
+                self.error_occurred.emit(tr("No tienes acceso a este plugin. Por favor, compra la suscripción primero."))
 
                 return
             # Descargar plugin usando la integración
@@ -229,10 +230,10 @@ class PluginDownloader(QThread):
 
                 self.download_completed.emit(self.plugin_id, True)
             else:
-                msg = getattr(response, 'message', None) if response else "Error desconocido"
-                self.error_occurred.emit(msg or "Error descargando plugin desde el backend")
+                msg = getattr(response, 'message', None) if response else tr("Error desconocido")
+                self.error_occurred.emit(msg or tr("Error descargando plugin desde el backend"))
         except Exception as e:
-            self.error_occurred.emit(f"Error de descarga: {str(e)}")
+            self.error_occurred.emit(tr("Error de descarga: {value}", value=str(e)))
     def _install_plugin(self, zip_path: str, plugin_id: str) -> bool:
         """Instalar plugin desde archivo ZIP"""
 
@@ -241,14 +242,14 @@ class PluginDownloader(QThread):
             from backend_integration import is_valid_plugin_id, check_plugin_zip_members
 
             if not is_valid_plugin_id(plugin_id):
-                print(f"[UnifiedPluginManager] plugin_id no válido, instalación rechazada: {plugin_id!r}")
+                print(tr("[UnifiedPluginManager] plugin_id no válido, instalación rechazada: {plugin_id!r}", plugin_id=plugin_id))
 
                 return False
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_problem = check_plugin_zip_members(zip_ref)
 
             if zip_problem:
-                print(f"[UnifiedPluginManager] ZIP rechazado para '{plugin_id}': {zip_problem}")
+                print(tr("[UnifiedPluginManager] ZIP rechazado para '{plugin_id}': {zip_problem}", plugin_id=plugin_id, zip_problem=zip_problem))
 
                 return False
             plugin_dir = install_target_dir(plugin_id)
@@ -259,11 +260,11 @@ class PluginDownloader(QThread):
 
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(plugin_dir)
-            print(f"[UnifiedPluginManager] Plugin '{plugin_id}' instalado exitosamente")
+            print(tr("[UnifiedPluginManager] Plugin '{plugin_id}' instalado exitosamente", plugin_id=plugin_id))
 
             return True
         except Exception as e:
-            print(f"[UnifiedPluginManager] Error instalando plugin '{plugin_id}': {e}")
+            print(tr("[UnifiedPluginManager] Error instalando plugin '{plugin_id}': {e}", plugin_id=plugin_id, e=e))
 
             return False
 
@@ -334,7 +335,7 @@ class UnifiedPluginManager(QObject):
             from premium_decorators import set_default_validator
             set_default_validator(self)
         except Exception as e:  # pragma: no cover
-            logger.warning(f"No se pudo registrar el validador por defecto: {e}")
+            logger.warning(tr("No se pudo registrar el validador por defecto: {e}", e=e))
 
         # Auth manager
 
@@ -373,7 +374,7 @@ class UnifiedPluginManager(QObject):
 
                 self.auth_manager.logout_successful.connect(self._stop_validation_timer)
             except Exception as e:
-                logger.warning(f"No se pudieron conectar login/logout para la validación: {e}")
+                logger.warning(tr("No se pudieron conectar login/logout para la validación: {e}", e=e))
         # Iniciar validación si está autenticado
 
         if self.auth_manager and self.auth_manager.auth_state.is_authenticated:
@@ -386,7 +387,7 @@ class UnifiedPluginManager(QObject):
 
             "scraping": {
 
-                "name": "Scraping Avanzado",
+                "name": tr("Scraping Avanzado"),
 
                 "free_features": ["basic_scraping", "simple_export"],
 
@@ -397,7 +398,7 @@ class UnifiedPluginManager(QObject):
 
             "proxy": {
 
-                "name": "Gestor de Proxies",
+                "name": tr("Gestor de Proxies"),
 
                 "free_features": ["basic_proxy"],
 
@@ -408,7 +409,7 @@ class UnifiedPluginManager(QObject):
 
             "themes": {
 
-                "name": "Temas Avanzados",
+                "name": tr("Temas Avanzados"),
 
                 "free_features": ["basic_themes"],
 
@@ -460,7 +461,7 @@ class UnifiedPluginManager(QObject):
             },
 
             "katphi_chat": {
-                "name": "Katphi Chat",
+                "name": tr("Katphi Chat"),
                 "free_features": [],
                 "premium_features": ["messaging", "groups", "channels", "vault"],
                 "trial_days": 7
@@ -491,7 +492,7 @@ class UnifiedPluginManager(QObject):
 
             "ai_assistant": {
 
-                "name": "Asistente de IA",
+                "name": tr("Asistente de IA"),
 
                 "free_features": ["chat_access"],
 
@@ -517,9 +518,9 @@ class UnifiedPluginManager(QObject):
             if cfg_path.exists():
                 with open(cfg_path, 'r', encoding='utf-8') as f:
                     self.plugin_configs = json.load(f)
-                print(f"[UnifiedPluginManager] Configuración cargada desde {cfg_path}")
+                print(tr("[UnifiedPluginManager] Configuración cargada desde {cfg_path}", cfg_path=cfg_path))
         except Exception as e:
-            print(f"[UnifiedPluginManager] Error cargando configuración: {e}")
+            print(tr("[UnifiedPluginManager] Error cargando configuración: {e}", e=e))
 
             self.plugin_configs = {}
     def save_configuration(self):
@@ -530,9 +531,9 @@ class UnifiedPluginManager(QObject):
 
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.plugin_configs, f, indent=2)
-            print(f"[UnifiedPluginManager] Configuración guardada en {self.config_file}")
+            print(tr("[UnifiedPluginManager] Configuración guardada en {config_file}", config_file=self.config_file))
         except Exception as e:
-            print(f"[UnifiedPluginManager] Error guardando configuración: {e}")
+            print(tr("[UnifiedPluginManager] Error guardando configuración: {e}", e=e))
     def load_available_plugins(self) -> List[PluginInfo]:
         """Cargar plugins disponibles desde el backend"""
 
@@ -587,11 +588,11 @@ class UnifiedPluginManager(QObject):
                     plugins.append(plugin_info)
                 return plugins
             else:
-                print("[UnifiedPluginManager] Usuario no autenticado en backend")
+                print(tr("[UnifiedPluginManager] Usuario no autenticado en backend"))
 
                 return []
         except Exception as e:
-            print(f"[UnifiedPluginManager] Error cargando plugins disponibles: {e}")
+            print(tr("[UnifiedPluginManager] Error cargando plugins disponibles: {e}", e=e))
 
             return []
     def get_plugin_access(self, plugin_id: str) -> PluginAccessInfo:
@@ -601,7 +602,7 @@ class UnifiedPluginManager(QObject):
         # plugin_info.json del plugin: ese fichero está en la carpeta de usuario y
         # cualquiera puede editarlo para marcar como gratuito un plugin premium.
         if is_free_plugin(plugin_id):
-            logger.info(f"Plugin {plugin_id} access granted: Free plugin (no auth required)")
+            logger.info(tr("Plugin {plugin_id} access granted: Free plugin (no auth required)", plugin_id=plugin_id))
             return PluginAccessInfo(
                 plugin_id=plugin_id,
                 plugin_name=plugin_id,
@@ -610,39 +611,39 @@ class UnifiedPluginManager(QObject):
                 features_available=[]
             )
         if not self.auth_manager:
-            logger.warning(f"Plugin {plugin_id} access denied: No auth manager")
+            logger.warning(tr("Plugin {plugin_id} access denied: No auth manager", plugin_id=plugin_id))
 
             return PluginAccessInfo(
 
                 plugin_id=plugin_id,
 
-                plugin_name="Plugin Desconocido",
+                plugin_name=tr("Plugin Desconocido"),
 
                 access_level=PluginAccessLevel.NONE,
 
                 is_licensed=False
             )
         if not self.auth_manager.auth_state.is_authenticated:
-            logger.warning(f"Plugin {plugin_id} access denied: User not authenticated")
+            logger.warning(tr("Plugin {plugin_id} access denied: User not authenticated", plugin_id=plugin_id))
 
             return PluginAccessInfo(
 
                 plugin_id=plugin_id,
 
-                plugin_name="Plugin Desconocido",
+                plugin_name=tr("Plugin Desconocido"),
 
                 access_level=PluginAccessLevel.NONE,
 
                 is_licensed=False
             )
         if plugin_id not in self.plugin_configs_data:
-            logger.warning(f"Plugin {plugin_id} access denied: Unknown plugin")
+            logger.warning(tr("Plugin {plugin_id} access denied: Unknown plugin", plugin_id=plugin_id))
 
             return PluginAccessInfo(
 
                 plugin_id=plugin_id,
 
-                plugin_name="Plugin Desconocido",
+                plugin_name=tr("Plugin Desconocido"),
 
                 access_level=PluginAccessLevel.NONE,
 
@@ -733,7 +734,7 @@ class UnifiedPluginManager(QObject):
 
         self._show_upgrade_dialog(plugin_id, feature, parent_widget)
 
-        self.access_denied.emit(plugin_id, f"La característica '{feature}' requiere acceso premium")
+        self.access_denied.emit(plugin_id, tr("La característica '{feature}' requiere acceso premium", feature=feature))
 
         return False
     def start_trial(self, plugin_id: str) -> bool:
@@ -773,21 +774,21 @@ class UnifiedPluginManager(QObject):
 
         msg = QMessageBox(parent_widget)
 
-        msg.setWindowTitle("Característica Premium")
+        msg.setWindowTitle(tr("Característica Premium"))
 
         msg.setIcon(QMessageBox.Information)
 
-        msg.setText(f"La característica '{feature}' requiere una suscripción premium de {plugin_name}.")
+        msg.setText(tr("La característica '{feature}' requiere una suscripción premium de {plugin_name}.", feature=feature, plugin_name=plugin_name))
 
         msg.setInformativeText(
-            "Visita nuestro sitio web para obtener acceso premium.\n\n"
+            tr("Visita nuestro sitio web para obtener acceso premium.\n\n"
             "Si quieres probarlo antes, la prueba gratuita de 7 días se solicita "
-            "por email a vicrosdev@proton.me."
+            "por email a vicrosdev@proton.me.")
         )
 
-        upgrade_btn = msg.addButton("Comprar Premium", QMessageBox.ActionRole)
+        upgrade_btn = msg.addButton(tr("Comprar Premium"), QMessageBox.ActionRole)
 
-        msg.addButton("Cancelar", QMessageBox.RejectRole)
+        msg.addButton(tr("Cancelar"), QMessageBox.RejectRole)
 
         msg.setDefaultButton(upgrade_btn)
 
@@ -808,7 +809,7 @@ class UnifiedPluginManager(QObject):
 
         try:
             if self.is_plugin_installed(plugin_id):
-                print(f"[UnifiedPluginManager] Plugin '{plugin_id}' ya está instalado")
+                print(tr("[UnifiedPluginManager] Plugin '{plugin_id}' ya está instalado", plugin_id=plugin_id))
 
                 return True
             # Usar integración con backend
@@ -816,11 +817,11 @@ class UnifiedPluginManager(QObject):
             from backend_integration import backend_integration
 
             if not backend_integration.is_authenticated():
-                self.plugin_error.emit(plugin_id, "Usuario no autenticado")
+                self.plugin_error.emit(plugin_id, tr("Usuario no autenticado"))
 
                 return False
             if not backend_integration.has_plugin_access(plugin_id):
-                self.plugin_error.emit(plugin_id, "No tienes acceso a este plugin")
+                self.plugin_error.emit(plugin_id, tr("No tienes acceso a este plugin"))
 
                 return False
             # Iniciar descarga en thread
@@ -843,7 +844,7 @@ class UnifiedPluginManager(QObject):
 
             return True
         except Exception as e:
-            print(f"[UnifiedPluginManager] Error iniciando instalación del plugin: {e}")
+            print(tr("[UnifiedPluginManager] Error iniciando instalación del plugin: {e}", e=e))
 
             self.plugin_error.emit(plugin_id, str(e))
 
@@ -857,19 +858,19 @@ class UnifiedPluginManager(QObject):
             if self.load_plugin(plugin_id):
                 self.plugin_installed.emit(plugin_id)
 
-                print(f"[UnifiedPluginManager] Plugin '{plugin_id}' instalado y cargado exitosamente")
+                print(tr("[UnifiedPluginManager] Plugin '{plugin_id}' instalado y cargado exitosamente", plugin_id=plugin_id))
             else:
                 self.plugin_installed.emit(plugin_id)  # Emitir señal aunque no se cargue
 
-                print(f"[UnifiedPluginManager] Plugin '{plugin_id}' instalado pero no se pudo cargar dinámicamente")
+                print(tr("[UnifiedPluginManager] Plugin '{plugin_id}' instalado pero no se pudo cargar dinámicamente", plugin_id=plugin_id))
         else:
-            self.plugin_error.emit(plugin_id, "Instalación falló")
+            self.plugin_error.emit(plugin_id, tr("Instalación falló"))
     def _on_download_error(self, plugin_id: str, error: str):
         """Manejar error de descarga"""
 
         self.plugin_error.emit(plugin_id, error)
 
-        print(f"[UnifiedPluginManager] Error instalando plugin '{plugin_id}': {error}")
+        print(tr("[UnifiedPluginManager] Error instalando plugin '{plugin_id}': {error}", plugin_id=plugin_id, error=error))
     def is_plugin_installed(self, plugin_id: str) -> bool:
         """Verificar si un plugin está instalado"""
 
@@ -894,13 +895,12 @@ class UnifiedPluginManager(QObject):
             from backend_integration import is_valid_plugin_id
 
             if not is_valid_plugin_id(plugin_id):
-                print(f"[UnifiedPluginManager] plugin_id no válido, no se desinstala: {plugin_id!r}")
+                print(tr("[UnifiedPluginManager] plugin_id no válido, no se desinstala: {plugin_id!r}", plugin_id=plugin_id))
 
                 return False
             if is_bundled_only(plugin_id):
                 print(
-                    f"[UnifiedPluginManager] Plugin '{plugin_id}' es preinstalado "
-                    f"(bundle de solo lectura); no se puede desinstalar"
+                    tr("[UnifiedPluginManager] Plugin '{plugin_id}' es preinstalado (bundle de solo lectura); no se puede desinstalar", plugin_id=plugin_id)
                 )
                 return False
 
@@ -920,7 +920,7 @@ class UnifiedPluginManager(QObject):
                 return True
             return False
         except Exception as e:
-            print(f"[UnifiedPluginManager] Error desinstalando plugin '{plugin_id}': {e}")
+            print(tr("[UnifiedPluginManager] Error desinstalando plugin '{plugin_id}': {e}", plugin_id=plugin_id, e=e))
 
             return False
     def get_installed_plugins(self) -> List[str]:
@@ -980,7 +980,7 @@ class UnifiedPluginManager(QObject):
                 self.access_granted.emit(plugin_id)
         else:
             for plugin_id in self.plugin_configs_data.keys():
-                self.access_denied.emit(plugin_id, "Usuario no autenticado")
+                self.access_denied.emit(plugin_id, tr("Usuario no autenticado"))
     def on_plugin_license_changed(self, plugin_id: str, is_licensed: bool):
         """Manejar cambio de licencia de plugin"""
 
@@ -989,14 +989,14 @@ class UnifiedPluginManager(QObject):
 
             logger.info(f"Plugin {plugin_id} license activated")
         else:
-            self.access_denied.emit(plugin_id, "Licencia no válida")
+            self.access_denied.emit(plugin_id, tr("Licencia no válida"))
 
-            logger.warning(f"Plugin {plugin_id} license deactivated")
+            logger.warning(tr("Plugin {plugin_id} license deactivated", plugin_id=plugin_id))
     def _validate_all_plugins(self):
         """Validar todos los plugins periódicamente"""
 
         if not self.auth_manager or not self.auth_manager.auth_state.is_authenticated:
-            logger.warning("Plugin validation skipped: User not authenticated")
+            logger.warning(tr("Plugin validation skipped: User not authenticated"))
 
             return
         logger.info("Starting periodic plugin validation")
@@ -1005,7 +1005,7 @@ class UnifiedPluginManager(QObject):
             try:
                 self._validate_plugin_access(plugin_id)
             except Exception as e:
-                logger.error(f"Error validating plugin {plugin_id}: {e}")
+                logger.error(tr("Error validating plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
     def _validate_plugin_access(self, plugin_id: str):
         """Validar acceso a un plugin específico"""
 
@@ -1014,7 +1014,7 @@ class UnifiedPluginManager(QObject):
         # Verificar autenticación
 
         if not self.auth_manager.auth_state.is_authenticated:
-            logger.warning(f"Plugin {plugin_id} validation failed: User not authenticated")
+            logger.warning(tr("Plugin {plugin_id} validation failed: User not authenticated", plugin_id=plugin_id))
 
             self.validation_required.emit(plugin_id)
 
@@ -1030,11 +1030,11 @@ class UnifiedPluginManager(QObject):
                 trial_remaining = self._get_trial_remaining_days(plugin_id)
 
                 if trial_remaining <= 0:
-                    logger.warning(f"Plugin {plugin_id} trial expired")
+                    logger.warning(tr("Plugin {plugin_id} trial expired", plugin_id=plugin_id))
 
                     self.trial_expired.emit(plugin_id)
             else:
-                logger.warning(f"Plugin {plugin_id} access denied: No license")
+                logger.warning(tr("Plugin {plugin_id} access denied: No license", plugin_id=plugin_id))
 
                 self.validation_required.emit(plugin_id)
     def force_validation(self, plugin_id: str = None):
@@ -1088,8 +1088,7 @@ class UnifiedPluginManager(QObject):
             plugin_dir = find_plugin_dir(plugin_id)
 
             if plugin_dir is None or not plugin_dir.exists():
-                logger.error(f"Plugin directory not found for '{plugin_id}' "
-                             f"(buscado en {USER_PLUGINS_DIR} y {BUNDLED_PLUGINS_DIR})")
+                logger.error(tr("Plugin directory not found for '{plugin_id}' (buscado en {USER_PLUGINS_DIR} y {BUNDLED_PLUGINS_DIR})", plugin_id=plugin_id, USER_PLUGINS_DIR=USER_PLUGINS_DIR, BUNDLED_PLUGINS_DIR=BUNDLED_PLUGINS_DIR))
 
                 return False
             # Verificar que tenga __init__.py
@@ -1137,7 +1136,7 @@ class UnifiedPluginManager(QObject):
             # Verificar que el módulo tenga la función initialize_plugin
 
             if not hasattr(module, 'initialize_plugin'):
-                logger.warning(f"Plugin {plugin_id} missing initialize_plugin function")
+                logger.warning(tr("Plugin {plugin_id} missing initialize_plugin function", plugin_id=plugin_id))
 
                 return False
             # Inicializar el plugin
@@ -1154,15 +1153,15 @@ class UnifiedPluginManager(QObject):
 
                     return True
                 else:
-                    logger.warning(f"Plugin {plugin_id} initialization returned False")
+                    logger.warning(tr("Plugin {plugin_id} initialization returned False", plugin_id=plugin_id))
 
                     return False
             except Exception as init_error:
-                logger.error(f"Error initializing plugin {plugin_id}: {init_error}")
+                logger.error(tr("Error initializing plugin {plugin_id}: {init_error}", plugin_id=plugin_id, init_error=init_error))
 
                 return False
         except Exception as e:
-            logger.error(f"Error loading plugin {plugin_id}: {e}")
+            logger.error(tr("Error loading plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             import traceback
 
@@ -1207,7 +1206,7 @@ class UnifiedPluginManager(QObject):
                 return True
             return False
         except Exception as e:
-            logger.error(f"Error unloading plugin {plugin_id}: {e}")
+            logger.error(tr("Error unloading plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             return False
     def _shutdown_plugin_module(self, plugin_id: str, plugin_module) -> None:
@@ -1224,7 +1223,7 @@ class UnifiedPluginManager(QObject):
             try:
                 instance = get_instance()
             except Exception as e:
-                logger.error(f"Error calling get_plugin_instance() on plugin {plugin_id}: {e}")
+                logger.error(tr("Error calling get_plugin_instance() on plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
         if instance is not None and instance is not plugin_module and callable(getattr(instance, "shutdown", None)):
             try:
                 logger.info(f"Calling instance.shutdown() on plugin {plugin_id}")
@@ -1240,7 +1239,7 @@ class UnifiedPluginManager(QObject):
                         pass
                 return
             except Exception as e:
-                logger.error(f"Error calling instance.shutdown() on plugin {plugin_id}: {e}")
+                logger.error(tr("Error calling instance.shutdown() on plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
         # 2. shutdown_plugin() a nivel de módulo
         # (solo si la instancia no tenía shutdown() o falló)
         shutdown_plugin = getattr(plugin_module, "shutdown_plugin", None)
@@ -1253,7 +1252,7 @@ class UnifiedPluginManager(QObject):
 
                 return
             except Exception as e:
-                logger.error(f"Error calling shutdown_plugin() on plugin {plugin_id}: {e}")
+                logger.error(tr("Error calling shutdown_plugin() on plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
         # 3. shutdown() a nivel de módulo (interfaz antigua)
         module_shutdown = getattr(plugin_module, "shutdown", None)
 
@@ -1263,7 +1262,7 @@ class UnifiedPluginManager(QObject):
 
                 module_shutdown()
             except Exception as e:
-                logger.error(f"Error calling shutdown() on plugin {plugin_id}: {e}")
+                logger.error(tr("Error calling shutdown() on plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
     def _purge_plugin_modules(self, plugin_id: str, plugin_module) -> None:
         """Quitar de sys.modules el plugin y todo módulo cuyo __file__ esté
         dentro de la carpeta del plugin, y la carpeta de sys.path."""
@@ -1338,8 +1337,7 @@ class UnifiedPluginManager(QObject):
         if access_info.is_licensed and access_info.access_level == PluginAccessLevel.PREMIUM:
             return True
         logger.warning(
-            f"Plugin {plugin_id} no se carga: plugin premium sin licencia "
-            f"(access_level={access_info.access_level.value})"
+            tr("Plugin {plugin_id} no se carga: plugin premium sin licencia (access_level={value})", plugin_id=plugin_id, value=access_info.access_level.value)
         )
         return False
     def load_all_installed_plugins(self) -> Dict[str, bool]:
@@ -1372,9 +1370,9 @@ class UnifiedPluginManager(QObject):
                 if success:
                     logger.info(f"Loaded plugin: {plugin_id} (access_level={access_info.access_level.value})")
                 else:
-                    logger.warning(f"Failed to load plugin: {plugin_id}")
+                    logger.warning(tr("Failed to load plugin: {plugin_id}", plugin_id=plugin_id))
             else:
-                logger.info(f"Skipping plugin {plugin_id} - no access (access_level={access_info.access_level.value}, is_licensed={access_info.is_licensed})")
+                logger.info(tr("Skipping plugin {plugin_id} - no access (access_level={value}, is_licensed={is_licensed})", plugin_id=plugin_id, value=access_info.access_level.value, is_licensed=access_info.is_licensed))
 
                 results[plugin_id] = False
         return results

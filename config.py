@@ -11,9 +11,10 @@ Migración:
 - Usar ConfigManager para acceder a configuraciones en lugar de importar este módulo
 """
 
+from i18n import tr
 import warnings
 warnings.warn(
-    "config.py está deprecado. Use ConfigManager con config.yaml",
+    tr("config.py está deprecado. Use ConfigManager con config.yaml"),
     DeprecationWarning,
     stacklevel=2
 )

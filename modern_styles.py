@@ -13,6 +13,7 @@ Autor: Katphi Team
 Fecha: 2025-12-31
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QWidget, QPushButton, QLineEdit, QTabBar,
                                 QHBoxLayout, QVBoxLayout, QToolButton,
                                 QFrame, QSizePolicy, QLabel, QGraphicsOpacityEffect)
@@ -253,7 +254,7 @@ class ExpandableUrlBar(QLineEdit):
         self.is_expanded = False
 
         # Placeholder moderno
-        self.setPlaceholderText("Buscar en Google o escribir URL")
+        self.setPlaceholderText(tr("Buscar en Google o escribir URL"))
 
         # Animación de expansión
         self.width_animation = QPropertyAnimation(self, b"minimumWidth")
@@ -686,7 +687,7 @@ if __name__ == "__main__":
 
     # Crear ventana de prueba
     window = QWidget()
-    window.setWindowTitle("Modern Styles Demo")
+    window.setWindowTitle(tr("Modern Styles Demo"))
     window.resize(900, 600)
 
     layout = QVBoxLayout(window)
@@ -721,13 +722,13 @@ if __name__ == "__main__":
     # Sidebar retráctil
     sidebar = RetractableSidebar()
     sidebar.setStyleSheet(theme_manager.get_sidebar_style())
-    sidebar.add_item(QLabel("Item 1"))
-    sidebar.add_item(QLabel("Item 2"))
-    sidebar.add_item(QLabel("Item 3"))
+    sidebar.add_item(QLabel(tr("Item 1")))
+    sidebar.add_item(QLabel(tr("Item 2")))
+    sidebar.add_item(QLabel(tr("Item 3")))
 
     main_layout = QHBoxLayout()
     main_layout.addWidget(sidebar)
-    main_layout.addWidget(QLabel("Contenido principal"))
+    main_layout.addWidget(QLabel(tr("Contenido principal")))
 
     layout.addLayout(main_layout)
 

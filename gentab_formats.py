@@ -18,6 +18,7 @@ pestaña) y la plantilla enlaza la URL real de esa pestaña. Los textos se
 pintan con textContent, nunca como HTML.
 """
 
+from i18n import get_language, tr
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -29,41 +30,41 @@ FORMAT_LINKS = "links"
 # Orden en el que se ofrecen en el panel GenTab y en el asistente de chat
 FORMATS: Dict[str, Dict[str, Any]] = {
     "compare": {
-        "label": "Tabla comparativa",
-        "description": "Tabla ordenable con una fila por elemento y sus características.",
-        "task": ("Tabla comparativa: compara los elementos de las pestañas abiertas "
+        "label": tr("Tabla comparativa"),
+        "description": tr("Tabla ordenable con una fila por elemento y sus características."),
+        "task": (tr("Tabla comparativa: compara los elementos de las pestañas abiertas "
                  "(productos, opciones, artículos...) en una tabla ordenable con sus "
-                 "características principales."),
+                 "características principales.")),
     },
     "briefing": {
-        "label": "Informe resumido",
-        "description": "Documento de lectura: resumen, ideas clave por temas y conclusiones.",
-        "task": ("Informe resumido: resume el contenido de las pestañas en un informe "
-                 "con las ideas clave por temas y las conclusiones."),
+        "label": tr("Informe resumido"),
+        "description": tr("Documento de lectura: resumen, ideas clave por temas y conclusiones."),
+        "task": (tr("Informe resumido: resume el contenido de las pestañas en un informe "
+                 "con las ideas clave por temas y las conclusiones.")),
     },
     "mindmap": {
-        "label": "Mapa mental",
-        "description": "Diagrama con el tema central, sus ramas y las ideas de cada rama.",
-        "task": ("Mapa mental: organiza los temas de las pestañas en un mapa mental con "
-                 "el tema central, sus ramas y las ideas clave."),
+        "label": tr("Mapa mental"),
+        "description": tr("Diagrama con el tema central, sus ramas y las ideas de cada rama."),
+        "task": (tr("Mapa mental: organiza los temas de las pestañas en un mapa mental con "
+                 "el tema central, sus ramas y las ideas clave.")),
     },
     "flashcards": {
-        "label": "Tarjetas de estudio",
-        "description": "Preguntas y respuestas de una en una para repasar.",
-        "task": ("Tarjetas de estudio: crea flashcards de preguntas y respuestas para "
-                 "estudiar el contenido de las pestañas."),
+        "label": tr("Tarjetas de estudio"),
+        "description": tr("Preguntas y respuestas de una en una para repasar."),
+        "task": (tr("Tarjetas de estudio: crea flashcards de preguntas y respuestas para "
+                 "estudiar el contenido de las pestañas.")),
     },
     "timeline": {
-        "label": "Línea de tiempo",
-        "description": "Fechas y acontecimientos ordenados cronológicamente.",
-        "task": ("Línea de tiempo: ordena cronológicamente las fechas y acontecimientos "
-                 "que aparecen en las pestañas."),
+        "label": tr("Línea de tiempo"),
+        "description": tr("Fechas y acontecimientos ordenados cronológicamente."),
+        "task": (tr("Línea de tiempo: ordena cronológicamente las fechas y acontecimientos "
+                 "que aparecen en las pestañas.")),
     },
     FORMAT_LINKS: {
-        "label": "Directorio de enlaces",
-        "description": "Todos los enlaces de las pestañas, por dominio y con buscador.",
-        "task": ("Directorio de enlaces: reúne todos los enlaces de las pestañas, "
-                 "agrupados por dominio y con buscador."),
+        "label": tr("Directorio de enlaces"),
+        "description": tr("Todos los enlaces de las pestañas, por dominio y con buscador."),
+        "task": (tr("Directorio de enlaces: reúne todos los enlaces de las pestañas, "
+                 "agrupados por dominio y con buscador.")),
     },
 }
 
@@ -71,17 +72,19 @@ FORMATS: Dict[str, Dict[str, Any]] = {
 # Van de la más específica a la más general ("tabla" o "resume" son genéricas).
 _KEYWORDS = (
     ("flashcards", ("flashcard", "tarjetas de estudio", "tarjetas de memoria",
-                    "preguntas y respuestas", "cuestionario", "quiz")),
+                    "preguntas y respuestas", "cuestionario", "quiz", "study cards",
+                    "questions and answers")),
     ("timeline", ("línea de tiempo", "linea de tiempo", "línea temporal", "linea temporal",
-                  "cronolog", "timeline")),
+                  "cronolog", "timeline", "chronolog")),
     ("mindmap", ("mapa mental", "mind map", "mapa conceptual", "mapa de información",
-                 "mapa de informacion")),
+                 "mapa de informacion", "mindmap", "concept map")),
     (FORMAT_LINKS, ("directorio de enlaces", "mapa de enlaces", "lista de enlaces",
-                    "todos los enlaces", "todos los links", "link directory")),
+                    "todos los enlaces", "todos los links", "link directory",
+                    "list of links", "all the links")),
     ("compare", ("tabla comparativa", "comparativa", "compara", "comparación",
-                 "comparacion", "compare", "tabla")),
+                 "comparacion", "compare", "comparison", "tabla", "table")),
     ("briefing", ("informe resumido", "resumen", "resume", "resumir", "briefing",
-                  "summary", "summarize")),
+                  "summary", "summarize", "summarise", "report")),
 )
 
 _REQUEST_MARKER = "[Solicitud actual]"
@@ -111,7 +114,7 @@ def detect_format(prompt: str) -> str:
 def format_label(fmt: str) -> str:
     if fmt in FORMATS:
         return FORMATS[fmt]["label"]
-    return "Página libre"
+    return tr("Página libre")
 
 
 def uses_llm_json(fmt: str) -> bool:
@@ -128,20 +131,20 @@ _SCHEMAS = {
         "One row per product/option/article/item found in the tabs (at least 2 rows). "
         "Pick columns that let the user compare the rows (price, features, pros, cons, "
         "dates, figures...). Use \"-\" when a value is not in the tabs.",
-        {"title": "Comparativa de portátiles", "summary": "Tres modelos de gama media.",
-         "columns": ["Precio", "Peso", "Batería", "Pantalla"],
-         "rows": [{"name": "Modelo A", "values": ["799 €", "1,4 kg", "10 h", "14 pulgadas"], "src": 1},
-                  {"name": "Modelo B", "values": ["649 €", "1,8 kg", "8 h", "15,6 pulgadas"], "src": 2}]},
+        {"title": tr("Comparativa de portátiles"), "summary": tr("Tres modelos de gama media."),
+         "columns": [tr("Precio"), "Peso", tr("Batería"), tr("Pantalla")],
+         "rows": [{"name": tr("Modelo A"), "values": ["799 €", "1,4 kg", "10 h", "14 pulgadas"], "src": 1},
+                  {"name": tr("Modelo B"), "values": ["649 €", "1,8 kg", "8 h", "15,6 pulgadas"], "src": 2}]},
     ),
     "briefing": (
         '{"title": str, "tldr": str (2-3 sentences with the main idea), '
         '"sections": [{"heading": str, "points": [{"text": str, "src": int}]}] '
         "(3 to 6 sections grouped by TOPIC, not by tab, covering ALL the tabs; 2 to 5 points each), "
         '"conclusions": [str] (2 to 4)}',
-        {"title": "Informe sobre la energía solar", "tldr": "La energía solar crece...",
-         "sections": [{"heading": "Funcionamiento", "points": [
-             {"text": "Los paneles fotovoltaicos convierten la luz en electricidad.", "src": 1}]}],
-         "conclusions": ["Su coste ha bajado mucho en la última década."]},
+        {"title": tr("Informe sobre la energía solar"), "tldr": tr("La energía solar crece..."),
+         "sections": [{"heading": tr("Funcionamiento"), "points": [
+             {"text": tr("Los paneles fotovoltaicos convierten la luz en electricidad."), "src": 1}]}],
+         "conclusions": [tr("Su coste ha bajado mucho en la última década.")]},
     ),
     "mindmap": (
         '{"title": str, "center": str (the main topic, 1-4 words), '
@@ -149,44 +152,34 @@ _SCHEMAS = {
         '"children": [{"label": str (1-5 words), "detail": str (1-2 sentences), "src": int}]}]}\n'
         "3 to 6 branches that cover ALL the tabs, 2 to 5 children per branch. "
         "The center is the topic shared by all the tabs.",
-        {"title": "Mapa de las energías renovables", "center": "Energías renovables",
+        {"title": tr("Mapa de las energías renovables"), "center": tr("Energías renovables"),
          "branches": [{"label": "Solar", "children": [
-             {"label": "Fotovoltaica", "detail": "Convierte la luz en electricidad.", "src": 1}]}]},
+             {"label": "Fotovoltaica", "detail": tr("Convierte la luz en electricidad."), "src": 1}]}]},
     ),
     "flashcards": (
         '{"title": str, "cards": [{"q": str (a question), "a": str (short answer), "src": int}]}\n'
         "Write AT LEAST 8 cards (up to 20), taken from ALL the tabs. "
         "Questions must be answerable with the tab content.",
-        {"title": "Repaso de energía eólica",
-         "cards": [{"q": "¿Qué convierte un aerogenerador?",
-                    "a": "La energía cinética del viento en electricidad.", "src": 2}]},
+        {"title": tr("Repaso de energía eólica"),
+         "cards": [{"q": tr("¿Qué convierte un aerogenerador?"),
+                    "a": tr("La energía cinética del viento en electricidad."), "src": 2}]},
     ),
     "timeline": (
-        '{"title": str, "events": [{"date": str (year or date as written in the tab), '
+        tr('{"title": str, "events": [{"date": str (year or date as written in the tab), '
         '"title": str, "detail": str (1-2 sentences), "src": int}]}\n'
         "Write AT LEAST 6 events if the tabs have them (up to 20), from ALL the tabs, in "
         "chronological order. Only historical events with a date written in the tab content: "
-        "ignore the dates of the web page itself (last edit, access date, copyright).",
-        {"title": "Historia de la energía hidráulica",
-         "events": [{"date": "1882", "title": "Primera central hidroeléctrica",
-                     "detail": "Se inaugura en Appleton (Wisconsin).", "src": 3}]},
+        "ignore the dates of the web page itself (last edit, access date, copyright)."),
+        {"title": tr("Historia de la energía hidráulica"),
+         "events": [{"date": "1882", "title": tr("Primera central hidroeléctrica"),
+                     "detail": tr("Se inaugura en Appleton (Wisconsin)."), "src": 3}]},
     ),
 }
 
 
 def json_system_prompt(fmt: str) -> str:
     return (
-        "You are the data extractor of GenTab, a tool of a web browser. You read the "
-        "content of the user's browser tabs and return the data for a page of type "
-        f"\"{FORMATS[fmt]['label']}\".\n"
-        "RULES:\n"
-        "- Output ONLY one valid JSON object. No markdown, no code fences, no comments, "
-        "no text before or after it.\n"
-        "- Use only information that appears in the tab content. Never invent facts, "
-        "figures, dates or URLs.\n"
-        "- Write every text value in the language of the user's request (Spanish if in doubt).\n"
-        "- \"src\" is the number of the TAB the information comes from (TAB 1 -> 1).\n"
-        "- Keep the texts short and concrete."
+        tr("You are the data extractor of GenTab, a tool of a web browser. You read the content of the user's browser tabs and return the data for a page of type \"{value}\".\nRULES:\n- Output ONLY one valid JSON object. No markdown, no code fences, no comments, no text before or after it.\n- Use only information that appears in the tab content. Never invent facts, figures, dates or URLs.\n- Write every text value in the language of the user's request (Spanish if in doubt).\n- \"src\" is the number of the TAB the information comes from (TAB 1 -> 1).\n- Keep the texts short and concrete.", value=FORMATS[fmt]['label'])
     )
 
 
@@ -286,7 +279,7 @@ def normalize(fmt: str, data: dict, n_sources: int) -> Optional[dict]:
                     points.append({"text": _text(p.get("text"), 500),
                                    "src": _src(p.get("src"), n_sources)})
             if points:
-                sections.append({"heading": _text(s.get("heading"), 100) or "Ideas clave",
+                sections.append({"heading": _text(s.get("heading"), 100) or tr("Ideas clave"),
                                  "points": points})
         tldr = _text(data.get("tldr"), 800)
         conclusions = [_text(c, 400) for c in _list(data.get("conclusions")) if _text(c)]
@@ -314,7 +307,7 @@ def normalize(fmt: str, data: dict, n_sources: int) -> Optional[dict]:
             branches.append({"label": _text(b.get("label"), 50), "children": children})
         if len(branches) < 2:
             return None
-        return {"title": title, "center": _text(data.get("center"), 50) or title or "Tema",
+        return {"title": title, "center": _text(data.get("center"), 50) or title or tr("Tema"),
                 "branches": branches}
     if fmt == "flashcards":
         cards = []
@@ -357,7 +350,7 @@ def links_data(tabs: List[Any]) -> Optional[dict]:
                           "src": n, "internal": host == tab_host})
     if not links:
         return None
-    return {"title": "Directorio de enlaces", "links": links}
+    return {"title": tr("Directorio de enlaces"), "links": links}
 
 
 # ─── Plantillas ───────────────────────────────────────────────────────────────
@@ -397,6 +390,7 @@ footer.sources li { margin:4px 0; }
 """
 
 _BASE_JS = r"""
+function L(s) { return (typeof I18N !== 'undefined' && I18N[s]) || s; }
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -432,7 +426,7 @@ document.getElementById('pageTitle').textContent = DATA.title || PAGE_LABEL;
 """
 
 _THEME_TOGGLE = (
-    '<button id="themeToggle" title="Cambiar tema claro / oscuro" onclick="document.documentElement.'
+    '<button id="themeToggle" title="' + tr("Cambiar tema claro / oscuro") + '" onclick="document.documentElement.'
     "dataset.theme=document.documentElement.dataset.theme==='light'?'dark':'light'\">"
     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
     'stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" '
@@ -462,13 +456,13 @@ tbody tr:last-child td { border-bottom:none; }
   document.getElementById('pageSub').textContent = DATA.summary || '';
   const main = document.getElementById('app');
   const bar = el('div', 'toolbar');
-  const q = el('input', 'search'); q.placeholder = 'Filtrar filas...';
+  const q = el('input', 'search'); q.placeholder = L('Filtrar filas...');
   const count = el('span', 'count');
   bar.appendChild(q); bar.appendChild(count); main.appendChild(bar);
   const wrap = el('div', 'tablewrap'); const table = el('table');
   const thead = el('thead'); const tbody = el('tbody');
   table.appendChild(thead); table.appendChild(tbody); wrap.appendChild(table); main.appendChild(wrap);
-  const headers = ['Elemento'].concat(DATA.columns).concat(['Fuente']);
+  const headers = [L('Elemento')].concat(DATA.columns).concat([L('Fuente')]);
   let sortCol = -1, sortDir = 1;
   function num(v) {
     const m = String(v).replace(/\s/g, '').match(/-?\d[\d.,]*/);
@@ -484,7 +478,7 @@ tbody tr:last-child td { border-bottom:none; }
     const th = el('th', null, h);
     const arrow = el('span', 'arrow'); th.appendChild(arrow);
     if (i < headers.length - 1) {
-      th.title = 'Ordenar por ' + h;
+      th.title = L('Ordenar por ') + h;
       th.onclick = () => { sortDir = (sortCol === i) ? -sortDir : 1; sortCol = i; render(); };
     }
     hr.appendChild(th);
@@ -512,7 +506,7 @@ tbody tr:last-child td { border-bottom:none; }
       const td = el('td'); const a = srcLink(r.src); if (a) td.appendChild(a); tr.appendChild(td);
       tbody.appendChild(tr);
     });
-    count.textContent = rows.length + ' de ' + DATA.rows.length + ' filas';
+    count.textContent = rows.length + L(' de ') + DATA.rows.length + L(' filas');
   }
   q.oninput = render;
   render();
@@ -543,11 +537,11 @@ article li { margin:8px 0; }
   const main = document.getElementById('app'); main.className = 'doc';
   const words = JSON.stringify(DATA).split(/\s+/).length;
   document.getElementById('pageSub').textContent =
-    SOURCES.length + ' fuentes · lectura de ' + Math.max(1, Math.round(words / 220)) + ' min';
-  const toc = el('nav', 'toc'); toc.appendChild(el('h2', null, 'Contenido'));
+    SOURCES.length + L(' fuentes · lectura de ') + Math.max(1, Math.round(words / 220)) + L(' min');
+  const toc = el('nav', 'toc'); toc.appendChild(el('h2', null, L('Contenido')));
   const art = el('article');
   if (DATA.tldr) {
-    const box = el('div', 'tldr'); box.appendChild(el('strong', null, 'En pocas palabras'));
+    const box = el('div', 'tldr'); box.appendChild(el('strong', null, L('En pocas palabras')));
     box.appendChild(el('span', null, DATA.tldr)); art.appendChild(box);
   }
   DATA.sections.forEach((s, i) => {
@@ -561,11 +555,11 @@ article li { margin:8px 0; }
     art.appendChild(ul);
   });
   if (DATA.conclusions.length) {
-    const box = el('section', 'conclusions'); const h = el('h2', null, 'Conclusiones'); h.id = 'sec-c';
+    const box = el('section', 'conclusions'); const h = el('h2', null, L('Conclusiones')); h.id = 'sec-c';
     box.appendChild(h);
     const ul = el('ul'); DATA.conclusions.forEach(c => ul.appendChild(el('li', null, c)));
     box.appendChild(ul); art.appendChild(box);
-    const a = el('a', null, 'Conclusiones'); a.href = '#sec-c'; toc.appendChild(a);
+    const a = el('a', null, L('Conclusiones')); a.href = '#sec-c'; toc.appendChild(a);
   }
   main.appendChild(toc); main.appendChild(art);
 })();
@@ -594,11 +588,11 @@ aside.detail ul { padding-left:18px; }
 (function () {
   const main = document.getElementById('app'); main.className = 'map';
   document.getElementById('pageSub').textContent =
-    DATA.branches.length + ' ramas · pulsa un nodo para ver el detalle';
+    DATA.branches.length + L(' ramas · pulsa un nodo para ver el detalle');
   const NS = 'http://www.w3.org/2000/svg';
   const COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#ec4899'];
   const canvas = el('div', 'canvas'); const svg = document.createElementNS(NS, 'svg');
-  canvas.appendChild(svg); canvas.appendChild(el('div', 'hint', 'Rueda: zoom · arrastrar: mover · doble clic: encajar'));
+  canvas.appendChild(svg); canvas.appendChild(el('div', 'hint', L('Rueda: zoom · arrastrar: mover · doble clic: encajar')));
   const detail = el('aside', 'detail');
   main.appendChild(canvas); main.appendChild(detail);
   const gEdges = document.createElementNS(NS, 'g'), gNodes = document.createElementNS(NS, 'g');
@@ -634,13 +628,13 @@ aside.detail ul { padding-left:18px; }
     g.classList.add('active'); detail.innerHTML = ''; show();
   }
   function showCenter() {
-    detail.appendChild(el('div', 'branch', 'Tema central'));
+    detail.appendChild(el('div', 'branch', L('Tema central')));
     detail.appendChild(el('h2', null, DATA.center));
     const ul = el('ul'); DATA.branches.forEach(b => ul.appendChild(el('li', null, b.label)));
     detail.appendChild(ul);
   }
   function showBranch(b) {
-    detail.appendChild(el('div', 'branch', 'Rama'));
+    detail.appendChild(el('div', 'branch', L('Rama')));
     detail.appendChild(el('h2', null, b.label));
     const ul = el('ul'); b.children.forEach(c => ul.appendChild(el('li', null, c.label)));
     detail.appendChild(ul);
@@ -649,7 +643,7 @@ aside.detail ul { padding-left:18px; }
     detail.appendChild(el('div', 'branch', b.label));
     detail.appendChild(el('h2', null, c.label));
     if (c.detail) detail.appendChild(el('p', null, c.detail));
-    const a = srcLink(c.src); if (a) { const p = el('p', null, 'Fuente: '); p.appendChild(a); detail.appendChild(p); }
+    const a = srcLink(c.src); if (a) { const p = el('p', null, L('Fuente: ')); p.appendChild(a); detail.appendChild(p); }
   }
   const B = DATA.branches.length, R1 = 240, R2 = 470;
   DATA.branches.forEach((b, i) => {
@@ -724,7 +718,7 @@ main.study { max-width:760px; text-align:center; }
 (function () {
   const main = document.getElementById('app'); main.className = 'study';
   document.getElementById('pageSub').textContent =
-    DATA.cards.length + ' tarjetas · pulsa la tarjeta o la barra espaciadora para girarla';
+    DATA.cards.length + L(' tarjetas · pulsa la tarjeta o la barra espaciadora para girarla');
   let deck = DATA.cards.slice(), idx = 0, known = new Set(), review = new Set();
   const prog = el('div', 'progress'); const bar = el('div'); prog.appendChild(bar);
   const counter = el('div', 'counter');
@@ -733,12 +727,12 @@ main.study { max-width:760px; text-align:center; }
   flash.appendChild(front); flash.appendChild(back); scene.appendChild(flash);
   const controls = el('div', 'controls'); const score = el('div', 'score');
   function button(label, cls, fn) { const b = el('button', 'btn ' + (cls || ''), label); b.onclick = fn; controls.appendChild(b); return b; }
-  button('Anterior', '', () => go(-1));
-  button('Girar', '', flip);
-  button('Repasar', '', () => mark(false));
-  button('Lo sabía', 'primary', () => mark(true));
-  button('Siguiente', '', () => go(1));
-  button('Barajar', '', shuffle);
+  button(L('Anterior'), '', () => go(-1));
+  button(L('Girar'), '', flip);
+  button(L('Repasar'), '', () => mark(false));
+  button(L('Lo sabía'), 'primary', () => mark(true));
+  button(L('Siguiente'), '', () => go(1));
+  button(L('Barajar'), '', shuffle);
   [prog, counter, scene, controls, score].forEach(x => main.appendChild(x));
   scene.onclick = flip;
   function flip() { flash.classList.toggle('flipped'); }
@@ -749,10 +743,10 @@ main.study { max-width:760px; text-align:center; }
   function show() {
     const c = deck[idx];
     flash.classList.remove('flipped');
-    face(front, 'Pregunta', c.q, null); face(back, 'Respuesta', c.a, c.src);
-    counter.textContent = 'Tarjeta ' + (idx + 1) + ' de ' + deck.length;
+    face(front, L('Pregunta'), c.q, null); face(back, L('Respuesta'), c.a, c.src);
+    counter.textContent = L('Tarjeta ') + (idx + 1) + L(' de ') + deck.length;
     bar.style.width = ((idx + 1) / deck.length * 100) + '%';
-    score.textContent = 'Lo sabías: ' + known.size + ' · Para repasar: ' + review.size;
+    score.textContent = L('Lo sabías: ') + known.size + L(' · Para repasar: ') + review.size;
   }
   function go(d) {
     if (idx + d >= deck.length) { finish(); return; }
@@ -768,12 +762,12 @@ main.study { max-width:760px; text-align:center; }
   }
   function finish() {
     main.innerHTML = '';
-    const box = el('div', 'done'); box.appendChild(el('h2', null, 'Has terminado el mazo'));
-    box.appendChild(el('p', null, 'Lo sabías: ' + known.size + ' de ' + DATA.cards.length + '. Para repasar: ' + review.size + '.'));
-    const again = el('button', 'btn primary', 'Repasar las que fallé');
+    const box = el('div', 'done'); box.appendChild(el('h2', null, L('Has terminado el mazo')));
+    box.appendChild(el('p', null, L('Lo sabías: ') + known.size + L(' de ') + DATA.cards.length + L('. Para repasar: ') + review.size + '.'));
+    const again = el('button', 'btn primary', L('Repasar las que fallé'));
     again.disabled = review.size === 0;
     again.onclick = () => { deck = Array.from(review); restart(); };
-    const all = el('button', 'btn', 'Empezar de nuevo');
+    const all = el('button', 'btn', L('Empezar de nuevo'));
     all.onclick = () => { deck = DATA.cards.slice(); restart(); };
     const row = el('div', 'controls'); row.appendChild(again); row.appendChild(all); box.appendChild(row);
     main.appendChild(box);
@@ -838,17 +832,17 @@ _TEMPLATES["timeline"] = {"css": """
   const events = DATA.events.map((e, i) => Object.assign({ y: year(e.date), i: i }, e));
   events.sort((a, b) => (a.y === null || b.y === null) ? a.i - b.i : (a.y - b.y) || (a.i - b.i));
   const dated = events.filter(e => e.y !== null);
-  document.getElementById('pageSub').textContent = events.length + ' acontecimientos' +
-    (dated.length ? ' · de ' + dated[0].date + ' a ' + dated[dated.length - 1].date : '');
-  const bar = el('div', 'toolbar'); const q = el('input', 'search'); q.placeholder = 'Buscar en la línea de tiempo...';
+  document.getElementById('pageSub').textContent = events.length + L(' acontecimientos') +
+    (dated.length ? L(' · de ') + dated[0].date + L(' a ') + dated[dated.length - 1].date : '');
+  const bar = el('div', 'toolbar'); const q = el('input', 'search'); q.placeholder = L('Buscar en la línea de tiempo...');
   bar.appendChild(q); main.appendChild(bar);
   const tl = el('div', 'tl'); main.appendChild(tl);
   function era(y) {
-    if (y === null) return 'Sin fecha exacta';
-    if (y < 0) return 'Antes de Cristo';
+    if (y === null) return L('Sin fecha exacta');
+    if (y < 0) return L('Antes de Cristo');
     let c = Math.floor((y - 1) / 100) + 1, r = '';
     [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']].forEach(([v, s]) => { while (c >= v) { r += s; c -= v; } });
-    return 'Siglo ' + r;
+    return L('Siglo ') + r;
   }
   function render() {
     const term = q.value.toLowerCase(); tl.innerHTML = '';
@@ -863,7 +857,7 @@ _TEMPLATES["timeline"] = {"css": """
       const a = srcLink(e.src); if (a) box.appendChild(a);
       ev.appendChild(box); tl.appendChild(ev);
     });
-    if (!tl.children.length) tl.appendChild(el('p', 'empty', 'Ningún acontecimiento coincide.'));
+    if (!tl.children.length) tl.appendChild(el('p', 'empty', L('Ningún acontecimiento coincide.')));
   }
   q.oninput = render; render();
 })();
@@ -896,21 +890,21 @@ ul.links .url { display:block; color:var(--muted); font-size:12px; overflow:hidd
   DATA.links.forEach(l => { byDomain[l.domain] = (byDomain[l.domain] || 0) + 1; });
   const domains = Object.keys(byDomain).sort((a, b) => byDomain[b] - byDomain[a] || a.localeCompare(b));
   document.getElementById('pageSub').textContent =
-    DATA.links.length + ' enlaces de ' + domains.length + ' dominios en ' + SOURCES.length + ' pestañas';
+    DATA.links.length + L(' enlaces de ') + domains.length + L(' dominios en ') + SOURCES.length + L(' pestañas');
   let current = null;
   const side = el('aside', 'domains'); const right = el('div');
   main.appendChild(side); main.appendChild(right);
   function domainButton(name, n) {
-    const b = el('button'); b.appendChild(el('span', null, name || 'Todos los dominios'));
+    const b = el('button'); b.appendChild(el('span', null, name || L('Todos los dominios')));
     b.appendChild(el('span', 'n', String(n)));
     b.onclick = () => { current = name; render(); };
     b.dataset.domain = name || ''; side.appendChild(b);
   }
   domainButton(null, DATA.links.length);
   domains.forEach(d => domainButton(d, byDomain[d]));
-  const bar = el('div', 'toolbar'); const q = el('input', 'search'); q.placeholder = 'Buscar enlaces...';
+  const bar = el('div', 'toolbar'); const q = el('input', 'search'); q.placeholder = L('Buscar enlaces...');
   const lab = el('label'); const ext = el('input'); ext.type = 'checkbox';
-  lab.appendChild(ext); lab.appendChild(document.createTextNode('Solo enlaces a otros sitios'));
+  lab.appendChild(ext); lab.appendChild(document.createTextNode(L('Solo enlaces a otros sitios')));
   const count = el('span', 'count');
   bar.appendChild(q); bar.appendChild(lab); bar.appendChild(count); right.appendChild(bar);
   const ul = el('ul', 'links'); right.appendChild(ul);
@@ -926,12 +920,16 @@ ul.links .url { display:block; color:var(--muted); font-size:12px; overflow:hidd
       const c = cite(l.src); if (c) li.appendChild(c);
       ul.appendChild(li);
     });
-    if (!rows.length) ul.appendChild(el('li', 'empty', 'Ningún enlace coincide.'));
-    count.textContent = rows.length + ' enlaces';
+    if (!rows.length) ul.appendChild(el('li', 'empty', L('Ningún enlace coincide.')));
+    count.textContent = rows.length + L(' enlaces');
   }
   q.oninput = render; ext.onchange = render; render();
 })();
 """}
+
+
+# Textos de las plantillas JS (L(...)); se traducen con tr() al generar la página.
+JS_TEXTS = ['Filtrar filas...', 'Elemento', 'Fuente', 'Ordenar por ', ' de ', ' filas', ' fuentes · lectura de ', ' min', 'Contenido', 'En pocas palabras', 'Conclusiones', ' ramas · pulsa un nodo para ver el detalle', 'Rueda: zoom · arrastrar: mover · doble clic: encajar', 'Tema central', 'Rama', 'Fuente: ', ' tarjetas · pulsa la tarjeta o la barra espaciadora para girarla', 'Anterior', 'Girar', 'Repasar', 'Lo sabía', 'Siguiente', 'Barajar', 'Pregunta', 'Respuesta', 'Tarjeta ', 'Lo sabías: ', ' · Para repasar: ', 'Has terminado el mazo', '. Para repasar: ', 'Repasar las que fallé', 'Empezar de nuevo', ' acontecimientos', ' · de ', ' a ', 'Buscar en la línea de tiempo...', 'Sin fecha exacta', 'Antes de Cristo', 'Siglo ', 'Ningún acontecimiento coincide.', ' enlaces de ', ' dominios en ', ' pestañas', 'Todos los dominios', 'Buscar enlaces...', 'Solo enlaces a otros sitios', 'Ningún enlace coincide.', ' enlaces']
 
 
 def _json_for_script(obj) -> str:
@@ -947,14 +945,15 @@ def build_page(fmt: str, data: dict, sources: List[dict]) -> str:
     script = (f"const DATA = {_json_for_script(data)};\n"
               f"const SOURCES = {_json_for_script(sources)};\n"
               f"const PAGE_LABEL = {_json_for_script(label)};\n"
+              f"const I18N = {_json_for_script({t: tr(t) for t in JS_TEXTS})};\n"
               + _BASE_JS + tpl["js"])
     return (
-        "<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n<meta charset=\"UTF-8\">\n"
+        f"<!DOCTYPE html>\n<html lang=\"{get_language()}\">\n<head>\n<meta charset=\"UTF-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
         f"<title>{label}</title>\n<style>{_BASE_CSS}{tpl['css']}</style>\n</head>\n<body>\n"
         f"{_THEME_TOGGLE}\n"
         "<header class=\"page\"><h1 id=\"pageTitle\"></h1><p class=\"sub\" id=\"pageSub\"></p></header>\n"
         "<main id=\"app\"></main>\n"
-        "<footer class=\"sources\"><h2>Fuentes</h2><ol id=\"sourceList\"></ol></footer>\n"
+        "<footer class=\"sources\"><h2>" + tr("Fuentes") + "</h2><ol id=\"sourceList\"></ol></footer>\n"
         f"<script>\n{script}\n</script>\n</body>\n</html>\n"
     )

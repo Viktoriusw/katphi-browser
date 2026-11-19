@@ -8,6 +8,7 @@ Importarlo no tiene efectos, pero no debe importarse: para reiniciar con o
 sin Tor se usa ``from tor_restart import restart_with_tor`` (C-008).
 """
 
+from i18n import tr
 import getpass
 import logging
 import os
@@ -93,7 +94,7 @@ def _configure_tor_proxy_if_needed() -> str:
         from tor_manager import TorManager
         tm = TorManager()
         socks_port = config.get("tor.socks_port", 9150)
-        _logger.debug("[TOR] Verificando SOCKS5 en 127.0.0.1:%s...", socks_port)
+        _logger.debug(tr("[TOR] Verificando SOCKS5 en 127.0.0.1:%s..."), socks_port)
         socks_ready = tm.is_socks5_ready()
         # CRÍTICO: NO usar QTWEBENGINE_CHROMIUM_FLAGS — sobrescribe webEngineArgs y
         # host-resolver-rules tiene espacios que se dividen mal. Usar SOLO sys.argv.
@@ -114,17 +115,17 @@ def _configure_tor_proxy_if_needed() -> str:
         if not socks_ready:
             # A-015: no se desactiva ni se persiste nada; main() preguntará.
             _logger.warning(
-                "[TOR] SOCKS5 no disponible en 127.0.0.1:%s. Flags inyectadas igualmente; "
-                "se preguntará al usuario (reintentar / continuar sin Tor / salir).",
+                tr("[TOR] SOCKS5 no disponible en 127.0.0.1:%s. Flags inyectadas igualmente; "
+                "se preguntará al usuario (reintentar / continuar sin Tor / salir)."),
                 socks_port,
             )
             return _TOR_SOCKS_DOWN
-        _logger.info("[TOR] Chromium proxy flags inyectados vía --webEngineArgs (sin QTWEBENGINE_CHROMIUM_FLAGS)")
+        _logger.info(tr("[TOR] Chromium proxy flags inyectados vía --webEngineArgs (sin QTWEBENGINE_CHROMIUM_FLAGS)"))
         return _TOR_ON
     except Exception as e:
         # D-004: cualquier fallo (config corrupta, módulo ausente...) no debe
         # impedir el arranque.
-        _logger.warning("[TOR] No se pudo configurar el proxy Tor: %s", e, exc_info=True)
+        _logger.warning(tr("[TOR] No se pudo configurar el proxy Tor: %s"), e, exc_info=True)
         return _TOR_OFF
 
 
@@ -143,18 +144,17 @@ def _resolve_tor_unavailable() -> str:
     tm = TorManager()
     extra = ""
     while True:
-        box = QMessageBox(QMessageBox.Warning, "Tor no disponible",
-                          "Tor está activado, pero no responde en "
-                          f"127.0.0.1:{tm.TOR_SOCKS_PORT}.{extra}")
+        box = QMessageBox(QMessageBox.Warning, tr("Tor no disponible"),
+                          tr("Tor está activado, pero no responde en 127.0.0.1:{TOR_SOCKS_PORT}.{extra}", TOR_SOCKS_PORT=tm.TOR_SOCKS_PORT, extra=extra))
         box.setInformativeText(
-            "Para no navegar con tu IP real todavía no se ha cargado ninguna página.\n\n"
+            tr("Para no navegar con tu IP real todavía no se ha cargado ninguna página.\n\n"
             "Reintentar: arranca Tor y espera a que conecte.\n"
             "Continuar sin Tor: navega con tu conexión normal.\n"
-            "Salir: cierra el navegador."
+            "Salir: cierra el navegador.")
         )
-        retry_btn = box.addButton("Reintentar", QMessageBox.AcceptRole)
-        continue_btn = box.addButton("Continuar sin Tor", QMessageBox.DestructiveRole)
-        quit_btn = box.addButton("Salir", QMessageBox.RejectRole)
+        retry_btn = box.addButton(tr("Reintentar"), QMessageBox.AcceptRole)
+        continue_btn = box.addButton(tr("Continuar sin Tor"), QMessageBox.DestructiveRole)
+        quit_btn = box.addButton(tr("Salir"), QMessageBox.RejectRole)
         box.setDefaultButton(retry_btn)
         box.setEscapeButton(quit_btn)
         box.exec()
@@ -172,8 +172,8 @@ def _resolve_tor_unavailable() -> str:
 
         # Arrancar Tor en segundo plano con un diálogo de progreso cancelable
         from tor_panel import TorBootstrapWorker, _live_workers
-        progress = QProgressDialog("Conectando a la red Tor...", "Cancelar", 0, 100)
-        progress.setWindowTitle("Tor")
+        progress = QProgressDialog(tr("Conectando a la red Tor..."), tr("Cancelar"), 0, 100)
+        progress.setWindowTitle(tr("Tor"))
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
         progress.setAutoReset(False)
@@ -201,9 +201,9 @@ def _resolve_tor_unavailable() -> str:
         if result["ok"] and tm.is_socks5_ready():
             return "on"
         if result["error"]:
-            extra = f"\n\nNo se pudo arrancar Tor: {result['error']}"
+            extra = tr("\n\nNo se pudo arrancar Tor: {value}", value=result['error'])
         else:
-            extra = "\n\nSe canceló la conexión."
+            extra = tr("\n\nSe canceló la conexión.")
 
 
 def _configure_stealth_chromium_flags():
@@ -320,7 +320,7 @@ class _InstanceServer:
         QLocalServer.removeServer(name)
         if self.server.listen(name):
             return True
-        _logger.warning("[INSTANCIA] No se pudo escuchar en %s: %s", name, self.server.errorString())
+        _logger.warning(tr("[INSTANCIA] No se pudo escuchar en %s: %s"), name, self.server.errorString())
         return False
 
     def close(self) -> None:
@@ -359,13 +359,13 @@ class _InstanceServer:
                 continue
             url = line[5:].strip()
             if _is_web_url(url):
-                _logger.info("URL recibida de otra instancia: %s", url)
+                _logger.info(tr("URL recibida de otra instancia: %s"), url)
                 try:
                     self._on_url(url)
                 except Exception as e:
-                    _logger.error("Error abriendo URL recibida: %s", e)
+                    _logger.error(tr("Error abriendo URL recibida: %s"), e)
             else:
-                _logger.warning("URL rechazada (solo http/https): %r", url[:200])
+                _logger.warning(tr("URL rechazada (solo http/https): %r"), url[:200])
         try:
             self._on_url(None)   # traer la ventana al frente
         except Exception:
@@ -441,7 +441,7 @@ def main():
             plugin_paths.USER_PLUGINS_DIR,
         )
     except Exception as _e:  # pragma: no cover
-        _logger.warning("[PLUGINS] No se pudo inicializar plugin_paths: %s", _e)
+        _logger.warning(tr("[PLUGINS] No se pudo inicializar plugin_paths: %s"), _e)
     # QtWebEngineWidgets (vía main_window) debe importarse antes de crear la
     # QApplication.
     from main_window import MainWindow
@@ -451,7 +451,7 @@ def main():
         import app_scheme
         app_scheme.register_scheme()
     except Exception as _e:
-        _logger.warning("[app_scheme] No se pudo registrar katphi-app://: %s", _e)
+        _logger.warning(tr("[app_scheme] No se pudo registrar katphi-app://: %s"), _e)
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
@@ -468,7 +468,7 @@ def main():
     # se abre una ventana independiente, como antes. La ventana privada es
     # siempre un proceso aparte y no participa.
     if not private and startup_urls and _send_to_running_instance(startup_urls):
-        _logger.info("URLs enviadas a la instancia en ejecución; saliendo")
+        _logger.info(tr("URLs enviadas a la instancia en ejecución; saliendo"))
         sys.exit(0)
 
     # A-015: Tor activado pero sin SOCKS → preguntar antes de crear ninguna vista
@@ -493,7 +493,7 @@ def main():
         import net_proxy
         net_proxy.apply_qt_application_proxy()
     except Exception as e:
-        _logger.warning("[TOR] No se pudo aplicar el proxy de aplicación Qt: %s", e)
+        _logger.warning(tr("[TOR] No se pudo aplicar el proxy de aplicación Qt: %s"), e)
 
     window = MainWindow()
 
@@ -505,7 +505,7 @@ def main():
                 instance_server = None
         except Exception as e:
             # D-001: sin instancia única el navegador funciona igual
-            _logger.warning("[INSTANCIA] Servidor de instancia única desactivado: %s", e)
+            _logger.warning(tr("[INSTANCIA] Servidor de instancia única desactivado: %s"), e)
             instance_server = None
     window.show()
 
@@ -518,7 +518,7 @@ def main():
     try:
         exit_code = app.exec()
     except Exception as e:
-        _logger.error("Error de aplicación: %s", e, exc_info=True)
+        _logger.error(tr("Error de aplicación: %s"), e, exc_info=True)
         exit_code = 1
     finally:
         if instance_server:

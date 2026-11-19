@@ -18,6 +18,7 @@ En Linux, si yt-dlp está instalado, libmpv también abre la URL de la
 página (vídeos MSE/HLS sin URL directa).
 """
 
+from i18n import tr
 import ctypes
 import ctypes.util
 import locale
@@ -98,6 +99,8 @@ class _MpvRenderParam(ctypes.Structure):
                 ("data", ctypes.c_void_p)]
 
 
+_MPV_LIB_NAME = "mpv"
+_MPV_SONAMES = ("libmpv.so.2", "libmpv.so.1")
 _libmpv = None
 _libmpv_error = ""
 
@@ -110,10 +113,13 @@ def _load_libmpv():
     candidates = []
     if os.environ.get("KATPHI_LIBMPV"):
         candidates.append(os.environ["KATPHI_LIBMPV"])
-    found = ctypes.util.find_library("mpv")
+    # Los nombres van en variables: si PyInstaller ve find_library("mpv") o
+    # CDLL("libmpv...") con el nombre literal, empaqueta la libmpv del sistema
+    # y con ella su FFmpeg (H.264/HEVC/AAC). Katphi usa siempre la del sistema.
+    found = ctypes.util.find_library(_MPV_LIB_NAME)
     if found:
         candidates.append(found)
-    candidates += ["libmpv.so.2", "libmpv.so.1"]
+    candidates += list(_MPV_SONAMES)
     for name in candidates:
         try:
             lib = ctypes.CDLL(name)
@@ -122,16 +128,16 @@ def _load_libmpv():
         try:
             _declare_libmpv(lib)
         except AttributeError as e:
-            logger.debug("libmpv %s incompleta: %s", name, e)
+            logger.debug(tr("libmpv %s incompleta: %s"), name, e)
             continue
         if (lib.mpv_client_api_version() >> 16) < 2:
             # La API 1.x tiene otra estructura de parámetros de OpenGL
-            logger.debug("libmpv %s demasiado antigua", name)
+            logger.debug(tr("libmpv %s demasiado antigua"), name)
             continue
         _libmpv = lib
-        logger.info("[PLAYER] libmpv cargada: %s", name)
+        logger.info(tr("[PLAYER] libmpv cargada: %s"), name)
         return lib
-    _libmpv_error = "libmpv no está instalada"
+    _libmpv_error = tr("libmpv no está instalada")
     return None
 
 
@@ -178,7 +184,7 @@ def is_available():
         return True, ""
     backend = _qt_multimedia_backend()
     if not backend:
-        return False, "plataforma no soportada"
+        return False, tr("plataforma no soportada")
     if os.environ.get("QT_MEDIA_BACKEND", backend) != backend:
         return False, f"QT_MEDIA_BACKEND={os.environ['QT_MEDIA_BACKEND']}"
     return True, ""
@@ -193,11 +199,11 @@ def install_hint():
     """Texto con la forma de instalar lo que falta en este sistema."""
     if not _IS_LINUX:
         return ""
-    return ("Instala libmpv desde los repositorios de tu distribución:\n"
+    return (tr("Instala libmpv desde los repositorios de tu distribución:\n"
             "  Debian/Ubuntu: sudo apt install libmpv2\n"
             "  Fedora: sudo dnf install mpv-libs\n"
             "  Arch: sudo pacman -S mpv\n\n"
-            "Opcional, para vídeos sin enlace directo: instala yt-dlp.")
+            "Opcional, para vídeos sin enlace directo: instala yt-dlp."))
 
 
 class _Backend(QObject):
@@ -317,7 +323,7 @@ if _IS_LINUX:
             locale.setlocale(locale.LC_NUMERIC, "C")
             self.handle = lib.mpv_create()
             if not self.handle:
-                raise RuntimeError("mpv_create falló")
+                raise RuntimeError(tr("mpv_create falló"))
             options = {
                 "vo": "libmpv",
                 "hwdec": "auto-safe",
@@ -409,7 +415,7 @@ if _IS_LINUX:
                 elif event.event_id == _MPV_EVENT_END_FILE and event.data:
                     end = ctypes.cast(event.data, ctypes.POINTER(_MpvEventEndFile)).contents
                     if end.reason == _MPV_END_FILE_REASON_ERROR:
-                        self.report_error("No se pudo reproducir", end.error)
+                        self.report_error(tr("No se pudo reproducir"), end.error)
                     elif end.reason == _MPV_END_FILE_REASON_EOF:
                         self.finished.emit()
 
@@ -453,7 +459,7 @@ class _QtMultimediaBackend(_Backend):
         self._player.playbackStateChanged.connect(self._on_state)
         self._player.mediaStatusChanged.connect(self._on_status)
         self._player.errorOccurred.connect(
-            lambda _err, text: self.errorOccurred.emit(text or "No se pudo reproducir"))
+            lambda _err, text: self.errorOccurred.emit(text or tr("No se pudo reproducir")))
 
     def widget(self):
         return self._video
@@ -505,7 +511,7 @@ class NativePlayerWindow(QWidget):
     def __init__(self, url, referrer="", user_agent="", title="", parent=None):
         super().__init__(parent, Qt.Window)
         self.setAttribute(Qt.WA_DeleteOnClose)
-        self.setWindowTitle(f"{title} — Reproductor Katphi" if title else "Reproductor Katphi")
+        self.setWindowTitle(tr("{title} — Reproductor Katphi", title=title) if title else tr("Reproductor Katphi"))
         self.resize(960, 600)
 
         self._backend = _MpvBackend(self) if _IS_LINUX else _QtMultimediaBackend(self)
@@ -517,25 +523,25 @@ class NativePlayerWindow(QWidget):
         video.setMinimumSize(320, 180)
 
         style = self.style()
-        self._play_btn = self._tool_button(style.standardIcon(QStyle.SP_MediaPause), "Pausa (espacio)")
+        self._play_btn = self._tool_button(style.standardIcon(QStyle.SP_MediaPause), tr("Pausa (espacio)"))
         self._play_btn.clicked.connect(self._toggle_pause)
         self._slider = QSlider(Qt.Horizontal)
         self._slider.setRange(0, 0)
-        self._slider.setToolTip("Posición")
+        self._slider.setToolTip(tr("Posición"))
         self._slider.sliderPressed.connect(lambda: setattr(self, "_dragging", True))
         self._slider.sliderReleased.connect(self._on_seek_released)
         self._time_label = QLabel("0:00 / 0:00")
-        self._mute_btn = self._tool_button(style.standardIcon(QStyle.SP_MediaVolume), "Silenciar")
+        self._mute_btn = self._tool_button(style.standardIcon(QStyle.SP_MediaVolume), tr("Silenciar"))
         self._mute_btn.setCheckable(True)
         self._mute_btn.toggled.connect(self._on_mute)
         self._volume = QSlider(Qt.Horizontal)
         self._volume.setRange(0, 100)
         self._volume.setValue(100)
         self._volume.setFixedWidth(90)
-        self._volume.setToolTip("Volumen")
+        self._volume.setToolTip(tr("Volumen"))
         self._volume.valueChanged.connect(self._backend.set_volume)
         self._full_btn = self._tool_button(style.standardIcon(QStyle.SP_TitleBarMaxButton),
-                                           "Pantalla completa (F)")
+                                           tr("Pantalla completa (F)"))
         self._full_btn.clicked.connect(self._toggle_fullscreen)
         self._status = QLabel()
         self._status.setWordWrap(True)
@@ -625,10 +631,10 @@ class NativePlayerWindow(QWidget):
         self._paused = paused
         self._play_btn.setIcon(self.style().standardIcon(
             QStyle.SP_MediaPlay if paused else QStyle.SP_MediaPause))
-        self._play_btn.setToolTip("Reproducir (espacio)" if paused else "Pausa (espacio)")
+        self._play_btn.setToolTip(tr("Reproducir (espacio)") if paused else tr("Pausa (espacio)"))
 
     def _on_error(self, message):
-        logger.warning("[PLAYER] %s", message)
+        logger.warning(tr("[PLAYER] %s"), message)
         self._status.setText(f"  {message}")
         self._status.show()
 

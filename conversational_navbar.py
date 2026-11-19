@@ -7,6 +7,7 @@ comandos en lenguaje natural.  Incluye un dropdown de sugerencias IA
 y un gestor de historial conversacional.
 """
 
+from i18n import tr
 import json
 import logging
 import os
@@ -88,7 +89,7 @@ class ConversationManager:
             with open(self._file, "w", encoding="utf-8") as f:
                 json.dump(self._messages, f, ensure_ascii=False, indent=2)
         except Exception as exc:
-            logger.warning("Error al guardar conversación: %s", exc)
+            logger.warning(tr("Error al guardar conversación: %s"), exc)
     def load_conversation(self) -> List[Dict]:
         """Carga el historial desde disco.
 
@@ -257,7 +258,7 @@ class ConversationalNavBar(QLineEdit):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setObjectName("conversationalNavBar")
-        self.setPlaceholderText("Buscar, escribir URL o preguntar a la IA...")
+        self.setPlaceholderText(tr("Buscar, escribir URL o preguntar a la IA..."))
         self.setFixedHeight(36)
         self.setMinimumWidth(250)
         self.setMaximumWidth(600)
@@ -360,9 +361,9 @@ class ConversationalNavBar(QLineEdit):
         input_type = self._classify_input(text)
 
         if input_type == InputType.NATURAL_LANG:
-            suggestions.append({"icon": "chat", "text": f"Preguntar a la IA: {text}", "type": "ai"})
+            suggestions.append({"icon": "chat", "text": tr("Preguntar a la IA: {text_}", text_=text), "type": "ai"})
             suggestions.append({"icon": "ide_ai_sparkles", "text": f"GenTab: {text}", "type": "gentab"})
-        suggestions.append({"icon": "search", "text": f"Buscar: {text}", "type": "search"})
+        suggestions.append({"icon": "search", "text": tr("Buscar: {text_}", text_=text), "type": "search"})
 
         if "." in text and " " not in text:
             suggestions.insert(0, {"icon": "link", "text": f"Ir a: {text}", "type": "url"})
@@ -384,7 +385,7 @@ class ConversationalNavBar(QLineEdit):
             self._dropdown.hide()
     def _on_suggestion_selected(self, text: str) -> None:
         """Procesa la selección de una sugerencia del dropdown."""
-        for prefix in ("Preguntar a la IA: ", "GenTab: ", "Buscar: ", "Ir a: "):
+        for prefix in (tr("Preguntar a la IA: "), "GenTab: ", tr("Buscar: "), "Ir a: "):
             if text.startswith(prefix):
                 clean = text[len(prefix):]
                 self.setText(clean)

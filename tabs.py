@@ -1,3 +1,4 @@
+from i18n import tr
 import json
 
 import os
@@ -115,7 +116,7 @@ class TabExtensions:
 
     def register(self, kind, callback):
         if kind not in self._callbacks:
-            raise ValueError(f"Tipo de extensión desconocido: {kind}")
+            raise ValueError(tr("Tipo de extensión desconocido: {kind}", kind=kind))
         if callback not in self._callbacks[kind]:
             self._callbacks[kind].append(callback)
         tm = self._tab_manager
@@ -142,7 +143,7 @@ class TabExtensions:
             try:
                 results.append(callback(*args))
             except Exception as e:
-                print(f"[TabExtensions] Error en {kind} {callback!r}: {e}")
+                print(tr("[TabExtensions] Error en {kind} {callback!r}: {e}", kind=kind, callback=callback, e=e))
         return results
 
     def resolve_profile(self, extra):
@@ -189,7 +190,7 @@ class KatphiWebPage(QWebEnginePage):
                 if tm.extensions.filter_navigation(self._tab_view, url, nav_type):
                     return False
             except Exception as e:
-                print(f"[KatphiWebPage] Error en filtros de navegación: {e}")
+                print(tr("[KatphiWebPage] Error en filtros de navegación: {e}", e=e))
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
 
@@ -201,7 +202,7 @@ class _NewTabButton(QPushButton):
         self.setObjectName("tabBarNewTabBtn")
         self.setFixedSize(26, 24)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("Nueva pestaña (Ctrl+T)")
+        self.setToolTip(tr("Nueva pestaña (Ctrl+T)"))
         self._apply_style("#A0A0A0")
     def _apply_style(self, icon_color: str = "#A0A0A0"):
         # Intentar usar newtab.svg
@@ -420,7 +421,7 @@ class BrowserTabBar(QTabBar):
             btn.setText("×")
         btn.setFixedSize(18, 18)
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setToolTip("Cerrar pestaña")
+        btn.setToolTip(tr("Cerrar pestaña"))
         btn.setStyleSheet("""
             QToolButton {
                 color: #A0A0A0;
@@ -598,7 +599,7 @@ class TabManager:
                 lambda group_id, tab_index: self._refresh_tab_appearance(tab_index)
             )
         except Exception as e:
-            print(f"[TabGroups] Error connecting group signals: {e}")
+            print(tr("[TabGroups] Error connecting group signals: {e}", e=e))
     def _inject_dark_scrollbar_css(self, browser):
         """Inyecta CSS de scrollbar oscuro si el tema es dark"""
 
@@ -637,7 +638,7 @@ class TabManager:
 
                 browser.page().runJavaScript(js)
         except Exception as e:
-            print(f"Error injecting dark scrollbar CSS: {e}")
+            print(tr("Error injecting dark scrollbar CSS: {e}", e=e))
     def inherited_extra(self, browser):
         """Datos de la pestaña que hereda una pestaña abierta desde ella."""
         extra = getattr(browser, "tab_extra", None) or {}
@@ -732,11 +733,11 @@ class TabManager:
         from html import escape
         safe = escape(url or "", quote=True)
         browser.setHtml(
-            "<html><head><meta charset='utf-8'><title>Pestaña en espera</title></head>"
+            "<html><head><meta charset='utf-8'><title>" + tr("Pestaña en espera") + "</title></head>"
             "<body style='font-family:sans-serif;padding:40px;color:#888'>"
-            "<h2>Esta pestaña pertenece a un contenedor</h2>"
-            "<p>Se abrirá en cuanto el plugin que la gestiona esté disponible.</p>"
-            f"<p>Abrirla sin contenedor: <a href='{safe}'>{safe}</a></p>"
+            "<h2>" + tr("Esta pestaña pertenece a un contenedor") + "</h2>"
+            "<p>" + tr("Se abrirá en cuanto el plugin que la gestiona esté disponible.") + "</p>"
+            "<p>" + tr("Abrirla sin contenedor:") + f" <a href='{safe}'>{safe}</a></p>"
             "</body></html>")
 
     def resolve_pending_tabs(self):
@@ -865,7 +866,7 @@ class TabManager:
                 browser.loadFinished.connect(lambda ok: self.inject_userscripts(browser, ok))
             # Añadir la pestaña
 
-            index = self.tabs.addTab(browser, "New Tab")
+            index = self.tabs.addTab(browser, tr("New Tab"))
 
             if focus:
                 self.tabs.setCurrentIndex(index)
@@ -887,7 +888,7 @@ class TabManager:
 
             return browser
         except Exception as e:
-            print(f"Error creating new tab: {str(e)}")
+            print(tr("Error creating new tab: {value}", value=str(e)))
 
             return None
     def update_tab_icon(self, icon, browser):
@@ -899,7 +900,7 @@ class TabManager:
                     icon = QIcon(":/icons/bookmark.png")
                 self.tabs.setTabIcon(index, icon)
         except Exception as e:
-            print(f"Error al actualizar el icono de la pestaña: {str(e)}")
+            print(tr("Error al actualizar el icono de la pestaña: {value}", value=str(e)))
     def _site_name_for_tab(self, browser, fallback_title=""):
         """
         Devuelve el nombre del sitio (host sin 'www.') para mostrar en la
@@ -915,7 +916,7 @@ class TabManager:
                 host = host[4:]
             return host
         label = (fallback_title or "").strip()
-        return label or "Nueva pestaña"
+        return label or tr("Nueva pestaña")
 
     @staticmethod
     def app_tab_info(browser):
@@ -998,9 +999,9 @@ class TabManager:
                 # El título de la ventana sí conserva el título completo.
                 if self.tabs.currentWidget() == browser:
                     win_title = (title or label).strip() or label
-                    self.parent.setWindowTitle(f"{win_title} - Katphi")
+                    self.parent.setWindowTitle(tr("{win_title} - Katphi", win_title=win_title))
         except Exception as e:
-            print(f"Error al actualizar el título de la pestaña: {str(e)}")
+            print(tr("Error al actualizar el título de la pestaña: {value}", value=str(e)))
     def _disconnect_browser_signals(self, browser):
         """Desconecta todas las señales de un browser para prevenir memory leaks"""
         try:
@@ -1035,7 +1036,7 @@ class TabManager:
             # Eliminar del diccionario
             del self._signal_connections[browser_id]
         except Exception as e:
-            print(f"Error al desconectar señales del browser: {str(e)}")
+            print(tr("Error al desconectar señales del browser: {value}", value=str(e)))
     def _destroy_browser(self, browser):
         """Detiene y programa la destrucción de una vista ya quitada del QTabWidget.
 
@@ -1057,7 +1058,7 @@ class TabManager:
                 page.deleteLater()
             browser.deleteLater()
         except Exception as e:
-            print(f"Error al destruir la vista de la pestaña: {e}")
+            print(tr("Error al destruir la vista de la pestaña: {e}", e=e))
 
     def dispose_tab_widget(self, browser):
         """Limpieza completa de una vista ya quitada: señales, password manager y deleteLater."""
@@ -1085,7 +1086,7 @@ class TabManager:
                         if app_info["on_close"]() is False:
                             return   # el plugin impide el cierre (cambios sin guardar)
                     except Exception as veto_ex:
-                        print(f"[TabManager] on_close de la aplicación falló: {veto_ex}")
+                        print(tr("[TabManager] on_close de la aplicación falló: {veto_ex}", veto_ex=veto_ex))
                 if tab_widget and hasattr(tab_widget, 'url') and not app_info:
                     tab_data = {
                         'url': self.tab_url(tab_widget),
@@ -1124,25 +1125,25 @@ class TabManager:
                 if current_browser:
                     self.update_tab_title(current_browser.page().title(), current_browser)
         except Exception as e:
-            print(f"Error al cerrar la pestaña: {str(e)}")
+            print(tr("Error al cerrar la pestaña: {value}", value=str(e)))
     def show_context_menu(self, pos, browser):
         try:
             menu = QMenu(self.parent)
 
-            back_action = menu.addAction("Back")
+            back_action = menu.addAction(tr("Back"))
 
-            forward_action = menu.addAction("Forward")
+            forward_action = menu.addAction(tr("Forward"))
 
-            reload_action = menu.addAction("Reload")
-
-            menu.addSeparator()
-
-            open_in_new_tab = menu.addAction("Open in New Tab")
+            reload_action = menu.addAction(tr("Reload"))
 
             menu.addSeparator()
 
-            save_bookmark = menu.addAction("Save as Bookmark")
-            inspect_action = menu.addAction("Inspect (Inspeccionar)")
+            open_in_new_tab = menu.addAction(tr("Open in New Tab"))
+
+            menu.addSeparator()
+
+            save_bookmark = menu.addAction(tr("Save as Bookmark"))
+            inspect_action = menu.addAction(tr("Inspect (Inspeccionar)"))
 
             # Acciones de plugins; el enlace bajo el cursor sale de la última
             # petición de menú contextual de la vista
@@ -1188,19 +1189,19 @@ class TabManager:
                     self.parent.devtools_dock.show()
                     self.parent.devtools_dock.raise_()
         except Exception as e:
-            print(f"Error al mostrar el menú contextual: {str(e)}")
+            print(tr("Error al mostrar el menú contextual: {value}", value=str(e)))
     def open_link_in_new_tab(self, link):
         try:
             if link:
                 self.add_new_tab(link)
         except Exception as e:
-            print(f"Error al abrir enlace en nueva pestaña: {str(e)}")
+            print(tr("Error al abrir enlace en nueva pestaña: {value}", value=str(e)))
     def on_url_changed(self, url, sender_browser):
         """Maneja el cambio de URL en una pestaña"""
 
         try:
             print(f"\n{'='*60}")
-            print(f"[URL_CHANGED] Señal recibida: {url.toString()}")
+            print(tr("[URL_CHANGED] Señal recibida: {value}", value=url.toString()))
             print(f"{'='*60}")
 
             # Solo actualizar la barra de URL si es la pestaña activa
@@ -1209,7 +1210,7 @@ class TabManager:
             print(f"[URL_CHANGED] Current browser: {current_browser}")
 
             if sender_browser == current_browser:
-                print(f"[URL_CHANGED] ✓ Es la pestaña activa - actualizando URL bar")
+                print(tr("[URL_CHANGED] ✓ Es la pestaña activa - actualizando URL bar"))
 
                 # Actualizar la barra de URL si está disponible
 
@@ -1226,9 +1227,9 @@ class TabManager:
             except Exception:
                 pass
             else:
-                print(f"[URL_CHANGED] ✗ NO es la pestaña activa - NO actualizando URL bar")
+                print(tr("[URL_CHANGED] ✗ NO es la pestaña activa - NO actualizando URL bar"))
         except Exception as e:
-            print(f"[URL_CHANGED] ERROR: {str(e)}")
+            print(tr("[URL_CHANGED] ERROR: {value}", value=str(e)))
             import traceback
             traceback.print_exc()
     def on_tab_changed(self, index):
@@ -1262,7 +1263,7 @@ class TabManager:
                         lambda html_content: self.parent.scraping_integration.update_content(html_content, current_url)
                     )
         except Exception as e:
-            print(f"Error al cambiar de pestaña: {str(e)}")
+            print(tr("Error al cambiar de pestaña: {value}", value=str(e)))
     def guardar_sesion(self):
         """Guarda la sesión actual de pestañas (URL) en un archivo JSON"""
 
@@ -1276,7 +1277,7 @@ class TabManager:
         if self.saved_session_count() > 0 and all(
                 self.is_untouched_start_tab(self.tabs.widget(i))
                 for i in range(self.tabs.count())):
-            print("Sesión sin navegar: se conserva la sesión anterior guardada.")
+            print(tr("Sesión sin navegar: se conserva la sesión anterior guardada."))
             return
 
         session = []
@@ -1295,9 +1296,9 @@ class TabManager:
         try:
             with open(self.SESSION_FILE, "w", encoding="utf-8") as f:
                 json.dump(session, f, ensure_ascii=False, indent=2)
-            print(f"Sesión guardada con {len(session)} pestañas.")
+            print(tr("Sesión guardada con {count} pestañas.", count=len(session)))
         except Exception as e:
-            print(f"Error al guardar la sesión: {e}")
+            print(tr("Error al guardar la sesión: {e}", e=e))
     def is_untouched_start_tab(self, browser) -> bool:
         """Pestaña de inicio (abierta sin URL) en la que no se ha navegado."""
         if browser is None or not getattr(browser, "_katphi_start_tab", False):
@@ -1339,7 +1340,7 @@ class TabManager:
         try:
             session = self._read_saved_session()
             if not session:
-                print("No saved session to restore.")
+                print(tr("No saved session to restore."))
                 return False
 
             # Pestañas de inicio sin usar: se sustituyen por la sesión
@@ -1372,11 +1373,11 @@ class TabManager:
 
             return added > 0
         except json.JSONDecodeError as e:
-            print(f"Error decoding session file: {e}. Starting fresh.")
+            print(tr("Error decoding session file: {e}. Starting fresh.", e=e))
 
             return False
         except Exception as e:
-            print(f"Error restoring session: {e}")
+            print(tr("Error restoring session: {e}", e=e))
 
             import traceback
 
@@ -1408,7 +1409,7 @@ class TabManager:
                 if i != keep_index:
                     self.close_tab(i)
         except Exception as e:
-            print(f"Error closing other tabs: {e}")
+            print(tr("Error closing other tabs: {e}", e=e))
     def _tab_context_menu(self, pos):
         """Menú contextual por pestaña (MEJORADO)"""
 
@@ -1419,10 +1420,10 @@ class TabManager:
         menu = QMenu(self.tabs)
 
         # Recargar pestaña
-        reload_action = menu.addAction("Recargar")
+        reload_action = menu.addAction(tr("Recargar"))
 
         # Duplicar pestaña
-        duplicate_action = menu.addAction("Duplicar pestaña")
+        duplicate_action = menu.addAction(tr("Duplicar pestaña"))
 
         menu.addSeparator()
 
@@ -1431,10 +1432,10 @@ class TabManager:
         current_group = self.group_manager.get_tab_group(index)
 
         # Crear nuevo grupo con esta pestaña
-        create_group_action = menu.addAction("Crear grupo con esta pestaña")
+        create_group_action = menu.addAction(tr("Crear grupo con esta pestaña"))
 
         # Agregar a grupo existente (submenú)
-        add_to_group_menu = menu.addMenu("Agregar a grupo")
+        add_to_group_menu = menu.addMenu(tr("Agregar a grupo"))
         all_groups = self.group_manager.get_all_groups()
 
         if all_groups:
@@ -1445,42 +1446,42 @@ class TabManager:
                 action = add_to_group_menu.addAction(f"● {group.name}")
                 action.setData(group.id)  # Store group_id in action data
         else:
-            no_groups_action = add_to_group_menu.addAction("(No hay grupos)")
+            no_groups_action = add_to_group_menu.addAction(tr("(No hay grupos)"))
             no_groups_action.setEnabled(False)
         # Remover de grupo (solo si está en un grupo)
         remove_from_group_action = None
         if current_group:
-            remove_from_group_action = menu.addAction(f"Quitar de '{current_group.name}'")
+            remove_from_group_action = menu.addAction(tr("Quitar de '{name}'", name=current_group.name))
         menu.addSeparator()
 
         # Fijar/Desfijar pestaña
         if index in self.pinned_tabs:
-            pin_action = menu.addAction("Desfijar pestaña")
+            pin_action = menu.addAction(tr("Desfijar pestaña"))
         else:
-            pin_action = menu.addAction("Fijar pestaña")
+            pin_action = menu.addAction(tr("Fijar pestaña"))
         # Silenciar/Activar audio
         tab_widget = self.tabs.widget(index)
         if tab_widget and hasattr(tab_widget, 'page'):
             if tab_widget.page().isAudioMuted():
-                mute_action = menu.addAction("Activar audio")
+                mute_action = menu.addAction(tr("Activar audio"))
             else:
-                mute_action = menu.addAction("Silenciar audio")
+                mute_action = menu.addAction(tr("Silenciar audio"))
         else:
             mute_action = None
         menu.addSeparator()
 
         # Acciones de cierre
 
-        close_action = menu.addAction("Cerrar pestaña")
+        close_action = menu.addAction(tr("Cerrar pestaña"))
 
-        close_others_action = menu.addAction("Cerrar otras pestañas")
+        close_others_action = menu.addAction(tr("Cerrar otras pestañas"))
 
-        close_right_action = menu.addAction("Cerrar pestañas a la derecha")
+        close_right_action = menu.addAction(tr("Cerrar pestañas a la derecha"))
 
         menu.addSeparator()
 
         # Split View (mostrar siempre; habilitar si está cargado/instalado)
-        split_view_action = menu.addAction("⫿ Abrir en Split View")
+        split_view_action = menu.addAction(tr("⫿ Abrir en Split View"))
         split_view_enabled = False
         if hasattr(self.parent, 'dynamic_plugin_panels') and 'split_view' in getattr(self.parent, 'dynamic_plugin_panels', {}):
             split_view_enabled = True
@@ -1549,7 +1550,7 @@ class TabManager:
                 else:
                     print("[TabManager] Split View plugin not available")
             except Exception as e:
-                print(f"[TabManager] Error opening Split View: {e}")
+                print(tr("[TabManager] Error opening Split View: {e}", e=e))
     def limpiar_sesion(self):
         """Limpia la sesión guardada (elimina el archivo de sesión)"""
 
@@ -1557,11 +1558,11 @@ class TabManager:
             if os.path.exists(self.SESSION_FILE):
                 os.remove(self.SESSION_FILE)
 
-                print("Sesión limpiada correctamente.")
+                print(tr("Sesión limpiada correctamente."))
             else:
-                print("No hay sesión guardada para limpiar.")
+                print(tr("No hay sesión guardada para limpiar."))
         except Exception as e:
-            print(f"Error al limpiar la sesión: {e}")
+            print(tr("Error al limpiar la sesión: {e}", e=e))
     # ============================================================================
     # NUEVAS FUNCIONALIDADES - Plan de Acción UX/UI
     # ============================================================================
@@ -1569,7 +1570,7 @@ class TabManager:
     def reopen_closed_tab(self):
         """Reabrir la última pestaña cerrada (Ctrl+Shift+T)"""
         if not self.closed_tabs_stack:
-            print("No hay pestañas cerradas para reabrir")
+            print(tr("No hay pestañas cerradas para reabrir"))
             return None
         # Obtener última pestaña cerrada
         tab_data = self.closed_tabs_stack.pop()
@@ -1581,7 +1582,7 @@ class TabManager:
         if tab_data.get('icon'):
             current_index = self.tabs.indexOf(new_tab)
             self.tabs.setTabIcon(current_index, tab_data['icon'])
-        print(f"Reabierta pestaña: {tab_data['title']}")
+        print(tr("Reabierta pestaña: {value}", value=tab_data['title']))
         return new_tab
     def duplicate_tab(self, index=None):
         """Duplicar una pestaña existente"""
@@ -1601,7 +1602,7 @@ class TabManager:
             profile=None if pending else current_tab.page().profile(),
             extra=getattr(current_tab, 'tab_extra', None))
 
-        print(f"Pestaña duplicada: {url}")
+        print(tr("Pestaña duplicada: {url}", url=url))
         return new_tab
     def pin_tab(self, index=None):
         """Fijar una pestaña (evitar cierre accidental)"""
@@ -1618,7 +1619,7 @@ class TabManager:
         # Deshabilitar botón de cerrar
         self.tabs.tabBar().setTabButton(index, QTabBar.ButtonPosition.RightSide, None)
 
-        print(f"Pestaña {index} fijada")
+        print(tr("Pestaña {index} fijada", index=index))
     def unpin_tab(self, index=None):
         """Desfijar una pestaña"""
         if index is None:
@@ -1642,7 +1643,7 @@ class TabManager:
             close_button.clicked.connect(lambda: self.close_tab(index))
             bar.setTabButton(index, QTabBar.ButtonPosition.RightSide, close_button)
 
-        print(f"Pestaña {index} desfijada")
+        print(tr("Pestaña {index} desfijada", index=index))
     def toggle_pin_tab(self, index=None):
         """Alternar fijado de pestaña"""
         if index is None:
@@ -1661,7 +1662,7 @@ class TabManager:
             # (Esto requeriría subclase de QTabBar para control completo)
             # Por ahora solo marcamos visualmente
             bar = self.tabs.tabBar()
-            bar.setTabButton(index, bar.RightSide, self._make_tab_badge("pin", "Pestaña fijada"))
+            bar.setTabButton(index, bar.RightSide, self._make_tab_badge("pin", tr("Pestaña fijada")))
     def mute_tab(self, index=None):
         """Silenciar audio de una pestaña"""
         if index is None:
@@ -1677,9 +1678,9 @@ class TabManager:
 
             # Actualizar indicador visual
             bar = self.tabs.tabBar()
-            badge = self._make_tab_badge("volume-x", "Pestaña silenciada") if page.isAudioMuted() else None
+            badge = self._make_tab_badge("volume-x", tr("Pestaña silenciada")) if page.isAudioMuted() else None
             bar.setTabButton(index, bar.LeftSide, badge)
-            print(f"Pestaña {index} {'silenciada' if page.isAudioMuted() else 'con audio'}")
+            print(tr("Pestaña {index} {value}", index=index, value=tr('silenciada') if page.isAudioMuted() else tr('con audio')))
     def _make_tab_badge(self, icon_name: str, tooltip: str):
         """Pequeño icono SVG para indicar el estado de una pestaña (fijada, silenciada)."""
         from PySide6.QtWidgets import QLabel
@@ -1755,7 +1756,7 @@ class TabManager:
                 browser.page().runJavaScript(wrapped_code, lambda result: None)
                 print(f"[UserScript] Injected: {script['name']}")
             except Exception as e:
-                print(f"[ERROR] Failed to inject script '{script['name']}': {e}")
+                print(tr("[ERROR] Failed to inject script '{value}': {e}", value=script['name'], e=e))
     # ============================================================================
     # TAB GROUPS - Helper Methods
     # ============================================================================
@@ -1811,7 +1812,7 @@ class TabManager:
             # For now, we'll rely on the ● indicator in the title
             # which provides a clear visual grouping indicator
         except Exception as e:
-            print(f"[TabGroups] Error applying color to tab {index}: {e}")
+            print(tr("[TabGroups] Error applying color to tab {index}: {e}", index=index, e=e))
     def refresh_all_tab_appearances(self):
         """Refresh all tab appearances (useful after group changes)"""
         for i in range(self.tabs.count()):

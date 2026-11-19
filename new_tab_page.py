@@ -11,6 +11,7 @@ Filosofía: contenido útil, sin ruido visual. Arc/Brave-inspired.
 
 from __future__ import annotations
 
+from i18n import tr
 import json
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -168,23 +169,23 @@ class NewTabSettingsDialog(QDialog):
 
     def __init__(self, show_ai: bool, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Nueva pestaña — Ajustes")
+        self.setWindowTitle(tr("Nueva pestaña — Ajustes"))
         self.setFixedWidth(300)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
-        title = QLabel("Módulos activos")
+        title = QLabel(tr("Módulos activos"))
         title.setStyleSheet("QWidget { font-size: 13px; font-weight: 600; color: #F0F0F0; }")
         layout.addWidget(title)
 
-        self.ai_check = QCheckBox("Sugerencia IA (requiere chat activo)")
+        self.ai_check = QCheckBox(tr("Sugerencia IA (requiere chat activo)"))
         self.ai_check.setChecked(show_ai)
         self.ai_check.setStyleSheet("QWidget { color: #A0A0A0; font-size: 13px; }")
         layout.addWidget(self.ai_check)
 
-        save_btn = QPushButton("Guardar")
+        save_btn = QPushButton(tr("Guardar"))
         save_btn.setStyleSheet("""
             QPushButton {
                 background: #4B9EFF;
@@ -246,7 +247,7 @@ class NewTabPage(QWidget):
         self._settings_btn.setObjectName("settingsBtn")
         self._settings_btn.setFixedSize(28, 28)
         self._settings_btn.setCursor(Qt.PointingHandCursor)
-        self._settings_btn.setToolTip("Ajustes de nueva pestaña")
+        self._settings_btn.setToolTip(tr("Ajustes de nueva pestaña"))
         self._settings_btn.clicked.connect(self._open_settings)
         top_bar.addWidget(self._settings_btn)
         root.addLayout(top_bar)
@@ -288,7 +289,7 @@ class NewTabPage(QWidget):
 
         self._search = QLineEdit()
         self._search.setObjectName("newTabSearch")
-        self._search.setPlaceholderText("Buscar o escribir URL")
+        self._search.setPlaceholderText(tr("Buscar o escribir URL"))
         self._search.returnPressed.connect(self._on_search)
 
         # Superponer el icono como padding izquierdo usando un container
@@ -349,7 +350,7 @@ class NewTabPage(QWidget):
         )
         ai_layout.addWidget(ai_prefix)
 
-        self._ai_text = QLabel("Haz clic para preguntar algo sobre esta sesión...")
+        self._ai_text = QLabel(tr("Haz clic para preguntar algo sobre esta sesión..."))
         self._ai_text.setObjectName("aiSuggestion")
         self._ai_text.setStyleSheet(
             f"QWidget {{ font-size: 12px; color: {self.colors['text_muted']}; background: transparent; }}"
@@ -401,7 +402,7 @@ class NewTabPage(QWidget):
             self._ai_widget.setVisible(self._show_ai)
     def _add_shortcut_placeholder(self):
         """Placeholder: añadir acceso directo (extensible)."""
-        _log.info("Nueva pestaña: añadir acceso directo (pendiente)")
+        _log.info(tr("Nueva pestaña: añadir acceso directo (pendiente)"))
     # ── Persistencia ──────────────────────────────────────────────────────────
 
     def _load_shortcuts(self) -> list:
@@ -415,7 +416,7 @@ class NewTabPage(QWidget):
         try:
             _SHORTCUTS_FILE.write_text(json.dumps(self._shortcuts, ensure_ascii=False, indent=2))
         except Exception as e:
-            _log.error("No se pudieron guardar los accesos directos: %s", e)
+            _log.error(tr("No se pudieron guardar los accesos directos: %s"), e)
     # ── Estilo global del widget ───────────────────────────────────────────────
 
     def _apply_style(self):

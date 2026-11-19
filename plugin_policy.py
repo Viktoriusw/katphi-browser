@@ -13,9 +13,20 @@ from __future__ import annotations
 import os
 import sys
 
-# Únicos plugins que se cargan sin sesión ni licencia. Cualquier otro plugin,
-# diga lo que diga su plugin_info.json, es premium y necesita licencia del backend.
-FREE_PLUGIN_IDS = frozenset({"themes", "split_view", "voice_control", "office_viewer"})
+# Plugins oficiales que se cargan sin sesión ni licencia (desde 2026-11 todos son
+# gratuitos; lo único de pago es Katphi Net Plus, una licencia que comprueban por
+# dentro los plugins de Katphi Net). Un plugin que no esté aquí, diga lo que diga
+# su plugin_info.json, necesita licencia del backend.
+FREE_PLUGIN_IDS = frozenset({
+    "themes", "split_view", "voice_control", "office_viewer", "adblock",
+    "scraping", "proxy", "seo_analyzer", "pentesting_tool", "ai_live_ide",
+    "office_suite", "containers", "katphi_sync",
+    "katphi_tv", "katphi_chat", "katphi_files",
+})
+
+# Licencia de pago de Katphi Net Plus (no es un plugin: la consultan los plugins
+# de Katphi Net para activar sus funciones Plus).
+KATNET_PLUS_LICENSE_ID = "katphi_net_plus"
 
 
 def is_free_plugin(plugin_id: str) -> bool:

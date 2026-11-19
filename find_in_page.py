@@ -10,6 +10,7 @@ Características:
 - Búsqueda case-sensitive opcional
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QLineEdit, QPushButton,
                                QLabel, QCheckBox)
 from PySide6.QtCore import Qt, Signal
@@ -41,14 +42,14 @@ class FindInPageBar(QWidget):
 
         # Campo de búsqueda
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Buscar en la página...")
+        self.search_input.setPlaceholderText(tr("Buscar en la página..."))
         self.search_input.setFixedWidth(250)
         self.search_input.textChanged.connect(self.on_search_changed)
         self.search_input.returnPressed.connect(self.find_next)
         layout.addWidget(self.search_input)
 
         # Contador de coincidencias
-        self.counter_label = QLabel("0 de 0")
+        self.counter_label = QLabel(tr("0 de 0"))
         self.counter_label.setFixedWidth(70)
         self.counter_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.counter_label)
@@ -56,20 +57,20 @@ class FindInPageBar(QWidget):
         # Botón anterior
         self.prev_btn = QPushButton("⮝")
         self.prev_btn.setFixedSize(30, 30)
-        self.prev_btn.setToolTip("Anterior (Shift+F3)")
+        self.prev_btn.setToolTip(tr("Anterior (Shift+F3)"))
         self.prev_btn.clicked.connect(self.find_previous)
         layout.addWidget(self.prev_btn)
 
         # Botón siguiente
         self.next_btn = QPushButton("⮟")
         self.next_btn.setFixedSize(30, 30)
-        self.next_btn.setToolTip("Siguiente (F3)")
+        self.next_btn.setToolTip(tr("Siguiente (F3)"))
         self.next_btn.clicked.connect(self.find_next)
         layout.addWidget(self.next_btn)
 
         # Checkbox case sensitive
-        self.case_checkbox = QCheckBox("Aa")
-        self.case_checkbox.setToolTip("Coincidir mayúsculas/minúsculas")
+        self.case_checkbox = QCheckBox(tr("Aa"))
+        self.case_checkbox.setToolTip(tr("Coincidir mayúsculas/minúsculas"))
         self.case_checkbox.toggled.connect(self.on_search_changed)
         layout.addWidget(self.case_checkbox)
 
@@ -83,7 +84,7 @@ class FindInPageBar(QWidget):
         except Exception:
             pass
         self.close_btn.setFixedSize(30, 30)
-        self.close_btn.setToolTip("Cerrar (Esc)")
+        self.close_btn.setToolTip(tr("Cerrar (Esc)"))
         self.close_btn.clicked.connect(self.close_find_bar)
         layout.addWidget(self.close_btn)
 
@@ -147,7 +148,7 @@ class FindInPageBar(QWidget):
         search_text = self.search_input.text()
 
         if not search_text:
-            self.counter_label.setText("0 de 0")
+            self.counter_label.setText(tr("0 de 0"))
             self.search_input.setStyleSheet("")
             if self.current_page:
                 # Limpiar búsqueda anterior
@@ -219,9 +220,9 @@ class FindInPageBar(QWidget):
         self.total_matches = total
 
         if total > 0:
-            self.counter_label.setText(f"{self.current_match} de {total}")
+            self.counter_label.setText(tr("{current_match} de {total}", current_match=self.current_match, total=total))
         else:
-            self.counter_label.setText("0 de 0")
+            self.counter_label.setText(tr("0 de 0"))
     def find_next(self):
         """Buscar siguiente coincidencia"""
         text = self.search_input.text()
@@ -249,7 +250,7 @@ class FindInPageBar(QWidget):
         if self.current_page:
             self.current_page.findText("")
         self.search_input.clear()
-        self.counter_label.setText("0 de 0")
+        self.counter_label.setText(tr("0 de 0"))
         self.current_match = 0
         self.total_matches = 0
         self.last_search_text = ""

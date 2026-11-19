@@ -1,3 +1,4 @@
+from i18n import N_, tr
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
 
                               QLabel, QComboBox, QCheckBox, QDialog, QSlider,
@@ -169,7 +170,7 @@ def _write_filter_list(name: str, text: str) -> str:
                     os.remove(tmp)
             except OSError:
                 pass
-    raise last_exc if last_exc else OSError(f"No se pudo escribir {name}")
+    raise last_exc if last_exc else OSError(tr("No se pudo escribir {name}", name=name))
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +267,40 @@ def _build_rule_snapshot(block_rules, exception_rules, host_index):
     )
 
 
+# Decisión de bloqueo de un plugin (Katphi AdBlock). Qt admite un solo
+# interceptor por perfil y ese lo instala Privacidad (User-Agent, DNT...): el
+# plugin no pone otro, registra aquí su función info -> bool y el interceptor
+# de Privacidad la usa en lugar del motor ABP interno.
+_external_ad_decider = None
+
+
+def set_external_ad_decider(decider) -> None:
+    """Registra (o quita, con None) la función de bloqueo de un plugin."""
+    global _external_ad_decider
+    _external_ad_decider = decider
+    if decider is not None:
+        # El motor interno deja de usarse: liberar sus reglas
+        for blocker in list(_ad_blocker_instances):
+            try:
+                blocker._publish_rules([], [], {})
+            except Exception:
+                pass
+    else:
+        for blocker in list(_ad_blocker_instances):
+            try:
+                threading.Thread(target=blocker.load_filter_lists, daemon=True).start()
+            except Exception:
+                pass
+
+
+def get_external_ad_decider():
+    return _external_ad_decider
+
+
+import weakref as _weakref
+_ad_blocker_instances = _weakref.WeakSet()
+
+
 def _host_suffixes(host: str):
     """Todos los sufijos de texto del host (equivale a host.endswith(clave))."""
     return [host[i:] for i in range(len(host) + 1)]
@@ -274,6 +309,7 @@ def _host_suffixes(host: str):
 class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
     def __init__(self, parent=None):
         super().__init__(parent)
+        _ad_blocker_instances.add(self)
 
         # Nuevas estructuras para ABP
 
@@ -392,7 +428,7 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
                 try:
                     regex = re.compile(pattern, re.IGNORECASE)
                 except Exception as e:
-                    print(f"Warning: Invalid regex pattern: {pattern[:50]}... Error: {e}")
+                    print(tr("Warning: Invalid regex pattern: {value}... Error: {e}", value=pattern[:50], e=e))
                     return None
         elif '||' in filter_part or '*' in filter_part or '^' in filter_part:
             # Convertir a regex para patrones complejos
@@ -455,22 +491,26 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
                 type_mapping['image'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeImage
             elif hasattr(QWebEngineUrlRequestInfo.ResourceType, 'Image'):
                 type_mapping['image'] = QWebEngineUrlRequestInfo.ResourceType.Image
-            if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeStyleSheet'):
-                type_mapping['stylesheet'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeStyleSheet
+            if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeStylesheet'):
+                type_mapping['stylesheet'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeStylesheet
             elif hasattr(QWebEngineUrlRequestInfo.ResourceType, 'StyleSheet'):
                 type_mapping['stylesheet'] = QWebEngineUrlRequestInfo.ResourceType.StyleSheet
             if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeMedia'):
                 type_mapping['media'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMedia
             elif hasattr(QWebEngineUrlRequestInfo.ResourceType, 'Media'):
                 type_mapping['media'] = QWebEngineUrlRequestInfo.ResourceType.Media
-            if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeFont'):
-                type_mapping['font'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeFont
+            if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeFontResource'):
+                type_mapping['font'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeFontResource
             elif hasattr(QWebEngineUrlRequestInfo.ResourceType, 'Font'):
                 type_mapping['font'] = QWebEngineUrlRequestInfo.ResourceType.Font
-            if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeXmlHttpRequest'):
-                type_mapping['xmlhttprequest'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeXmlHttpRequest
+            if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeXhr'):
+                type_mapping['xmlhttprequest'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeXhr
             elif hasattr(QWebEngineUrlRequestInfo.ResourceType, 'XmlHttpRequest'):
                 type_mapping['xmlhttprequest'] = QWebEngineUrlRequestInfo.ResourceType.XmlHttpRequest
+            if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypeSubFrame'):
+                type_mapping['subdocument'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypeSubFrame
+            if hasattr(QWebEngineUrlRequestInfo.ResourceType, 'ResourceTypePing'):
+                type_mapping['ping'] = QWebEngineUrlRequestInfo.ResourceType.ResourceTypePing
             # Verificar si algún tipo coincide
 
             for filter_type in types:
@@ -545,25 +585,25 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
             # Swap atómico bajo lock
 
             self._publish_rules(block_rules, exception_rules, host_index)
-            print(f"Filtros básicos cargados: {len(block_rules)} bloqueos, {len(exception_rules)} excepciones")
+            print(tr("Filtros básicos cargados: {count} bloqueos, {count2} excepciones", count=len(block_rules), count2=len(exception_rules)))
 
             # Cargar filtros pesados en segundo plano si no están deshabilitados
 
             if not PERFORMANCE_CONFIG.get("skip_heavy_filters", False) and not PERFORMANCE_CONFIG.get("disable_heavy_filters", False):
                 print(
-                    "[Adblock] Iniciando carga en segundo plano de EasyList/EasyPrivacy "
-                    "(si existen easylist.txt / easyprivacy.txt en el directorio de trabajo)"
+                    tr("[Adblock] Iniciando carga en segundo plano de EasyList/EasyPrivacy "
+                    "(si existen easylist.txt / easyprivacy.txt en el directorio de trabajo)")
                 )
-                logger.debug("Adblock: hilo load_heavy_filters iniciado")
+                logger.debug(tr("Adblock: hilo load_heavy_filters iniciado"))
                 threading.Thread(target=self.load_heavy_filters, daemon=True).start()
             else:
                 print("Heavy filters disabled for performance")
                 logger.warning(
-                    "Adblock: listas pesadas desactivadas (skip_heavy/disable_heavy); "
-                    "solo reglas de custom_filters.txt"
+                    tr("Adblock: listas pesadas desactivadas (skip_heavy/disable_heavy); "
+                    "solo reglas de custom_filters.txt")
                 )
         except Exception as e:
-            print(f"Error al cargar filtros básicos: {str(e)}")
+            print(tr("Error al cargar filtros básicos: {value}", value=str(e)))
 
             self.custom_filters = []
     def load_heavy_filters(self):
@@ -618,12 +658,12 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
             self._publish_rules(merged_block, merged_exc, merged_index)
             print(f"Filtros pesados cargados: {len(block_rules)} bloqueos adicionales")
             logger.info(
-                "Adblock: filtros pesados compilados (%s reglas de bloqueo nuevas)",
+                tr("Adblock: filtros pesados compilados (%s reglas de bloqueo nuevas)"),
                 len(block_rules),
             )
         except Exception as e:
-            print(f"Error al cargar filtros pesados: {str(e)}")
-            logger.error("Adblock: error en load_heavy_filters: %s", e)
+            print(tr("Error al cargar filtros pesados: {value}", value=str(e)))
+            logger.error(tr("Adblock: error en load_heavy_filters: %s"), e)
     def load_filter_lists(self):
         """Carga las listas de filtros desde archivos locales"""
 
@@ -661,9 +701,9 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
             # Swap atómico bajo lock
 
             self._publish_rules(block_rules, exception_rules, host_index)
-            print(f"Listas de filtros cargadas: {len(block_rules)} bloqueos, {len(exception_rules)} excepciones")
+            print(tr("Listas de filtros cargadas: {count} bloqueos, {count2} excepciones", count=len(block_rules), count2=len(exception_rules)))
         except Exception as e:
-            print(f"Error al cargar las listas de filtros: {str(e)}")
+            print(tr("Error al cargar las listas de filtros: {value}", value=str(e)))
 
             self.easylist = []
 
@@ -755,11 +795,11 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
 
                 with open(custom_filters_file, "w", encoding="utf-8") as f:
                     f.write("\n".join(default_custom_rules))
-                print(f"Archivo {custom_filters_file} creado con {len(default_custom_rules)} reglas por defecto")
+                print(tr("Archivo {custom_filters_file} creado con {count} reglas por defecto", custom_filters_file=custom_filters_file, count=len(default_custom_rules)))
 
                 return default_custom_rules
         except Exception as e:
-            print(f"Error al manejar {custom_filters_file}: {e}")
+            print(tr("Error al manejar {custom_filters_file}: {e}", custom_filters_file=custom_filters_file, e=e))
 
             # Devolver reglas por defecto en caso de error
 
@@ -770,6 +810,9 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
         La instantánea se construye fuera del lock y se asigna de una vez;
         _evaluate_ad_block la lee sin lock y sin copiar listas.
         """
+        if _external_ad_decider is not None and (block_rules or exception_rules):
+            # Un plugin decide: no ocupar memoria con listas que no se usan
+            block_rules, exception_rules, host_index = [], [], {}
         snapshot = _build_rule_snapshot(block_rules, exception_rules, host_index)
         with self._lock:
             self.block_rules = block_rules
@@ -790,7 +833,7 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
         no se lanza otra.
         """
         if self._update_running.is_set():
-            logger.info("Adblock: actualización de listas ya en curso")
+            logger.info(tr("Adblock: actualización de listas ya en curso"))
             return
         self._update_running.set()
         threading.Thread(
@@ -824,13 +867,13 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
                     text = response.text
 
                     if not text.strip():
-                        raise ValueError("lista vacía")
+                        raise ValueError(tr("lista vacía"))
                     path = _write_filter_list(name, text)
                     downloaded[name] = text.splitlines()
-                    logger.info("Adblock: %s actualizada en %s", name, path)
+                    logger.info(tr("Adblock: %s actualizada en %s"), name, path)
                 except Exception as e:
-                    print(f"Error al actualizar {name}: {str(e)}")
-                    logger.warning("Adblock: error al actualizar %s: %s", name, e)
+                    print(tr("Error al actualizar {name}: {value}", name=name, value=str(e)))
+                    logger.warning(tr("Adblock: error al actualizar %s: %s"), name, e)
             if not downloaded:
                 return
             # Las listas que no se pudieron descargar se recargan del disco
@@ -867,10 +910,10 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
             # Swap atómico
 
             self._publish_rules(block_rules, exception_rules, host_index)
-            print(f"Listas de filtros actualizadas: {len(block_rules)} bloqueos, {len(exception_rules)} excepciones")
+            print(tr("Listas de filtros actualizadas: {count} bloqueos, {count2} excepciones", count=len(block_rules), count2=len(exception_rules)))
         except Exception as e:
-            print(f"Error al actualizar las listas de filtros: {str(e)}")
-            logger.error("Adblock: error en update_filter_lists: %s", e)
+            print(tr("Error al actualizar las listas de filtros: {value}", value=str(e)))
+            logger.error(tr("Adblock: error en update_filter_lists: %s"), e)
         finally:
             self._update_running.clear()
     def _manage_lru_cache(self, key, value):
@@ -930,6 +973,9 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
 
     def _evaluate_ad_block(self, info) -> bool:
         """True si la petición debe bloquearse por reglas ABP (sin llamar a info.block)."""
+        decider = _external_ad_decider
+        if decider is not None:
+            return bool(decider(info))
         from PySide6.QtWebEngineCore import QWebEngineUrlRequestInfo as _QWERI
 
         # Nunca bloquear recursos de tipo Media (vídeo/audio).
@@ -1005,13 +1051,13 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
             if rule.block and self._rule_matches(rule, url, host, is_tp, info):
                 self._manage_lru_cache(cache_key, True)
                 print(f"Blocked by ABP rule: {host}")
-                logger.debug("Adblock: bloqueado por sufijo host=%s", host)
+                logger.debug(tr("Adblock: bloqueado por sufijo host=%s"), host)
                 return True
         for rule in _regex_candidates(block_buckets, block_regex_all):
             if self._rule_matches(rule, url, host, is_tp, info):
                 self._manage_lru_cache(cache_key, True)
                 print(f"Blocked by regex rule: {url}")
-                logger.debug("Adblock: bloqueado por regex url=%s", url[:120])
+                logger.debug(tr("Adblock: bloqueado por regex url=%s"), url[:120])
                 return True
         self._manage_lru_cache(cache_key, False)
         return False
@@ -1022,8 +1068,8 @@ class AdBlockerInterceptor(QWebEngineUrlRequestInterceptor):
             if self._evaluate_ad_block(info):
                 info.block(True)
         except Exception as e:
-            print(f"Error en interceptRequest: {str(e)}")
-            logger.exception("Adblock: error en interceptRequest")
+            print(tr("Error en interceptRequest: {value}", value=str(e)))
+            logger.exception(tr("Adblock: error en interceptRequest"))
 
 
 class CombinedUrlRequestInterceptor(QWebEngineUrlRequestInterceptor):
@@ -1145,7 +1191,7 @@ def _clear_katphi_passwords(main_window=None) -> bool:
                 conn.close()
         return True
     except Exception as e:
-        logger.warning("Privacidad: no se pudieron borrar las contraseñas: %s", e)
+        logger.warning(tr("Privacidad: no se pudieron borrar las contraseñas: %s"), e)
         return False
 
 
@@ -1162,7 +1208,7 @@ def _clear_downloads_history(main_window=None) -> None:
             finally:
                 conn.close()
     except Exception as e:
-        logger.warning("Privacidad: error borrando el historial de descargas: %s", e)
+        logger.warning(tr("Privacidad: error borrando el historial de descargas: %s"), e)
     # Quitar también de la lista del panel las descargas terminadas
     if panel is not None and hasattr(panel, "clear_completed"):
         try:
@@ -1177,7 +1223,7 @@ def _remove_path(path: str) -> None:
         if os.path.isfile(path) or os.path.islink(path):
             os.remove(path)
     except OSError as e:
-        logger.warning("Privacidad: no se pudo borrar %s: %s", path, e)
+        logger.warning(tr("Privacidad: no se pudo borrar %s: %s"), path, e)
 
 
 def _clear_session_files() -> None:
@@ -1208,7 +1254,7 @@ def _clear_session_files() -> None:
                 else:
                     os.remove(full)
             except OSError as e:
-                logger.warning("Privacidad: no se pudo borrar %s: %s", full, e)
+                logger.warning(tr("Privacidad: no se pudo borrar %s: %s"), full, e)
 
 
 def _clear_conversation_history(main_window=None) -> None:
@@ -1233,7 +1279,7 @@ def _clear_favicon_cache() -> None:
         get_favicon_manager().clear_cache()
         return
     except Exception as e:
-        logger.debug("Privacidad: FaviconManager no disponible (%s), borrado directo", e)
+        logger.debug(tr("Privacidad: FaviconManager no disponible (%s), borrado directo"), e)
     cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "katphi", "favicons")
     if os.path.isdir(cache_dir):
         for name in os.listdir(cache_dir):
@@ -1246,9 +1292,9 @@ def _clear_log_files() -> None:
         import logger_setup
         logger_setup.clear_log_files()
     except (ImportError, AttributeError) as e:
-        logger.debug("Privacidad: clear_log_files no disponible: %s", e)
+        logger.debug(tr("Privacidad: clear_log_files no disponible: %s"), e)
     except Exception as e:
-        logger.warning("Privacidad: error borrando logs: %s", e)
+        logger.warning(tr("Privacidad: error borrando logs: %s"), e)
 
 
 class AutoClearSettings:
@@ -1351,7 +1397,7 @@ class AutoClearSettings:
 
                 conn.close()
         except Exception as e:
-            print(f"Error clearing history: {str(e)}")
+            print(tr("Error clearing history: {value}", value=str(e)))
     def clear_saved_passwords(self):
         """Borra las contraseñas de Katphi (passwords.db del password manager).
 
@@ -1360,7 +1406,7 @@ class AutoClearSettings:
         try:
             _clear_katphi_passwords(self.main_window)
         except Exception as e:
-            print(f"Error clearing passwords: {str(e)}")
+            print(tr("Error clearing passwords: {value}", value=str(e)))
     def clear_form_data(self):
         try:
             profile_path = QWebEngineProfile.defaultProfile().persistentStoragePath()
@@ -1378,13 +1424,13 @@ class AutoClearSettings:
 
                 conn.close()
         except Exception as e:
-            print(f"Error clearing form data: {str(e)}")
+            print(tr("Error clearing form data: {value}", value=str(e)))
     def clear_downloads(self):
         """Vacía el historial de descargas real (downloads_history.db)."""
         try:
             _clear_downloads_history(self.main_window)
         except Exception as e:
-            print(f"Error clearing downloads: {str(e)}")
+            print(tr("Error clearing downloads: {value}", value=str(e)))
 
 
 class SavedDataDialog(QDialog):
@@ -1403,7 +1449,7 @@ class SavedDataDialog(QDialog):
 
         self.table.setColumnCount(2)
 
-        self.table.setHorizontalHeaderLabels(["Site", "Data"])
+        self.table.setHorizontalHeaderLabels([tr("Site"), tr("Data")])
 
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
@@ -1502,7 +1548,7 @@ class HistoryManager:
 
                 conn.close()
         except Exception as e:
-            print(f"Error initializing history database: {str(e)}")
+            print(tr("Error initializing history database: {value}", value=str(e)))
     def add_url(self, url, title=""):
         """Añade una URL al historial"""
 
@@ -1556,7 +1602,7 @@ class HistoryManager:
 
             self.last_visit_time = current_time
         except Exception as e:
-            print(f"Error adding URL to history: {str(e)}")
+            print(tr("Error adding URL to history: {value}", value=str(e)))
     def get_history(self, time_range=None):
         """Obtiene el historial organizado por tiempo"""
 
@@ -1624,7 +1670,7 @@ class HistoryManager:
 
             return history
         except Exception as e:
-            print(f"Error getting history: {str(e)}")
+            print(tr("Error getting history: {value}", value=str(e)))
 
             return []
     def clear_history(self, time_range=None):
@@ -1672,7 +1718,7 @@ class HistoryManager:
 
             conn.close()
         except Exception as e:
-            print(f"Error clearing history: {str(e)}")
+            print(tr("Error clearing history: {value}", value=str(e)))
 
 
 class HistoryDialog(QDialog):
@@ -1683,7 +1729,7 @@ class HistoryDialog(QDialog):
 
         self.init_ui()
     def init_ui(self):
-        self.setWindowTitle("History")
+        self.setWindowTitle(tr("History"))
 
         self.setMinimumSize(800, 600)
 
@@ -1697,28 +1743,20 @@ class HistoryDialog(QDialog):
 
         self.time_range_combo = QComboBox()
 
-        self.time_range_combo.addItems([
+        # El dato de cada opción es la clave que entiende get_history(); el
+        # texto visible se traduce.
+        for label in (N_("All History"), N_("Today"), N_("Yesterday"), N_("Last Week"), N_("Last Month")):
+            self.time_range_combo.addItem(tr(label), label.lower().replace(" ", "_"))
 
-            "All History",
+        self.time_range_combo.currentIndexChanged.connect(self.update_history)
 
-            "Today",
-
-            "Yesterday",
-
-            "Last Week",
-
-            "Last Month"
-        ])
-
-        self.time_range_combo.currentTextChanged.connect(self.update_history)
-
-        toolbar.addWidget(QLabel("Show:"))
+        toolbar.addWidget(QLabel(tr("Show:")))
 
         toolbar.addWidget(self.time_range_combo)
 
         # Botón de búsqueda
 
-        self.search_btn = QPushButton("Search")
+        self.search_btn = QPushButton(tr("Search"))
 
         self.search_btn.clicked.connect(self.search_history)
 
@@ -1726,7 +1764,7 @@ class HistoryDialog(QDialog):
 
         # Botón de limpiar
 
-        self.clear_btn = QPushButton("Clear History")
+        self.clear_btn = QPushButton(tr("Clear History"))
 
         self.clear_btn.clicked.connect(self.clear_history)
 
@@ -1740,7 +1778,7 @@ class HistoryDialog(QDialog):
 
         self.history_tree = QTreeWidget()
 
-        self.history_tree.setHeaderLabels(["Title", "URL", "Visit Time"])
+        self.history_tree.setHeaderLabels([tr("Title"), tr("URL"), tr("Visit Time")])
 
         self.history_tree.setColumnWidth(0, 300)
 
@@ -1762,7 +1800,7 @@ class HistoryDialog(QDialog):
 
         self.history_tree.clear()
 
-        time_range = self.time_range_combo.currentText().lower().replace(" ", "_")
+        time_range = self.time_range_combo.currentData() or "all_history"
 
         history = self.history_manager.get_history(time_range)
 
@@ -1801,7 +1839,7 @@ class HistoryDialog(QDialog):
     def search_history(self):
         """Busca en el historial"""
 
-        text, ok = QInputDialog.getText(self, "Search History", "Enter search term:")
+        text, ok = QInputDialog.getText(self, tr("Search History"), tr("Enter search term:"))
 
         if ok and text:
             self.history_tree.clear()
@@ -1836,15 +1874,15 @@ class HistoryDialog(QDialog):
 
             self,
 
-            "Clear History",
+            tr("Clear History"),
 
-            "Are you sure you want to clear the history?",
+            tr("Are you sure you want to clear the history?"),
 
             QMessageBox.Yes | QMessageBox.No
         )
 
         if reply == QMessageBox.Yes:
-            time_range = self.time_range_combo.currentText().lower().replace(" ", "_")
+            time_range = self.time_range_combo.currentData() or "all_history"
 
             self.history_manager.clear_history(time_range)
 
@@ -1857,11 +1895,11 @@ class HistoryDialog(QDialog):
         if item and item.parent():  # Si no es un elemento de fecha
             menu = QMenu()
 
-            open_action = menu.addAction("Open")
+            open_action = menu.addAction(tr("Open"))
 
-            copy_action = menu.addAction("Copy URL")
+            copy_action = menu.addAction(tr("Copy URL"))
 
-            delete_action = menu.addAction("Delete")
+            delete_action = menu.addAction(tr("Delete"))
 
             action = menu.exec(self.history_tree.mapToGlobal(position))
 
@@ -1947,7 +1985,7 @@ class PrivacyManager(QWidget):
 
         privacy_group = QGroupBox()
 
-        privacy_group.setTitle("Privacy Level")
+        privacy_group.setTitle(tr("Privacy Level"))
 
         privacy_layout = QHBoxLayout()
 
@@ -1955,11 +1993,13 @@ class PrivacyManager(QWidget):
 
         self.privacy_combo = QComboBox()
 
-        self.privacy_combo.addItems(["Strict", "Balanced", "Custom"])
+        for label in (N_("Strict"), N_("Balanced"), N_("Custom")):
+            self.privacy_combo.addItem(tr(label), label)
 
         self.privacy_combo.setMaximumWidth(120)
 
-        self.privacy_combo.currentTextChanged.connect(self.on_privacy_level_changed)
+        self.privacy_combo.currentIndexChanged.connect(
+            lambda _i: self.on_privacy_level_changed(self.privacy_combo.currentData() or "Custom"))
 
         privacy_layout.addWidget(self.privacy_combo)
 
@@ -1973,7 +2013,7 @@ class PrivacyManager(QWidget):
 
         # Privacy Features
 
-        features_group = QGroupBox("Privacy Features")
+        features_group = QGroupBox(tr("Privacy Features"))
 
         features_layout = QVBoxLayout()
 
@@ -1981,37 +2021,37 @@ class PrivacyManager(QWidget):
 
         self.feature_checks = {
 
-            "block_trackers": QCheckBox("Block Trackers"),
+            "block_trackers": QCheckBox(tr("Block Trackers")),
 
-            "block_ads": QCheckBox("Block Ads"),
+            "block_ads": QCheckBox(tr("Block Ads")),
 
-            "no_persistent_cookies": QCheckBox("No Persistent Cookies"),
+            "no_persistent_cookies": QCheckBox(tr("No Persistent Cookies")),
 
-            "block_javascript": QCheckBox("Block JavaScript"),
+            "block_javascript": QCheckBox(tr("Block JavaScript")),
 
-            "block_images": QCheckBox("Block Images"),
+            "block_images": QCheckBox(tr("Block Images")),
 
-            "block_webrtc": QCheckBox("Block WebRTC"),
+            "block_webrtc": QCheckBox(tr("Block WebRTC")),
 
-            "block_fingerprinting": QCheckBox("Block Fingerprinting"),
+            "block_fingerprinting": QCheckBox(tr("Block Fingerprinting")),
 
-            "block_third_party": QCheckBox("Block Third-Party Cookies"),
+            "block_third_party": QCheckBox(tr("Block Third-Party Cookies")),
 
-            "clear_on_exit": QCheckBox("Clear Data on Exit"),
+            "clear_on_exit": QCheckBox(tr("Clear Data on Exit")),
 
-            "do_not_track": QCheckBox("Send Do Not Track Signal"),
+            "do_not_track": QCheckBox(tr("Send Do Not Track Signal")),
 
-            "block_phishing": QCheckBox("Block Phishing Sites"),
+            "block_phishing": QCheckBox(tr("Block Phishing Sites")),
 
-            "block_malware": QCheckBox("Block Malware Sites"),
+            "block_malware": QCheckBox(tr("Block Malware Sites")),
 
-            "block_location": QCheckBox("Block Location Access"),
+            "block_location": QCheckBox(tr("Block Location Access")),
 
-            "block_notifications": QCheckBox("Block Notifications"),
+            "block_notifications": QCheckBox(tr("Block Notifications")),
 
-            "block_camera": QCheckBox("Block Camera Access"),
+            "block_camera": QCheckBox(tr("Block Camera Access")),
 
-            "block_microphone": QCheckBox("Block Microphone Access")
+            "block_microphone": QCheckBox(tr("Block Microphone Access"))
         }
 
         for check in self.feature_checks.values():
@@ -2034,7 +2074,7 @@ class PrivacyManager(QWidget):
 
         # Selector de tiempo para borrado de datos
 
-        time_selector_group = QGroupBox("Time Range for Data Clearing")
+        time_selector_group = QGroupBox(tr("Time Range for Data Clearing"))
 
         time_selector_layout = QHBoxLayout()
 
@@ -2042,26 +2082,16 @@ class PrivacyManager(QWidget):
 
         time_selector_layout.setSpacing(5)
 
-        time_selector_layout.addWidget(QLabel("Clear data from:"))
+        time_selector_layout.addWidget(QLabel(tr("Clear data from:")))
 
         self.time_range_combo = QComboBox()
 
-        self.time_range_combo.addItems([
+        # Dato = clave fija (get_time_range_in_hours); texto visible traducido.
+        for label in (N_("Last hour"), N_("Last 24 hours"), N_("Last 7 days"), N_("Last 15 days"),
+                      N_("Last 30 days"), N_("All time")):
+            self.time_range_combo.addItem(tr(label), label)
 
-            "Last hour",
-
-            "Last 24 hours", 
-
-            "Last 7 days",
-
-            "Last 15 days",
-
-            "Last 30 days",
-
-            "All time"
-        ])
-
-        self.time_range_combo.setCurrentText("Last 24 hours")  # Valor por defecto
+        self.time_range_combo.setCurrentIndex(self.time_range_combo.findData("Last 24 hours"))  # Valor por defecto
 
         self.time_range_combo.setMinimumWidth(120)
 
@@ -2086,7 +2116,7 @@ class PrivacyManager(QWidget):
 
         # Botones para borrar datos
 
-        clear_data_group = QGroupBox("Clear Browsing Data")
+        clear_data_group = QGroupBox(tr("Clear Browsing Data"))
 
         clear_data_layout = QHBoxLayout()
 
@@ -2096,7 +2126,7 @@ class PrivacyManager(QWidget):
 
         clear_data_layout.setAlignment(Qt.AlignLeft)
 
-        self.clear_history_btn = QPushButton("Clear History")
+        self.clear_history_btn = QPushButton(tr("Clear History"))
 
         self.clear_history_btn.setFixedWidth(100)
 
@@ -2104,7 +2134,7 @@ class PrivacyManager(QWidget):
 
         clear_data_layout.addWidget(self.clear_history_btn)
 
-        self.clear_cookies_btn = QPushButton("Clear Cookies")
+        self.clear_cookies_btn = QPushButton(tr("Clear Cookies"))
 
         self.clear_cookies_btn.setFixedWidth(100)
 
@@ -2112,7 +2142,7 @@ class PrivacyManager(QWidget):
 
         clear_data_layout.addWidget(self.clear_cookies_btn)
 
-        self.clear_cache_btn = QPushButton("Clear Cache")
+        self.clear_cache_btn = QPushButton(tr("Clear Cache"))
 
         self.clear_cache_btn.setFixedWidth(100)
 
@@ -2120,7 +2150,7 @@ class PrivacyManager(QWidget):
 
         clear_data_layout.addWidget(self.clear_cache_btn)
 
-        self.clear_all_btn = QPushButton("Clear All Data")
+        self.clear_all_btn = QPushButton(tr("Clear All Data"))
 
         self.clear_all_btn.setFixedWidth(100)
 
@@ -2136,7 +2166,7 @@ class PrivacyManager(QWidget):
 
         # Grupo de opciones de borrado automático
 
-        auto_clear_group = QGroupBox("Auto-Clear Settings")
+        auto_clear_group = QGroupBox(tr("Auto-Clear Settings"))
 
         auto_clear_layout = QVBoxLayout()
 
@@ -2144,7 +2174,7 @@ class PrivacyManager(QWidget):
 
         # Opciones de borrado automático
 
-        self.auto_clear_check = QCheckBox("Enable automatic data clearing")
+        self.auto_clear_check = QCheckBox(tr("Enable automatic data clearing"))
 
         self.auto_clear_check.clicked.connect(self.toggle_auto_clear)
 
@@ -2154,11 +2184,12 @@ class PrivacyManager(QWidget):
 
         frequency_layout = QHBoxLayout()
 
-        frequency_layout.addWidget(QLabel("Clear data every:"))
+        frequency_layout.addWidget(QLabel(tr("Clear data every:")))
 
         self.frequency_combo = QComboBox()
 
-        self.frequency_combo.addItems(["1 hour", "4 hours", "8 hours", "12 hours", "24 hours", "7 days"])
+        for label in (N_("1 hour"), N_("4 hours"), N_("8 hours"), N_("12 hours"), N_("24 hours"), N_("7 days")):
+            self.frequency_combo.addItem(tr(label), label)
 
         self.frequency_combo.setEnabled(False)
 
@@ -2172,17 +2203,17 @@ class PrivacyManager(QWidget):
 
         self.auto_clear_options = {
 
-            "history": QCheckBox("History"),
+            "history": QCheckBox(tr("History")),
 
-            "cookies": QCheckBox("Cookies"),
+            "cookies": QCheckBox(tr("Cookies")),
 
-            "cache": QCheckBox("Cache"),
+            "cache": QCheckBox(tr("Cache")),
 
-            "passwords": QCheckBox("Saved Passwords"),
+            "passwords": QCheckBox(tr("Saved Passwords")),
 
-            "form_data": QCheckBox("Form Data"),
+            "form_data": QCheckBox(tr("Form Data")),
 
-            "downloads": QCheckBox("Download History")
+            "downloads": QCheckBox(tr("Download History"))
         }
 
         for key, check in self.auto_clear_options.items():
@@ -2197,7 +2228,7 @@ class PrivacyManager(QWidget):
 
         # Grupo de gestión de datos guardados
 
-        saved_data_group = QGroupBox("Saved Data Management")
+        saved_data_group = QGroupBox(tr("Saved Data Management"))
 
         saved_data_layout = QVBoxLayout()
 
@@ -2207,19 +2238,19 @@ class PrivacyManager(QWidget):
 
         saved_data_buttons = QHBoxLayout()
 
-        self.view_passwords_btn = QPushButton("View Saved Passwords")
+        self.view_passwords_btn = QPushButton(tr("View Saved Passwords"))
 
         self.view_passwords_btn.clicked.connect(self.show_saved_passwords)
 
         saved_data_buttons.addWidget(self.view_passwords_btn)
 
-        self.view_form_data_btn = QPushButton("View Form Data")
+        self.view_form_data_btn = QPushButton(tr("View Form Data"))
 
         self.view_form_data_btn.clicked.connect(self.show_form_data)
 
         saved_data_buttons.addWidget(self.view_form_data_btn)
 
-        self.view_downloads_btn = QPushButton("View Downloads")
+        self.view_downloads_btn = QPushButton(tr("View Downloads"))
 
         self.view_downloads_btn.clicked.connect(self.show_downloads)
 
@@ -2253,7 +2284,7 @@ class PrivacyManager(QWidget):
 
         self.permissions_table.setColumnCount(3)
 
-        self.permissions_table.setHorizontalHeaderLabels(["Site", "Permission", "Status"])
+        self.permissions_table.setHorizontalHeaderLabels([tr("Site"), tr("Permission"), tr("Status")])
 
         self.permissions_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
@@ -2261,11 +2292,11 @@ class PrivacyManager(QWidget):
 
         # Añadir las pestañas al widget principal
 
-        tab_widget.addTab(general_tab, "General")
+        tab_widget.addTab(general_tab, tr("General"))
 
-        tab_widget.addTab(data_tab, "Browsing Data")
+        tab_widget.addTab(data_tab, tr("Browsing Data"))
 
-        tab_widget.addTab(permissions_tab, "Site Permissions")
+        tab_widget.addTab(permissions_tab, tr("Site Permissions"))
 
         # Crear data_label para evitar AttributeError en update_data_sharing
 
@@ -2289,7 +2320,9 @@ class PrivacyManager(QWidget):
 
         self.privacy_combo.blockSignals(True)
         try:
-            self.privacy_combo.setCurrentText(current_level.capitalize())
+            idx = self.privacy_combo.findData(str(current_level).capitalize())
+            if idx >= 0:
+                self.privacy_combo.setCurrentIndex(idx)
         finally:
             self.privacy_combo.blockSignals(False)
 
@@ -2384,7 +2417,7 @@ class PrivacyManager(QWidget):
     def update_data_sharing(self, data):
         """Actualiza el monitor de datos compartidos"""
 
-        self.data_label.setText(f"Data being shared: {json.dumps(data, indent=2)}")
+        self.data_label.setText(tr("Data being shared: {value}", value=json.dumps(data, indent=2)))
 
         self.data_shared.emit(data)
     def update_filter_lists(self):
@@ -2395,7 +2428,7 @@ class PrivacyManager(QWidget):
 
             self.ad_blocker.update_filter_lists()
         except Exception as e:
-            print(f"Error al actualizar las listas de filtros: {str(e)}")
+            print(tr("Error al actualizar las listas de filtros: {value}", value=str(e)))
     def get_time_range_in_hours(self, time_range_text):
         """Convierte el texto del selector de tiempo a horas"""
 
@@ -2414,6 +2447,9 @@ class PrivacyManager(QWidget):
             "All time": None  # None significa todo el tiempo
         }
 
+        if time_range_text not in time_mapping:
+            # Texto visible (traducido) -> clave
+            time_mapping.update({tr(k): v for k, v in list(time_mapping.items())})
         return time_mapping.get(time_range_text, 24)  # Default: 24 horas
     def get_time_cutoff(self, hours):
         """Obtiene el timestamp de corte basado en las horas"""
@@ -2438,17 +2474,17 @@ class PrivacyManager(QWidget):
 
                 history_count = self.count_all_history_entries()
 
-                self.data_preview_label.setText(f"Will clear: ~{history_count} history entries, all cookies & cache")
+                self.data_preview_label.setText(tr("Will clear: ~{history_count} history entries, all cookies & cache", history_count=history_count))
             else:
                 # Tiempo específico
 
                 history_count = self.count_history_entries_by_time(hours)
 
-                self.data_preview_label.setText(f"Will clear: ~{history_count} history entries from {time_range_text.lower()}")
+                self.data_preview_label.setText(tr("Will clear: ~{history_count} history entries from {value}", history_count=history_count, value=time_range_text.lower()))
         except Exception as e:
-            self.data_preview_label.setText("Preview unavailable")
+            self.data_preview_label.setText(tr("Preview unavailable"))
 
-            print(f"Error updating data preview: {str(e)}")
+            print(tr("Error updating data preview: {value}", value=str(e)))
     def count_all_history_entries(self):
         """Cuenta todas las entradas del historial"""
 
@@ -2471,7 +2507,7 @@ class PrivacyManager(QWidget):
                 return count
             return 0
         except Exception as e:
-            print(f"Error counting history entries: {str(e)}")
+            print(tr("Error counting history entries: {value}", value=str(e)))
 
             return 0
     def count_history_entries_by_time(self, hours):
@@ -2503,7 +2539,7 @@ class PrivacyManager(QWidget):
                 return count
             return 0
         except Exception as e:
-            print(f"Error counting history entries by time: {str(e)}")
+            print(tr("Error counting history entries by time: {value}", value=str(e)))
 
             return 0
     def clear_history_with_time(self):
@@ -2518,9 +2554,9 @@ class PrivacyManager(QWidget):
 
                 self, 
 
-                "Confirm Clear History",
+                tr("Confirm Clear History"),
 
-                f"Are you sure you want to clear browsing history from {time_range_text.lower()}?",
+                tr("Are you sure you want to clear browsing history from {value}?", value=time_range_text.lower()),
 
                 QMessageBox.Yes | QMessageBox.No
             )
@@ -2536,9 +2572,9 @@ class PrivacyManager(QWidget):
                     self.clear_history_by_time(hours)
                 self.data_cleared.emit("history")
 
-                QMessageBox.information(self, "Success", f"Browsing history from {time_range_text.lower()} cleared successfully")
+                QMessageBox.information(self, tr("Success"), tr("Browsing history from {value} cleared successfully", value=time_range_text.lower()))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error clearing history: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error clearing history: {value}", value=str(e)))
     def clear_history_by_time(self, hours):
         """Borra el historial por rango de tiempo específico"""
 
@@ -2574,7 +2610,7 @@ class PrivacyManager(QWidget):
 
                 print(f"History cleared for last {hours} hours")
         except Exception as e:
-            print(f"Error clearing history by time: {str(e)}")
+            print(tr("Error clearing history by time: {value}", value=str(e)))
 
             raise
     def clear_cookies_with_time(self):
@@ -2589,9 +2625,9 @@ class PrivacyManager(QWidget):
 
                 self, 
 
-                "Confirm Clear Cookies",
+                tr("Confirm Clear Cookies"),
 
-                f"Are you sure you want to clear cookies from {time_range_text.lower()}?",
+                tr("Are you sure you want to clear cookies from {value}?", value=time_range_text.lower()),
 
                 QMessageBox.Yes | QMessageBox.No
             )
@@ -2612,11 +2648,9 @@ class PrivacyManager(QWidget):
 
                         self,
 
-                        "Cookie Clearing Limitation",
+                        tr("Cookie Clearing Limitation"),
 
-                        f"Qt WebEngine doesn't support time-based cookie clearing.\n"
-
-                        f"Would you like to clear ALL cookies instead?",
+                        tr("Qt WebEngine doesn't support time-based cookie clearing.\nWould you like to clear ALL cookies instead?"),
 
                         QMessageBox.Yes | QMessageBox.No
                     )
@@ -2629,9 +2663,9 @@ class PrivacyManager(QWidget):
                         return
                 self.data_cleared.emit("cookies")
 
-                QMessageBox.information(self, "Success", "Cookies cleared successfully")
+                QMessageBox.information(self, tr("Success"), tr("Cookies cleared successfully"))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error clearing cookies: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error clearing cookies: {value}", value=str(e)))
     def clear_cache_with_time(self):
         """Borra la caché del navegador según el rango de tiempo seleccionado"""
 
@@ -2642,9 +2676,9 @@ class PrivacyManager(QWidget):
 
                 self, 
 
-                "Confirm Clear Cache",
+                tr("Confirm Clear Cache"),
 
-                f"Are you sure you want to clear cache from {time_range_text.lower()}?",
+                tr("Are you sure you want to clear cache from {value}?", value=time_range_text.lower()),
 
                 QMessageBox.Yes | QMessageBox.No
             )
@@ -2660,9 +2694,9 @@ class PrivacyManager(QWidget):
 
                 self.data_cleared.emit("cache")
 
-                QMessageBox.information(self, "Success", "Cache cleared successfully")
+                QMessageBox.information(self, tr("Success"), tr("Cache cleared successfully"))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error clearing cache: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error clearing cache: {value}", value=str(e)))
     def clear_all_data_with_time(self):
         """Borra todos los datos de navegación según el rango de tiempo seleccionado"""
 
@@ -2673,17 +2707,9 @@ class PrivacyManager(QWidget):
 
                 self, 
 
-                "Confirm Clear All Data",
+                tr("Confirm Clear All Data"),
 
-                f"Are you sure you want to clear ALL browsing data from {time_range_text.lower()}?\n"
-
-                f"This includes history, cookies, cache, and other stored data.\n"
-
-                f"'All time' also deletes saved passwords, downloads history,\n"
-
-                f"sessions, assistant conversations, favicons and logs.\n"
-
-                f"This action cannot be undone.",
+                tr("Are you sure you want to clear ALL browsing data from {value}?\nThis includes history, cookies, cache, and other stored data.\n'All time' also deletes saved passwords, downloads history,\nsessions, assistant conversations, favicons and logs.\nThis action cannot be undone.", value=time_range_text.lower()),
 
                 QMessageBox.Yes | QMessageBox.No
             )
@@ -2708,9 +2734,9 @@ class PrivacyManager(QWidget):
                     self.clear_all_local_data(include_passwords=True)
                 self.data_cleared.emit("all")
 
-                QMessageBox.information(self, "Success", f"All browsing data from {time_range_text.lower()} cleared successfully")
+                QMessageBox.information(self, tr("Success"), tr("All browsing data from {value} cleared successfully", value=time_range_text.lower()))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error clearing all data: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error clearing all data: {value}", value=str(e)))
     def clear_history_with_time_internal(self):
         """Método interno para borrar historial sin mostrar diálogos"""
 
@@ -2724,7 +2750,7 @@ class PrivacyManager(QWidget):
             else:
                 self.clear_history_by_time(hours)
         except Exception as e:
-            print(f"Error in clear_history_with_time_internal: {str(e)}")
+            print(tr("Error in clear_history_with_time_internal: {value}", value=str(e)))
     def clear_additional_data(self):
         """Borra datos adicionales cuando se selecciona 'All time'.
 
@@ -2737,7 +2763,7 @@ class PrivacyManager(QWidget):
 
             print("Additional data cleared successfully")
         except Exception as e:
-            print(f"Error clearing additional data: {str(e)}")
+            print(tr("Error clearing additional data: {value}", value=str(e)))
 
     # ------------------------------------------------------------------
     # Borrado centralizado (B-007)
@@ -2770,13 +2796,13 @@ class PrivacyManager(QWidget):
         try:
             self.history_manager.clear_history()
         except Exception as e:
-            logger.warning("Privacidad: error borrando History: %s", e)
+            logger.warning(tr("Privacidad: error borrando History: %s"), e)
         main_history = getattr(self.parent, "history_manager", None)
         if main_history is not None and main_history is not self.history_manager:
             try:
                 main_history.clear_history()
             except Exception as e:
-                logger.warning("Privacidad: error borrando historial en memoria: %s", e)
+                logger.warning(tr("Privacidad: error borrando historial en memoria: %s"), e)
         for profile in self._webengine_profiles():
             try:
                 profile.clearAllVisitedLinks()
@@ -2788,14 +2814,14 @@ class PrivacyManager(QWidget):
             try:
                 profile.cookieStore().deleteAllCookies()
             except Exception as e:
-                logger.warning("Privacidad: error borrando cookies: %s", e)
+                logger.warning(tr("Privacidad: error borrando cookies: %s"), e)
 
     def _clear_cache(self):
         for profile in self._webengine_profiles():
             try:
                 profile.clearHttpCache()
             except Exception as e:
-                logger.warning("Privacidad: error borrando caché: %s", e)
+                logger.warning(tr("Privacidad: error borrando caché: %s"), e)
 
     def clear_all_local_data(self, include_passwords: bool = True) -> None:
         """Borra todos los datos locales que guarda Katphi.
@@ -2831,7 +2857,7 @@ class PrivacyManager(QWidget):
             try:
                 func()
             except Exception as e:
-                logger.warning("Privacidad: error borrando %s: %s", name, e)
+                logger.warning(tr("Privacidad: error borrando %s: %s"), name, e)
         try:
             self.data_cleared.emit("all")
         except Exception:
@@ -2845,9 +2871,9 @@ class PrivacyManager(QWidget):
 
             self.data_cleared.emit("history")
 
-            QMessageBox.information(self, "Success", "Browsing history cleared successfully")
+            QMessageBox.information(self, tr("Success"), tr("Browsing history cleared successfully"))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error clearing history: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error clearing history: {value}", value=str(e)))
     def clear_cookies(self):
         """Borra las cookies (método legacy)"""
 
@@ -2856,9 +2882,9 @@ class PrivacyManager(QWidget):
 
             self.data_cleared.emit("cookies")
 
-            QMessageBox.information(self, "Success", "Cookies cleared successfully")
+            QMessageBox.information(self, tr("Success"), tr("Cookies cleared successfully"))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error clearing cookies: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error clearing cookies: {value}", value=str(e)))
     def clear_cache(self):
         """Borra la caché del navegador (método legacy)"""
 
@@ -2867,15 +2893,15 @@ class PrivacyManager(QWidget):
 
             self.data_cleared.emit("cache")
 
-            QMessageBox.information(self, "Success", "Cache cleared successfully")
+            QMessageBox.information(self, tr("Success"), tr("Cache cleared successfully"))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error clearing cache: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error clearing cache: {value}", value=str(e)))
     def clear_all_data(self):
         """Borra todos los datos de navegación (método legacy)"""
 
-        reply = QMessageBox.question(self, "Confirm Clear All",
+        reply = QMessageBox.question(self, tr("Confirm Clear All"),
 
-                                   "Are you sure you want to clear all browsing data? This cannot be undone.",
+                                   tr("Are you sure you want to clear all browsing data? This cannot be undone."),
 
                                    QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
@@ -2887,7 +2913,7 @@ class PrivacyManager(QWidget):
 
             self.data_cleared.emit("all")
 
-            QMessageBox.information(self, "Success", "All browsing data cleared successfully")
+            QMessageBox.information(self, tr("Success"), tr("All browsing data cleared successfully"))
     def update_site_permissions(self):
         """Actualiza la tabla de permisos de sitios"""
 
@@ -2900,7 +2926,7 @@ class PrivacyManager(QWidget):
 
             pass
         except Exception as e:
-            print(f"Error updating site permissions: {str(e)}")
+            print(tr("Error updating site permissions: {value}", value=str(e)))
     @staticmethod
     def remove_youtube_script(profile):
         """Quita el antiguo script "yt-adblock" si quedó instalado en el perfil.
@@ -3131,9 +3157,9 @@ class PrivacyManager(QWidget):
             script.setRunsOnSubFrames(True)
             script.setSourceCode(js_code)
             scripts.insert(script)
-            logger.debug("Stealth script instalado en perfil %s", profile.storageName())
+            logger.debug(tr("Stealth script instalado en perfil %s"), profile.storageName())
         except Exception as exc:
-            logger.warning("Error instalando stealth script: %s", exc)
+            logger.warning(tr("Error instalando stealth script: %s"), exc)
 
     def _apply_url_interceptor_to_profile(self, profile: QWebEngineProfile) -> None:
         """Un único punto para instalar CombinedUrlRequestInterceptor o componentes sueltos."""
@@ -3177,11 +3203,11 @@ class PrivacyManager(QWidget):
             except Exception:
                 pass
             logger.debug(
-                "Adblock: perfil por defecto de WebEngine actualizado (block_ads=%s)",
+                tr("Adblock: perfil por defecto de WebEngine actualizado (block_ads=%s)"),
                 self.settings.get_setting("block_ads"),
             )
         except Exception as exc:
-            logger.warning("Adblock: sync_default_webengine_profile: %s", exc)
+            logger.warning(tr("Adblock: sync_default_webengine_profile: %s"), exc)
 
     def apply_privacy_settings(self, browser):
         """Aplica la configuración de privacidad al navegador"""
@@ -3251,9 +3277,9 @@ class PrivacyManager(QWidget):
                     if hasattr(QWebEngineSettings, "WebRTCPublicInterfacesOnly"):
                         settings.setAttribute(QWebEngineSettings.WebRTCPublicInterfacesOnly, True)
                     # WebRTC configuration applied
-                print("Configuración de privacidad aplicada correctamente")
+                print(tr("Configuración de privacidad aplicada correctamente"))
         except Exception as e:
-            print(f"Error al aplicar configuración de privacidad: {str(e)}")
+            print(tr("Error al aplicar configuración de privacidad: {value}", value=str(e)))
     def load_auto_clear_settings(self):
         """Carga la configuración de borrado automático"""
 
@@ -3269,7 +3295,9 @@ class PrivacyManager(QWidget):
             frequency = self.settings.get_setting("auto_clear_frequency")
 
             if frequency:
-                self.frequency_combo.setCurrentText(frequency)
+                idx = self.frequency_combo.findData(frequency)
+                if idx >= 0:
+                    self.frequency_combo.setCurrentIndex(idx)
             # Cargar opciones individuales
 
             for key, check in self.auto_clear_options.items():
@@ -3284,7 +3312,7 @@ class PrivacyManager(QWidget):
                 self.start_auto_clear_timer()
             print("Auto-clear settings loaded")
         except Exception as e:
-            print(f"Error loading auto-clear settings: {str(e)}")
+            print(tr("Error loading auto-clear settings: {value}", value=str(e)))
     def toggle_auto_clear(self, checked):
         """Habilita/deshabilita las opciones de borrado automático"""
 
@@ -3307,12 +3335,12 @@ class PrivacyManager(QWidget):
                 self.stop_auto_clear_timer()
             print(f"Auto-clear {'enabled' if checked else 'disabled'}")
         except Exception as e:
-            print(f"Error toggling auto-clear: {str(e)}")
+            print(tr("Error toggling auto-clear: {value}", value=str(e)))
     def on_frequency_changed(self, index):
         """Maneja el cambio en la frecuencia de borrado"""
 
         try:
-            frequency = self.frequency_combo.currentText()
+            frequency = self.frequency_combo.currentData() or self.frequency_combo.currentText()
 
             self.settings.set_setting("auto_clear_frequency", frequency)
 
@@ -3322,7 +3350,7 @@ class PrivacyManager(QWidget):
                 self.start_auto_clear_timer()
             print(f"Frequency changed to: {frequency}")
         except Exception as e:
-            print(f"Error changing frequency: {str(e)}")
+            print(tr("Error changing frequency: {value}", value=str(e)))
     def on_option_changed(self, key, checked):
         """Maneja el cambio en una opción específica"""
 
@@ -3333,7 +3361,7 @@ class PrivacyManager(QWidget):
 
             print(f"Option {key} {'enabled' if checked else 'disabled'}")
         except Exception as e:
-            print(f"Error updating option {key}: {str(e)}")
+            print(tr("Error updating option {key}: {value}", key=key, value=str(e)))
     def start_auto_clear_timer(self):
         """Inicia el temporizador de borrado automático"""
 
@@ -3352,7 +3380,7 @@ class PrivacyManager(QWidget):
 
             print(f"Auto-clear timer started: {hours} hours")
         except Exception as e:
-            print(f"Error starting auto-clear timer: {str(e)}")
+            print(tr("Error starting auto-clear timer: {value}", value=str(e)))
     def stop_auto_clear_timer(self):
         """Detiene el temporizador de borrado automático"""
 
@@ -3362,7 +3390,7 @@ class PrivacyManager(QWidget):
 
                 print("Auto-clear timer stopped")
         except Exception as e:
-            print(f"Error stopping auto-clear timer: {str(e)}")
+            print(tr("Error stopping auto-clear timer: {value}", value=str(e)))
     def auto_clear_data(self):
         """Ejecuta el borrado automático de datos"""
 
@@ -3382,7 +3410,7 @@ class PrivacyManager(QWidget):
                 _clear_downloads_history(self.parent)
             print("Auto-clear data completed")
         except Exception as e:
-            print(f"Error in auto-clear data: {str(e)}")
+            print(tr("Error in auto-clear data: {value}", value=str(e)))
     def show_saved_passwords(self):
         """Muestra las contraseñas guardadas"""
 
@@ -3406,7 +3434,7 @@ class PrivacyManager(QWidget):
 
                 dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error loading passwords: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error loading passwords: {value}", value=str(e)))
     def show_form_data(self):
         """Muestra los datos de formularios guardados"""
 
@@ -3430,7 +3458,7 @@ class PrivacyManager(QWidget):
 
                 dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error loading form data: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error loading form data: {value}", value=str(e)))
     def show_downloads(self):
         """Muestra el historial de descargas"""
 
@@ -3461,7 +3489,7 @@ class PrivacyManager(QWidget):
 
                 dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error loading downloads: {str(e)}")
+            QMessageBox.critical(self, tr("Error"), tr("Error loading downloads: {value}", value=str(e)))
     def show_history(self):
         """Muestra el diálogo de historial"""
 

@@ -6,6 +6,7 @@ cada proveedor de la tabla obtiene su sección (API key + modelo + enlace) sin
 código específico en los paneles.
 """
 
+from i18n import tr
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
@@ -36,7 +37,7 @@ def build_compat_provider_widget(provider: str, link_color: str, hint_color: str
     layout.setSpacing(6)
 
     key_row = QHBoxLayout()
-    key_lbl = QLabel("API Key:")
+    key_lbl = QLabel(tr("API Key:"))
     key_lbl.setFixedWidth(72)
     key_row.addWidget(key_lbl)
     key_input = QLineEdit()
@@ -45,11 +46,11 @@ def build_compat_provider_widget(provider: str, link_color: str, hint_color: str
     key_row.addWidget(key_input)
     show_btn = QPushButton()
     show_btn.setMaximumWidth(32)
-    show_btn.setToolTip("Mostrar u ocultar la API key")
+    show_btn.setToolTip(tr("Mostrar u ocultar la API key"))
     if icon_setter:
         icon_setter(show_btn, "eye")
     else:
-        show_btn.setText("Mostrar")
+        show_btn.setText(tr("Mostrar"))
     show_btn.setCheckable(True)
     show_btn.toggled.connect(
         lambda on: key_input.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password)
@@ -58,7 +59,7 @@ def build_compat_provider_widget(provider: str, link_color: str, hint_color: str
     layout.addLayout(key_row)
 
     model_row = QHBoxLayout()
-    model_lbl = QLabel("Modelo:")
+    model_lbl = QLabel(tr("Modelo:"))
     model_lbl.setFixedWidth(72)
     model_row.addWidget(model_lbl)
     model_combo = QComboBox()
@@ -66,8 +67,8 @@ def build_compat_provider_widget(provider: str, link_color: str, hint_color: str
     model_combo.setEditable(True)
     model_combo.setInsertPolicy(QComboBox.NoInsert)
     model_row.addWidget(model_combo)
-    refresh_btn = QPushButton("Actualizar")
-    refresh_btn.setToolTip(f"Cargar los modelos disponibles para tu cuenta de {spec['label']}")
+    refresh_btn = QPushButton(tr("Actualizar"))
+    refresh_btn.setToolTip(tr("Cargar los modelos disponibles para tu cuenta de {value}", value=spec['label']))
     refresh_btn.clicked.connect(
         lambda: _refresh_models(widget, provider, key_input, model_combo)
     )
@@ -75,8 +76,7 @@ def build_compat_provider_widget(provider: str, link_color: str, hint_color: str
     layout.addLayout(model_row)
 
     info = QLabel(
-        f'Obtén tu API key en <a href="{spec["key_url"]}" '
-        f'style="color:{link_color};">{spec["key_url"].split("//", 1)[1]}</a>'
+        tr("Obtén tu API key en <a href=\"{value}\" style=\"color:{link_color};\">{value2}</a>", value=spec["key_url"], link_color=link_color, value2=spec["key_url"].split("//", 1)[1])
     )
     info.setOpenExternalLinks(True)
     info.setTextFormat(Qt.RichText)
@@ -113,7 +113,7 @@ def _refresh_models(parent: QWidget, provider: str, key_input: QLineEdit, model_
         QMessageBox.warning(
             parent, label,
             info if not ok else
-            "Este servicio no devuelve la lista de modelos: escribe el nombre del modelo a mano.",
+            tr("Este servicio no devuelve la lista de modelos: escribe el nombre del modelo a mano."),
         )
         return
     current = model_combo.currentText().strip()
@@ -125,12 +125,12 @@ def _refresh_models(parent: QWidget, provider: str, key_input: QLineEdit, model_
 # ─── Anthropic ──────────────────────────────────────────────────────────────────
 
 ANTHROPIC_MODEL_DESCRIPTIONS = {
-    "claude-opus-5":     "Opus 5 — muy capaz en razonamiento y tareas complejas (recomendado)",
-    "claude-sonnet-5":   "Sonnet 5 — equilibrio entre inteligencia, velocidad y coste",
-    "claude-fable-5-1":  "Fable 5.1 — el modelo más capaz de Anthropic; más lento y caro",
-    "claude-opus-4-8":   "Opus 4.8 — generación anterior de Opus",
-    "claude-sonnet-4-6": "Sonnet 4.6 — generación anterior; respeta el ajuste de temperatura",
-    "claude-haiku-4-5":  "Haiku 4.5 — el más rápido y económico, ideal para tareas cortas",
+    "claude-opus-5":     tr("Opus 5 — muy capaz en razonamiento y tareas complejas (recomendado)"),
+    "claude-sonnet-5":   tr("Sonnet 5 — equilibrio entre inteligencia, velocidad y coste"),
+    "claude-fable-5-1":  tr("Fable 5.1 — el modelo más capaz de Anthropic; más lento y caro"),
+    "claude-opus-4-8":   tr("Opus 4.8 — generación anterior de Opus"),
+    "claude-sonnet-4-6": tr("Sonnet 4.6 — generación anterior; respeta el ajuste de temperatura"),
+    "claude-haiku-4-5":  tr("Haiku 4.5 — el más rápido y económico, ideal para tareas cortas"),
 }
 
 _ANTHROPIC_MODEL_GROUPS = [
@@ -165,13 +165,13 @@ def select_anthropic_model(combo: QComboBox, model: str) -> None:
 
 def refresh_anthropic_models(parent: QWidget, api_key: str, combo: QComboBox) -> None:
     if not api_key:
-        QMessageBox.warning(parent, "Anthropic", "Introduce tu API key para cargar los modelos de tu cuenta.")
+        QMessageBox.warning(parent, tr("Anthropic"), tr("Introduce tu API key para cargar los modelos de tu cuenta."))
         return
     client = LLMClient(LLMConfig(provider=PROVIDER_ANTHROPIC, anthropic_key=api_key))
     models = client.list_models()
     if not models:
         ok, info = client.test()
-        QMessageBox.warning(parent, "Anthropic", info if not ok else "No se encontraron modelos.")
+        QMessageBox.warning(parent, tr("Anthropic"), info if not ok else tr("No se encontraron modelos."))
         return
     current = combo.currentText()
     fill_anthropic_model_combo(combo, models)

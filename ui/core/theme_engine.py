@@ -13,6 +13,7 @@ Fecha: 2025-01-27
 """
 
 
+from i18n import tr
 import json
 
 import re
@@ -198,7 +199,7 @@ class ThemeEngine(QObject):
         theme_data = self.themes.get(key)
 
         if not theme_data:
-            print(f"[ERROR] Theme '{theme_name}' not found")
+            print(tr("[ERROR] Theme '{theme_name}' not found", theme_name=theme_name))
 
             return False
         try:
@@ -230,7 +231,7 @@ class ThemeEngine(QObject):
 
             return True
         except Exception as e:
-            print(f"[ERROR] Failed to apply theme {theme_name}: {e}")
+            print(tr("[ERROR] Failed to apply theme {theme_name}: {e}", theme_name=theme_name, e=e))
 
             return False
     def _generate_complete_css(self, theme_data: Dict) -> str:
@@ -990,7 +991,7 @@ class ThemeEngine(QObject):
                 except Exception as e:
                     print(f"[WARNING] Theme processor failed: {e}")
         except Exception as e:
-            print(f"[WARNING] Error applying theme processors: {e}")
+            print(tr("[WARNING] Error applying theme processors: {e}", e=e))
         return "".join(css_parts)
     def get_current_theme(self) -> str:
         """Retorna el tema actual"""

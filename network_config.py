@@ -13,6 +13,7 @@ Manejo avanzado de conectividad con fallbacks y verificaci?n
 """
 
 
+from i18n import tr
 import os
 
 
@@ -395,7 +396,7 @@ def get_website_url() -> str:
 def get_registration_url() -> str:
     """Obtener URL de registro"""
 
-    return f"{get_website_url()}/auth/registro.html"
+    return tr("{value}/auth/registro.html", value=get_website_url())
 
 
 def check_network_health() -> Dict[str, Any]:
@@ -430,27 +431,27 @@ def print_network_info():
 
     print("=" * 80)
 
-    print("CONFIGURACION DE RED - KATPHI BROWSER")
+    print(tr("CONFIGURACION DE RED - KATPHI BROWSER"))
 
     print("=" * 80)
 
-    print(f"Modo: {config['mode']}")
+    print(tr("Modo: {value}", value=config['mode']))
 
     print(f"Backend API: {health['backend_url']} [{status.get('backend', 'unknown')}]")
 
-    print(f"Sitio Web: {health['website_url']} [{status.get('website', 'unknown')}]")
+    print(tr("Sitio Web: {value} [{value2}]", value=health['website_url'], value2=status.get('website', 'unknown')))
 
-    print(f"Estado general: {'CONECTADO' if health['all_connected'] else 'PROBLEMAS'}")
+    print(tr("Estado general: {value}", value=tr('CONECTADO') if health['all_connected'] else tr('PROBLEMAS')))
 
     print("=" * 80)
 
     print()
 
-    print("Para cambiar el modo de red:")
+    print(tr("Para cambiar el modo de red:"))
 
     print("  - Localhost: set KATPHI_NETWORK_MODE=localhost")
 
-    print("  - Red interna: set KATPHI_NETWORK_MODE=network")
+    print(tr("  - Red interna: set KATPHI_NETWORK_MODE=network"))
 
     print("=" * 80)
 
@@ -458,7 +459,7 @@ def print_network_info():
 def test_connectivity() -> bool:
     """Probar conectividad a todos los endpoints"""
 
-    print("Verificando conectividad...")
+    print(tr("Verificando conectividad..."))
 
     backend_status = _network_manager.check_connectivity("backend", force_check=True)
 

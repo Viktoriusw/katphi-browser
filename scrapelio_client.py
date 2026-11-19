@@ -17,6 +17,7 @@ URL del servidor (por prioridad): variable de entorno SCRAPELIO_URL,
 ``scrapelio.url`` en config.yaml, o DEFAULT_SCRAPELIO_URL.
 """
 
+from i18n import tr
 import logging
 import os
 import threading
@@ -78,20 +79,19 @@ def _get(path: str, params: dict, timeout: float) -> requests.Response:
         return requests.get(url, params=params, headers=_headers(), timeout=timeout,
                             proxies=requests_proxies(url))
     except requests.RequestException as e:
-        logger.warning("Scrapelio no accesible: %s", e)
-        raise ScrapelioError(f"No se pudo conectar con el buscador Scrapelio ({get_scrapelio_url()}). "
-                             "Comprueba tu conexión a Internet.") from e
+        logger.warning(tr("Scrapelio no accesible: %s"), e)
+        raise ScrapelioError(tr("No se pudo conectar con el buscador Scrapelio ({value}). Comprueba tu conexión a Internet.", value=get_scrapelio_url())) from e
 
 
 def _json(resp: requests.Response) -> dict:
     if resp.status_code == 429:
-        raise ScrapelioError("Scrapelio: demasiadas búsquedas seguidas, espera un momento")
+        raise ScrapelioError(tr("Scrapelio: demasiadas búsquedas seguidas, espera un momento"))
     if resp.status_code != 200:
-        raise ScrapelioError(f"Scrapelio respondió HTTP {resp.status_code}")
+        raise ScrapelioError(tr("Scrapelio respondió HTTP {status_code}", status_code=resp.status_code))
     try:
         return resp.json()
     except ValueError as e:
-        raise ScrapelioError("Respuesta de Scrapelio no válida") from e
+        raise ScrapelioError(tr("Respuesta de Scrapelio no válida")) from e
 
 
 def search(query: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
@@ -103,7 +103,7 @@ def search(query: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """
     query = (query or "").strip()[:500]
     if not query:
-        raise ScrapelioError("Consulta vacía")
+        raise ScrapelioError(tr("Consulta vacía"))
     resp = _get("/api/assistant", {"q": query}, timeout)
     if resp.status_code == 404:          # servidor sin /api/assistant
         data = _json(_get("/api/search", {"q": query, "page": 1}, timeout))
@@ -148,24 +148,21 @@ def format_results_for_llm(data: dict, limit: int = 8) -> str:
     wikipedia = data.get("wikipedia", [])
     query = data.get("query", "")
     if not results and not wikipedia:
-        return (f'Scrapelio no encontró resultados para "{query}". Díselo al usuario y '
-                "propón otra búsqueda con palabras distintas.")
-    lines = [f'Resultados de Scrapelio para "{query}" '
-             f'({data.get("total_results", len(results))} páginas en total):']
+        return (tr("Scrapelio no encontró resultados para \"{query}\". Díselo al usuario y propón otra búsqueda con palabras distintas.", query=query))
+    lines = [tr("Resultados de Scrapelio para \"{query}\" ({value} páginas en total):", query=query, value=data.get("total_results", len(results)))]
     if data.get("adjusted_query"):
-        lines.append(f'Nota: se buscó "{data["adjusted_query"]}" sin las palabras demasiado '
-                     f'generales ({", ".join(data["dropped_terms"])}).')
+        lines.append(tr("Nota: se buscó \"{value}\" sin las palabras demasiado generales ({value2}).", value=data["adjusted_query"], value2=", ".join(data["dropped_terms"])))
     if data.get("suggestion"):
-        lines.append(f'Posible error ortográfico: quizá quería decir "{data["suggestion"]}".')
+        lines.append(tr("Posible error ortográfico: quizá quería decir \"{value}\".", value=data["suggestion"]))
     if data.get("relaxed"):
-        lines.append("Aviso: ninguna página contiene todas las palabras; son coincidencias parciales.")
+        lines.append(tr("Aviso: ninguna página contiene todas las palabras; son coincidencias parciales."))
     for r in results:
         if r.get("about"):
-            tag = "trata el tema"
+            tag = tr("trata el tema")
         elif r.get("homepage"):
-            tag = "portada de un sitio; solo menciona las palabras"
+            tag = tr("portada de un sitio; solo menciona las palabras")
         elif "about" in r:
-            tag = "solo menciona las palabras en el texto"
+            tag = tr("solo menciona las palabras en el texto")
         else:
             tag = ""
         snippet = " ".join((r.get("snippet") or "").split())[:400]
@@ -174,8 +171,8 @@ def format_results_for_llm(data: dict, limit: int = 8) -> str:
                      f"   URL: {r.get('url')}\n"
                      f"   {snippet}")
     if wikipedia:
-        lines.append("Artículos de Wikipedia (fiables para información general; el usuario "
-                     "también los ve):")
+        lines.append(tr("Artículos de Wikipedia (fiables para información general; el usuario "
+                     "también los ve):"))
         for a in wikipedia:
             extract = " ".join((a.get("extract") or "").split())[:300]
             lines.append(f"W. {a.get('title')}\n   URL: {a.get('url')}\n   {extract}")
@@ -196,11 +193,11 @@ class ScrapelioSearchWorker(QThread):
         try:
             data = search(self.query)
         except ScrapelioError as e:
-            logger.warning("Scrapelio: %s", e)
+            logger.warning(tr("Scrapelio: %s"), e)
             self.failed.emit(self.query, str(e))
             return
         except Exception as e:
-            logger.error("Scrapelio error inesperado: %s", e, exc_info=True)
-            self.failed.emit(self.query, f"Error inesperado en Scrapelio: {e}")
+            logger.error(tr("Scrapelio error inesperado: %s"), e, exc_info=True)
+            self.failed.emit(self.query, tr("Error inesperado en Scrapelio: {e}", e=e))
             return
         self.results_ready.emit(self.query, data)

@@ -1,5 +1,42 @@
 # Cambios
 
+## 3.6.2 — Bloqueador de anuncios nuevo e interfaz en inglés
+
+### Bloqueador de anuncios
+
+- Nuevo plugin gratuito **Katphi AdBlock** (incluido en los paquetes), que sustituye al
+  bloqueo de anuncios del núcleo:
+  - Bloqueo de red con EasyList, EasyPrivacy, EasyList Spanish y uBlock filters
+    (motor compatible con la sintaxis de AdBlock Plus / uBlock Origin).
+  - Ocultación de elementos (reglas `##`): huecos de anuncios, banners y patrocinados.
+  - Anuncios de YouTube eliminados de las respuestas del reproductor y scriptlets
+    anti-antiadblock de uBlock.
+  - Las listas vienen incluidas y se actualizan solas cada 4 días.
+  - Sitios sin bloqueo y filtros propios desde su panel.
+- El bloqueo del núcleo anterior tenía errores: los tipos `$xmlhttprequest`,
+  `$stylesheet`, `$font` y `$subdocument` nunca coincidían, `domain=` se comprobaba
+  contra el servidor de la petición y bloqueaba de más (p. ej. fonts.googleapis.com).
+  Privacidad ofrece ahora un punto de enganche (`privacy.set_external_ad_decider`)
+  para que el plugin decida.
+- Corregido: la barra «no se puede reproducir el vídeo» aparecía en páginas sin
+  ningún vídeo roto (p. ej. abc.es). Ahora solo sale con un vídeo grande y visible
+  que se ha intentado reproducir y lleva 5 s parado, o con un error visible.
+
+### Interfaz en inglés
+
+- Katphi Browser está disponible en español y en inglés. El idioma se elige en
+  Ajustes > General > Idioma (por defecto, el del sistema) y se aplica al reiniciar.
+  La variable de entorno `KATPHI_LANG=es|en` manda sobre el ajuste.
+- Nuevo módulo `i18n.py` (`tr()`) con catálogos en `locales/en.py` (español → inglés)
+  y `locales/es.py` (textos que estaban en inglés → español). Los plugins registran
+  su propio catálogo con `register_catalog()` y funcionan igual (en español) con
+  navegadores anteriores.
+- Las páginas GenTab, el reproductor de Katphi TV y el visor de Katphi Office también
+  salen en el idioma elegido.
+- Corregido: el diálogo «Acerca de» mostraba la versión 3.4.7.
+- Corregido: los desplegables del panel de privacidad y la categoría de perfil ya no
+  dependen del texto visible.
+
 ## 3.6.1 — Asistente con plugins, Containers y Katphi Sync
 
 - El asistente de navegación (gratuito) puede usar los plugins Scraping, SEO Analyzer

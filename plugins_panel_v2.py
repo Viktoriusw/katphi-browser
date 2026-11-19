@@ -4,6 +4,7 @@ Panel de Plugins Simplificado para SaaS
 Sistema claro y funcional para gestión de plugins premium
 """
 
+from i18n import tr
 import logging
 import webbrowser
 from typing import List, Optional
@@ -120,7 +121,7 @@ class PluginRow(QFrame):
     def _make_badge(self) -> QLabel | None:
         c = self._C
         if self.is_installed:
-            lbl = QLabel("Active")
+            lbl = QLabel(tr("Active"))
             lbl.setStyleSheet(
                 f"QWidget {{ background: {c['success_subtle']}; color: {c['success']}; "
                 "font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; "
@@ -130,7 +131,7 @@ class PluginRow(QFrame):
         if self.license_data and self.license_data.get("is_licensed"):
             trial = self.license_data.get("trial_remaining", 0)
             if trial > 0:
-                lbl = QLabel(f"Trial {trial}d")
+                lbl = QLabel(tr("Trial {trial}d", trial=trial))
                 lbl.setStyleSheet(
                     f"QWidget {{ background: rgba(210,153,34,0.15); color: {c['warning']}; "
                     "font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; "
@@ -139,7 +140,7 @@ class PluginRow(QFrame):
                 return lbl
         # Plugin de pago sin licencia
         if self.plugin_data.get("price", 0) > 0:
-            lbl = QLabel("Pro")
+            lbl = QLabel(tr("Pro"))
             lbl.setStyleSheet(
                 f"QWidget {{ background: {c['accent_subtle']}; color: {c['accent']}; "
                 "font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; "
@@ -153,7 +154,7 @@ class PluginRow(QFrame):
             return None  # Sin botón si ya está instalado
         if self.license_data and self.license_data.get("is_licensed"):
             btn = QPushButton(build_nav_icon("download", c['accent'], QSize(14, 14)), "")
-            btn.setToolTip("Instalar")
+            btn.setToolTip(tr("Instalar"))
             btn.setFixedHeight(26)
             btn.setFixedWidth(34)
             btn.setStyleSheet(f"""
@@ -168,7 +169,7 @@ class PluginRow(QFrame):
             return btn
         if self.plugin_data.get("price", 0) > 0:
             btn = QPushButton(build_nav_icon("unlock", c['success'], QSize(14, 14)), "")
-            btn.setToolTip("Suscribir")
+            btn.setToolTip(tr("Suscribir"))
             btn.setFixedHeight(26)
             btn.setFixedWidth(34)
             btn.setStyleSheet(f"""
@@ -239,7 +240,7 @@ class PluginsPanelV2(BasePanel):
                 self.backend.login_successful.connect(self.on_login)
                 self.backend.plugin_downloaded.connect(self.on_plugin_downloaded)
         except ImportError:
-            logger.error("No se pudo importar backend_integration")
+            logger.error(tr("No se pudo importar backend_integration"))
             self.backend = None
         # Cargar datos si ya está autenticado
         if self.backend and self.backend.is_authenticated():
@@ -251,7 +252,7 @@ class PluginsPanelV2(BasePanel):
     def get_tab_definitions(self):
         """Definir pestañas del panel"""
         return [
-            (self.create_main_tab, "store", "Mis Plugins")
+            (self.create_main_tab, "store", tr("Mis Plugins"))
         ]
     def create_main_tab(self):
         """Crear pestaña principal — lista de plugins en filas."""
@@ -269,7 +270,7 @@ class PluginsPanelV2(BasePanel):
         toolbar_layout.setContentsMargins(16, 0, 12, 0)
         toolbar.setFixedHeight(40)
 
-        title_label = QLabel("PLUGINS")
+        title_label = QLabel(tr("PLUGINS"))
         title_label.setStyleSheet(
             "QWidget { font-size: 11px; font-weight: 600; letter-spacing: 0.8px; "
             "color: #A0A0A0; background: transparent; }"
@@ -279,7 +280,7 @@ class PluginsPanelV2(BasePanel):
 
         refresh_btn = QPushButton(build_nav_icon("refresh", "#A0A0A0", QSize(16, 16)), "")
         refresh_btn.setFixedSize(28, 28)
-        refresh_btn.setToolTip("Actualizar lista de plugins")
+        refresh_btn.setToolTip(tr("Actualizar lista de plugins"))
         refresh_btn.setCursor(Qt.PointingHandCursor)
         refresh_btn.clicked.connect(self.load_data)
         refresh_btn.setStyleSheet("""
@@ -322,13 +323,13 @@ class PluginsPanelV2(BasePanel):
         sb_layout = QHBoxLayout(status_bar)
         sb_layout.setContentsMargins(16, 0, 12, 0)
 
-        self.status_label = QLabel("Cargando plugins...")
+        self.status_label = QLabel(tr("Cargando plugins..."))
         self.status_label.setStyleSheet("QWidget { color: #606060; font-size: 11px; background: transparent; }")
         sb_layout.addWidget(self.status_label)
         sb_layout.addStretch()
 
         dashboard_btn = QPushButton(build_nav_icon("ide_external_link", "#4B9EFF", QSize(14, 14)), "")
-        dashboard_btn.setToolTip("Dashboard")
+        dashboard_btn.setToolTip(tr("Dashboard"))
         dashboard_btn.setFixedSize(28, 28)
         dashboard_btn.setCursor(Qt.PointingHandCursor)
         dashboard_btn.clicked.connect(self.open_dashboard)
@@ -345,11 +346,11 @@ class PluginsPanelV2(BasePanel):
     def load_data(self):
         """Cargar datos de plugins y licencias"""
         if not self.backend or not self.backend.is_authenticated():
-            self.status_label.setText("Por favor, inicia sesión para ver tus plugins")
+            self.status_label.setText(tr("Por favor, inicia sesión para ver tus plugins"))
             self._show_login_message()
             return
         try:
-            self.status_label.setText("Cargando plugins y licencias...")
+            self.status_label.setText(tr("Cargando plugins y licencias..."))
 
             # Refrescar licencias
             self.backend.refresh_licenses()
@@ -376,17 +377,15 @@ class PluginsPanelV2(BasePanel):
             installed_count = len(self.installed_plugins)
 
             self.status_label.setText(
-                f"{len(self.plugins)} plugins disponibles | "
-                f"{licensed_count} licencias activas | "
-                f"{installed_count} instalados"
+                tr("{count} plugins disponibles | {licensed_count} licencias activas | {installed_count} instalados", count=len(self.plugins), licensed_count=licensed_count, installed_count=installed_count)
             )
 
             logger.info(f"Panel loaded: {len(self.plugins)} plugins, {licensed_count} licenses")
         except Exception as e:
-            logger.error(f"Error loading plugin data: {e}")
+            logger.error(tr("Error loading plugin data: {e}", e=e))
             import traceback
             traceback.print_exc()
-            self.status_label.setText(f"Error al cargar plugins: {str(e)}")
+            self.status_label.setText(tr("Error al cargar plugins: {value}", value=str(e)))
             # QMessageBox.critical(self, "Error", f"Error al cargar plugins:\n{str(e)}")
     def _populate_plugins(self):
         """Poblar la lista de plugins"""
@@ -472,28 +471,27 @@ class PluginsPanelV2(BasePanel):
                 child.widget().deleteLater()
         self._show_empty_state(
             "lock",
-            "Inicia sesión para ver tus plugins y suscripciones."
+            tr("Inicia sesión para ver tus plugins y suscripciones.")
         )
     def _show_empty_message(self):
         """Mostrar mensaje cuando no hay plugins."""
-        self._show_empty_state("plugins", "No hay plugins disponibles.")
+        self._show_empty_state("plugins", tr("No hay plugins disponibles."))
     def install_plugin(self, plugin_id: str):
         """Instalar un plugin"""
         logger.info(f"Installing plugin: {plugin_id}")
 
         if not self.backend or not self.backend.is_authenticated():
-            QMessageBox.warning(self, "No Autenticado", "Debes iniciar sesión para instalar plugins")
+            QMessageBox.warning(self, tr("No Autenticado"), tr("Debes iniciar sesión para instalar plugins"))
             return
         # Verificar licencia
         if plugin_id not in self.licenses or not self.licenses[plugin_id].is_licensed:
-            QMessageBox.warning(self, "Licencia Requerida", 
-                              f"Necesitas una licencia activa para instalar este plugin.\n\n"
-                              f"Haz clic en 'Suscribirse' para obtener acceso.")
+            QMessageBox.warning(self, tr("Licencia Requerida"), 
+                              tr("Necesitas una licencia activa para instalar este plugin.\n\nHaz clic en 'Suscribirse' para obtener acceso."))
             return
         # Mostrar progreso
         progress = QMessageBox(self)
-        progress.setWindowTitle("Instalando Plugin")
-        progress.setText(f"Descargando e instalando {plugin_id}...")
+        progress.setWindowTitle(tr("Instalando Plugin"))
+        progress.setText(tr("Descargando e instalando {plugin_id}...", plugin_id=plugin_id))
         progress.setStandardButtons(QMessageBox.NoButton)
         progress.show()
 
@@ -504,18 +502,17 @@ class PluginsPanelV2(BasePanel):
             progress.close()
 
             if response.success:
-                QMessageBox.information(self, "Plugin Instalado",
-                                      f"El plugin se ha instalado correctamente.\n\n"
-                                      f"Reinicia el navegador para comenzar a usarlo.")
+                QMessageBox.information(self, tr("Plugin Instalado"),
+                                      tr("El plugin se ha instalado correctamente.\n\nReinicia el navegador para comenzar a usarlo."))
                 # Recargar datos
                 self.load_data()
             else:
-                QMessageBox.critical(self, "Error",
-                                   f"No se pudo instalar el plugin:\n{response.message}")
+                QMessageBox.critical(self, tr("Error"),
+                                   tr("No se pudo instalar el plugin:\n{message}", message=response.message))
         except Exception as e:
             progress.close()
-            logger.error(f"Error installing plugin: {e}")
-            QMessageBox.critical(self, "Error", f"Error al instalar:\n{str(e)}")
+            logger.error(tr("Error installing plugin: {e}", e=e))
+            QMessageBox.critical(self, tr("Error"), tr("Error al instalar:\n{value}", value=str(e)))
     def purchase_plugin(self, plugin_id: str):
         """Iniciar proceso de compra de plugin"""
         logger.info(f"Purchase requested for: {plugin_id}")
@@ -532,18 +529,16 @@ class PluginsPanelV2(BasePanel):
         dashboard_url = get_config().get_dashboard_url()
 
         msg = QMessageBox(self)
-        msg.setWindowTitle("Suscripción a Plugin")
+        msg.setWindowTitle(tr("Suscripción a Plugin"))
         # Usar colores seguros o texto
-        msg.setText(f"<h3>{plugin.name}</h3>")
+        msg.setText(tr("<h3>{name}</h3>", name=plugin.name))
         msg.setInformativeText(
-            f"<p><b>Precio:</b> ${plugin.price:.2f}/{plugin.billing_cycle}</p>"
-            f"<p><b>Incluye:</b> {plugin.trial_days} días de prueba gratis</p>"
-            f"<p>Para suscribirte, ve al dashboard web y completa el proceso de pago.</p>"
+            tr("<p><b>Precio:</b> ${price:.2f}/{billing_cycle}</p><p><b>Incluye:</b> {trial_days} días de prueba gratis</p><p>Para suscribirte, ve al dashboard web y completa el proceso de pago.</p>", price=plugin.price, billing_cycle=plugin.billing_cycle, trial_days=plugin.trial_days)
         )
         msg.setTextFormat(Qt.RichText)
 
-        open_btn = msg.addButton("Abrir Dashboard", QMessageBox.ActionRole)
-        cancel_btn = msg.addButton("Cancelar", QMessageBox.RejectRole)
+        open_btn = msg.addButton(tr("Abrir Dashboard"), QMessageBox.ActionRole)
+        cancel_btn = msg.addButton(tr("Cancelar"), QMessageBox.RejectRole)
 
         msg.exec()
 
@@ -551,11 +546,8 @@ class PluginsPanelV2(BasePanel):
             webbrowser.open(dashboard_url)
 
             # Mostrar instrucciones adicionales
-            QMessageBox.information(self, "Instrucciones", 
-                                  f"1. Completa la suscripción en el dashboard web\n"
-                                  f"2. Vuelve a este panel\n"
-                                  f"3. Haz clic en 'Actualizar' para refrescar tus licencias\n"
-                                  f"4. El botón 'Instalar' se habilitará automáticamente")
+            QMessageBox.information(self, tr("Instrucciones"), 
+                                  tr("1. Completa la suscripción en el dashboard web\n2. Vuelve a este panel\n3. Haz clic en 'Actualizar' para refrescar tus licencias\n4. El botón 'Instalar' se habilitará automáticamente"))
     def open_dashboard(self):
         """Abrir dashboard web"""
         webbrowser.open(get_config().get_dashboard_url())

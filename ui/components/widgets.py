@@ -6,6 +6,7 @@ Filosofía: minimalismo funcional. Cada widget tiene un propósito claro
 y feedback inmediato pero discreto.
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QGraphicsOpacityEffect, QWidget, QHBoxLayout,
     QLabel, QVBoxLayout, QSizePolicy, QApplication,
@@ -64,7 +65,7 @@ class ExpandableUrlBar(QLineEdit):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setPlaceholderText("Buscar o escribir URL...")
+        self.setPlaceholderText(tr("Buscar o escribir URL..."))
 
         self.expansion_enabled = False
         self._expand_anim: QPropertyAnimation | None = None

@@ -13,6 +13,7 @@ Manejo avanzado de autenticación con validación agresiva y sincronización con
 """
 
 
+from i18n import tr
 import json
 
 
@@ -299,12 +300,12 @@ class AuthManager(QObject):
         """
 
         if not auth_rejected:
-            logger.warning("Backend session restore pending (network/server error), keeping local session")
+            logger.warning(tr("Backend session restore pending (network/server error), keeping local session"))
 
             return
         if not self.auth_state.is_authenticated and not self.settings.value("user_credentials"):
             return
-        logger.warning("Saved session rejected by backend, clearing local authentication state")
+        logger.warning(tr("Saved session rejected by backend, clearing local authentication state"))
 
         self.validation_timer.stop()
 
@@ -317,7 +318,7 @@ class AuthManager(QObject):
     def _on_backend_login_failed(self, error_message):
         """Manejador de login fallido del backend"""
 
-        logger.warning(f"Backend login failed: {error_message}")
+        logger.warning(tr("Backend login failed: {error_message}", error_message=error_message))
 
         self.login_failed.emit(error_message)
     def _on_connection_status_changed(self, is_connected):
@@ -328,7 +329,7 @@ class AuthManager(QObject):
         self.connection_status_changed.emit(is_connected)
 
         if not is_connected and self.auth_state.is_authenticated:
-            logger.warning("Backend disconnected, but user still authenticated locally")
+            logger.warning(tr("Backend disconnected, but user still authenticated locally"))
     def _check_connection(self):
         """Verificar conectividad con el backend"""
 
@@ -337,7 +338,7 @@ class AuthManager(QObject):
 
             pass
         else:
-            logger.warning("Backend integration not available")
+            logger.warning(tr("Backend integration not available"))
     def _update_auth_state(self, is_authenticated: bool, user=None, emit_signal: bool = True):
         """Actualizar estado de autenticación (solo desde el hilo de la GUI)"""
 
@@ -449,7 +450,7 @@ class AuthManager(QObject):
                     # con el refresh token y emite login_successful si sigue válida.
                     logger.info("[AUTH] Access token expired, backend will refresh the saved session")
         except Exception as e:
-            logger.error(f"[AUTH] Error loading saved credentials: {e}")
+            logger.error(tr("[AUTH] Error loading saved credentials: {e}", e=e))
 
             self._clear_saved_credentials()
     def _save_credentials(self):
@@ -470,7 +471,7 @@ class AuthManager(QObject):
 
                 print("[AUTH] Credentials saved (encrypted)")
         except Exception as e:
-            print(f"[AUTH] Error saving credentials: {e}")
+            print(tr("[AUTH] Error saving credentials: {e}", e=e))
     def _clear_saved_credentials(self):
         """Clear saved credentials"""
 
@@ -499,7 +500,7 @@ class AuthManager(QObject):
 
                 print("[AUTH] Loaded plugin licenses")
         except Exception as e:
-            print(f"[AUTH] Error loading plugin licenses: {e}")
+            print(tr("[AUTH] Error loading plugin licenses: {e}", e=e))
 
             self.auth_state.plugin_licenses = {}
     def _save_plugin_licenses(self):
@@ -520,7 +521,7 @@ class AuthManager(QObject):
 
             print("[AUTH] Plugin licenses saved")
         except Exception as e:
-            print(f"[AUTH] Error saving plugin licenses: {e}")
+            print(tr("[AUTH] Error saving plugin licenses: {e}", e=e))
     def login(self, email: str, password: str) -> AuthResult:
         """Login del usuario con validación agresiva"""
 
@@ -552,7 +553,7 @@ class AuthManager(QObject):
         if not self.backend:
             return AuthResult(False, AuthError.NETWORK_ERROR, "Backend integration not available")
         if not self.backend.is_connected:
-            return AuthResult(False, AuthError.NETWORK_ERROR, "No connection to backend server")
+            return AuthResult(False, AuthError.NETWORK_ERROR, tr("No connection to backend server"))
         # Realizar login a través del backend
 
         try:
@@ -577,7 +578,7 @@ class AuthManager(QObject):
                 else:
                     return AuthResult(False, AuthError.NETWORK_ERROR, response.message)
         except Exception as e:
-            logger.error(f"Login error: {e}")
+            logger.error(tr("Login error: {e}", e=e))
 
             return AuthResult(False, AuthError.NETWORK_ERROR, f"Login failed: {e}")
     def logout(self):
@@ -599,7 +600,7 @@ class AuthManager(QObject):
 
                 logger.info("Backend logout completed")
             except Exception as e:
-                logger.warning(f"Error during backend logout: {e}")
+                logger.warning(tr("Error during backend logout: {e}", e=e))
         # Limpiar estado local.
         # IMPORTANTE: vaciar licencias y credenciales ANTES de _update_auth_state,
         # porque ese método emite auth_state_changed y no debe haber ningún
@@ -689,11 +690,11 @@ class AuthManager(QObject):
 
                 if was_active != is_active:
                     if not is_active:
-                        logger.warning(f"Licencia revocada o inactiva: {plugin_id}")
+                        logger.warning(tr("Licencia revocada o inactiva: {plugin_id}", plugin_id=plugin_id))
                     self.plugin_license_changed.emit(plugin_id, is_active)
             logger.info(f"Loaded {len(self.auth_state.plugin_licenses)} plugin licenses from backend")
         except Exception as e:
-            logger.error(f"Error loading entitlements: {e}")
+            logger.error(tr("Error loading entitlements: {e}", e=e))
     def _validate_licenses(self):
         """Validar licencias actuales con el servidor (validación agresiva, con
         tolerancia a fallos transitorios: no se cierra sesión ante un único
@@ -707,14 +708,14 @@ class AuthManager(QObject):
             # Verificar conectividad del backend
 
             if not self.backend or not self.backend.is_connected:
-                logger.warning("Backend not connected during license validation, omitiendo este ciclo")
+                logger.warning(tr("Backend not connected during license validation, omitiendo este ciclo"))
 
                 return
             # D-005: sesión guardada pendiente de restaurar por un fallo de
             # red; no cuenta como fallo de autenticación (el backend reintenta
             # al recuperar la conexión).
             if getattr(self.backend, "is_restore_pending", None) and self.backend.is_restore_pending():
-                logger.warning("Backend session restore pending, omitiendo este ciclo de validación")
+                logger.warning(tr("Backend session restore pending, omitiendo este ciclo de validación"))
 
                 return
             # Verificar autenticación del backend
@@ -723,12 +724,11 @@ class AuthManager(QObject):
                 self._validation_failure_count += 1
 
                 logger.warning(
-                    f"Backend authentication check failed "
-                    f"({self._validation_failure_count}/{self._max_validation_failures})"
+                    tr("Backend authentication check failed ({validation_failure_count}/{max_validation_failures})", validation_failure_count=self._validation_failure_count, max_validation_failures=self._max_validation_failures)
                 )
 
                 if self._validation_failure_count >= self._max_validation_failures:
-                    logger.warning("Backend authentication lost tras varios intentos consecutivos, cerrando sesión")
+                    logger.warning(tr("Backend authentication lost tras varios intentos consecutivos, cerrando sesión"))
 
                     self.logout()
                 return
@@ -749,33 +749,32 @@ class AuthManager(QObject):
             self._validation_failure_count += 1
 
             logger.error(
-                f"License validation error "
-                f"({self._validation_failure_count}/{self._max_validation_failures}): {e}"
+                tr("License validation error ({validation_failure_count}/{max_validation_failures}): {e}", validation_failure_count=self._validation_failure_count, max_validation_failures=self._max_validation_failures, e=e)
             )
 
             # Solo forzar logout tras varios fallos consecutivos, no ante un
             # único error transitorio (timeout, hiccup del backend, etc.)
             if self._validation_failure_count >= self._max_validation_failures:
-                logger.error("Fallos repetidos en validación de licencias, cerrando sesión por seguridad")
+                logger.error(tr("Fallos repetidos en validación de licencias, cerrando sesión por seguridad"))
 
                 self.logout()
     def is_plugin_licensed(self, plugin_id: str) -> bool:
         """Verificar si un plugin está licenciado (validación agresiva)"""
 
         if not self.auth_state.is_authenticated:
-            logger.warning(f"Plugin {plugin_id} access denied: User not authenticated")
+            logger.warning(tr("Plugin {plugin_id} access denied: User not authenticated", plugin_id=plugin_id))
 
             return False
         # Verificar conectividad del backend
 
         if not self.backend or not self.backend.is_connected:
-            logger.warning(f"Plugin {plugin_id} access denied: Backend not connected")
+            logger.warning(tr("Plugin {plugin_id} access denied: Backend not connected", plugin_id=plugin_id))
 
             return False
         # Verificar autenticación del backend
 
         if not self.backend.is_authenticated():
-            logger.warning(f"Plugin {plugin_id} access denied: Backend authentication lost")
+            logger.warning(tr("Plugin {plugin_id} access denied: Backend authentication lost", plugin_id=plugin_id))
 
             # Solo cerrar sesión si el backend ya la descartó (refresh rechazado);
             # ante un fallo de red al refrescar se deniega sin destruir la sesión
@@ -794,7 +793,7 @@ class AuthManager(QObject):
         # de que llegue esa lista. Antes un "no" del backend se podía saltar
         # editando la caché.
         if getattr(self.backend, "_licenses_loaded", False):
-            logger.warning(f"Plugin {plugin_id} access denied by backend")
+            logger.warning(tr("Plugin {plugin_id} access denied by backend", plugin_id=plugin_id))
 
             return False
         # Verificar cache local como fallback
@@ -811,19 +810,19 @@ class AuthManager(QObject):
             # Verificar si la licencia está activa
 
             if not license_info.is_active:
-                logger.warning(f"Plugin {plugin_id} access denied: License not active")
+                logger.warning(tr("Plugin {plugin_id} access denied: License not active", plugin_id=plugin_id))
 
                 return False
             # Verificar si la licencia expiró
 
             if license_info.expires_at and license_info.expires_at <= time.time():
-                logger.warning(f"Plugin {plugin_id} access denied: License expired")
+                logger.warning(tr("Plugin {plugin_id} access denied: License expired", plugin_id=plugin_id))
 
                 return False
             logger.info(f"Plugin {plugin_id} access granted from cache")
 
             return True
-        logger.warning(f"Plugin {plugin_id} access denied: No license found in cache")
+        logger.warning(tr("Plugin {plugin_id} access denied: No license found in cache", plugin_id=plugin_id))
 
         return False
     def get_plugin_license(self, plugin_id: str) -> Optional[PluginLicense]:

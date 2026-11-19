@@ -1,3 +1,4 @@
+from i18n import tr
 from PySide6.QtCore import QUrl
 
 
@@ -33,14 +34,14 @@ class NavigationManager:
         """Get the current active QWebEngineView widget or None if not available"""
 
         if not self.tab_manager or not self.tab_manager.tabs:
-            print("Error: No tab manager or tabs available")
+            print(tr("Error: No tab manager or tabs available"))
 
             return None
         current_widget = self.tab_manager.tabs.currentWidget()
 
         if isinstance(current_widget, QWebEngineView):
             return current_widget
-        print("Error: Active tab is not a QWebEngineView.")
+        print(tr("Error: Active tab is not a QWebEngineView."))
 
         return None
     def navigate_back(self):
@@ -69,7 +70,7 @@ class NavigationManager:
 
         try:
             if not isinstance(url, str) or not url.strip():
-                print("Error: Empty URL or not a string")
+                print(tr("Error: Empty URL or not a string"))
 
                 return
             # Use format_url for consistent URL formatting
@@ -79,7 +80,7 @@ class NavigationManager:
             qurl = QUrl(formatted_url)
 
             if not qurl.isValid():
-                print(f"Error: Invalid URL {formatted_url}")
+                print(tr("Error: Invalid URL {formatted_url}", formatted_url=formatted_url))
 
                 return
             current_widget = self._get_current_widget()
@@ -89,9 +90,9 @@ class NavigationManager:
 
                 print(f"Successful navigation to: {formatted_url}")
             else:
-                print("Error: No active tab available")
+                print(tr("Error: No active tab available"))
         except Exception as e:
-            print(f"Unexpected error trying to navigate to URL: {e}")
+            print(tr("Unexpected error trying to navigate to URL: {e}", e=e))
     def truncate_tab_title(self, title, max_length=15):
         """Truncate long tab titles with ellipsis"""
 
@@ -103,7 +104,7 @@ class NavigationManager:
 
         try:
             if not browser or not hasattr(browser, 'page'):
-                print("Error: Invalid browser for configuring downloads")
+                print(tr("Error: Invalid browser for configuring downloads"))
 
                 return
             profile = browser.page().profile()
@@ -116,4 +117,4 @@ class NavigationManager:
 
             print("Downloads configured correctly.")
         except Exception as e:
-            print(f"Error configuring downloads: {e}")
+            print(tr("Error configuring downloads: {e}", e=e))

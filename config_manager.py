@@ -4,6 +4,7 @@ Sistema de Gestión de Configuración Centralizada para Katphi Browser
 Maneja la carga y acceso a configuraciones desde config.yaml
 """
 
+from i18n import tr
 import yaml
 import os
 import logging
@@ -118,7 +119,7 @@ class ConfigManager:
                 return path
         # Si no se encuentra, usar el del directorio del script
         default_path = Path(__file__).parent / "config.yaml"
-        logger.warning(f"Config file not found, using default: {default_path}")
+        logger.warning(tr("Config file not found, using default: {default_path}", default_path=default_path))
         return default_path
     def load_config(self):
         """Cargar configuración desde archivo YAML"""
@@ -128,11 +129,11 @@ class ConfigManager:
                 # plantilla pública que viaja con el código.
                 example = Path(__file__).parent / "config.example.yaml"
                 if not example.exists():
-                    logger.warning(f"Config file not found: {self.config_file}, usando valores por defecto")
+                    logger.warning(tr("Config file not found: {config_file}, usando valores por defecto", config_file=self.config_file))
                     self._config = self._get_default_config()
                     return
                 # Se lee la plantilla, pero los cambios se guardan en config.yaml.
-                logger.info(f"config.yaml no encontrado, usando {example}")
+                logger.info(tr("config.yaml no encontrado, usando {example}", example=example))
                 source = example
             else:
                 source = self.config_file
@@ -141,7 +142,7 @@ class ConfigManager:
             # Un YAML vacío devuelve None y uno mal formado puede devolver una
             # lista o un escalar: se ignora y se parte de los valores por defecto.
             if not isinstance(loaded, dict):
-                logger.warning(f"{source} vacío o sin formato de diccionario, usando valores por defecto")
+                logger.warning(tr("{source} vacío o sin formato de diccionario, usando valores por defecto", source=source))
                 loaded = {}
             # El secret_key por defecto sale de JWT_SECRET: no debe acabar escrito
             # en config.yaml por persist_config si el fichero no lo traía.
@@ -154,7 +155,7 @@ class ConfigManager:
 
             logger.info("Configuration loaded successfully")
         except Exception as e:
-            logger.error(f"Error loading config: {e}")
+            logger.error(tr("Error loading config: {e}", e=e))
             self._config = self._get_default_config()
     @staticmethod
     def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -205,7 +206,7 @@ class ConfigManager:
             },
             'frontend': {
                 'url': 'https://katphi.com',
-                'registration_url': 'https://katphi.com/auth/registro.html',
+                'registration_url': tr('https://katphi.com/auth/registro.html'),
                 'login_url': 'https://katphi.com/auth/login.html',
                 'dashboard_url': 'https://katphi.com/app/dashboard.html'
             },
@@ -454,11 +455,11 @@ class ConfigManager:
                 raise
             logger.info("Configuration persisted to %s", self.config_file)
         except Exception as e:
-            logger.error("Error persisting config: %s", e)
+            logger.error(tr("Error persisting config: %s"), e)
     def print_config(self):
         """Imprimir configuración actual (para debugging)"""
         print("=" * 60)
-        print("KATPHI BROWSER - CONFIGURACIÓN ACTUAL")
+        print(tr("KATPHI BROWSER - CONFIGURACIÓN ACTUAL"))
         print("=" * 60)
         print(f"Backend URL: {self.get_backend_url()}")
         print(f"Frontend URL: {self.get_frontend_url()}")

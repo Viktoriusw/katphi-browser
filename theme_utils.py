@@ -10,6 +10,7 @@ Theme Utils - Utilidades para migrar colores hardcodeados al sistema de temas
 """
 
 
+from i18n import tr
 try:
     from ui.core.theme_engine import get_color, get_font, get_spacing, get_border
 except ImportError:

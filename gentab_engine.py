@@ -6,6 +6,7 @@ Inspirado en Google Disco GenTabs: extrae contexto de todas las pestañas abiert
 lo envía a un LLM y genera aplicaciones web interactivas personalizadas.
 """
 
+from i18n import tr
 import html as _html_escape
 import json
 import re
@@ -353,8 +354,7 @@ class GenTabWorker(QThread):
             user_prompt = build_user(context_text)
             prompt_tokens = self._estimate_tokens(system_prompt) + self._estimate_tokens(user_prompt)
         self.progress.emit(
-            f"Contexto: {len(context_text)} chars de {len(self.tab_contexts)} pestañas "
-            f"(ventana: {self._model_ctx_window} tokens)"
+            tr("Contexto: {count} chars de {count2} pestañas (ventana: {model_ctx_window} tokens)", count=len(context_text), count2=len(self.tab_contexts), model_ctx_window=self._model_ctx_window)
         )
         max_tokens = max(min_output,
                          min(desired_output, self._model_ctx_window - prompt_tokens - self._OUTPUT_RESERVE_TOKENS))
@@ -371,13 +371,13 @@ class GenTabWorker(QThread):
             title = ""
             if fmt == gentab_formats.FORMAT_LINKS:
                 # Directorio de enlaces: datos reales de las páginas, sin modelo
-                model_name = "sin IA"
+                model_name = tr("sin IA")
                 data = gentab_formats.links_data(self.tab_contexts)
                 if data:
                     html = gentab_formats.build_page(fmt, data, self._sources())
                     title = data["title"]
                 else:
-                    self.progress.emit("Las pestañas no tienen enlaces. Construyendo resumen local.")
+                    self.progress.emit(tr("Las pestañas no tienen enlaces. Construyendo resumen local."))
                     html = self._build_local_summary_html()
             else:
                 client = LLMClient(self.llm_config)
@@ -417,14 +417,14 @@ class GenTabWorker(QThread):
         except requests.exceptions.ConnectionError:
             from net_proxy import is_tor_active
             if is_tor_active():
-                self.error.emit("No se pudo conectar con el proveedor de IA a través de Tor. "
-                                "Comprueba que Tor está conectado.")
+                self.error.emit(tr("No se pudo conectar con el proveedor de IA a través de Tor. "
+                                "Comprueba que Tor está conectado."))
             else:
-                self.error.emit("No se pudo conectar al servidor LLM. Verifica que LM Studio u Ollama esté ejecutándose.")
+                self.error.emit(tr("No se pudo conectar al servidor LLM. Verifica que LM Studio u Ollama esté ejecutándose."))
         except requests.exceptions.Timeout:
-            self.error.emit("Timeout: el servidor tardó demasiado en responder.")
+            self.error.emit(tr("Timeout: el servidor tardó demasiado en responder."))
         except Exception as e:
-            self.error.emit(f"Error inesperado: {str(e)}")
+            self.error.emit(tr("Error inesperado: {value}", value=str(e)))
 
     def _generate_from_template(self, client, fmt):
         """El modelo extrae los datos en JSON y la plantilla del formato monta la página."""
@@ -438,12 +438,12 @@ class GenTabWorker(QThread):
             self._MIN_OUTPUT_TOKENS_JSON)
         messages = [{"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}]
-        self.progress.emit(f"Extrayendo datos (max {max_tokens} tokens de salida)...")
+        self.progress.emit(tr("Extrayendo datos (max {max_tokens} tokens de salida)...", max_tokens=max_tokens))
         raw = client.chat(messages, max_tokens=max_tokens, temperature=self.temperature)
         data = gentab_formats.normalize(fmt, gentab_formats.parse_json_object(raw), len(self.tab_contexts))
         if data is None:
             # Segundo intento más determinista: los modelos pequeños a veces rompen el JSON
-            self.progress.emit("La respuesta no tenía datos válidos. Reintentando...")
+            self.progress.emit(tr("La respuesta no tenía datos válidos. Reintentando..."))
             messages.append({"role": "assistant", "content": (raw or "")[:2000]})
             messages.append({"role": "user", "content":
                              "That was not a valid JSON object with the required fields. "
@@ -451,7 +451,7 @@ class GenTabWorker(QThread):
             raw = client.chat(messages, max_tokens=max_tokens, temperature=min(self.temperature, 0.2))
             data = gentab_formats.normalize(fmt, gentab_formats.parse_json_object(raw), len(self.tab_contexts))
         if data is None:
-            self.progress.emit("El modelo no devolvió datos utilizables. Construyendo resumen local.")
+            self.progress.emit(tr("El modelo no devolvió datos utilizables. Construyendo resumen local."))
             return self._build_local_summary_html(), raw or "", prompt_tokens, max_tokens, ""
         title = data.get("title") or gentab_formats.format_label(fmt)
         data["title"] = title
@@ -466,14 +466,14 @@ class GenTabWorker(QThread):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        self.progress.emit(f"Generando aplicación (max {max_tokens} tokens de salida)...")
+        self.progress.emit(tr("Generando aplicación (max {max_tokens} tokens de salida)...", max_tokens=max_tokens))
         raw_content = client.chat(messages, max_tokens=max_tokens, temperature=self.temperature)
         html = self._extract_html(raw_content)
         if not html:
-            html = self._build_fallback_html(raw_content or "No se pudo generar contenido.")
-            self.progress.emit("Respuesta sin HTML válido. Usando fallback de texto.")
+            html = self._build_fallback_html(raw_content or tr("No se pudo generar contenido."))
+            self.progress.emit(tr("Respuesta sin HTML válido. Usando fallback de texto."))
         if self._is_html_visually_empty(html):
-            self.progress.emit("HTML vacío. Construyendo resumen interactivo local.")
+            self.progress.emit(tr("HTML vacío. Construyendo resumen interactivo local."))
             html = self._build_local_summary_html()
         return html, raw_content, prompt_tokens, max_tokens
 
@@ -698,10 +698,10 @@ Start writing now. Output ONLY the HTML, starting with <!DOCTYPE html>."""
                     clean_lines.append(stripped)
             clean_text = " ".join(clean_lines)[:400]
             items_data.append({
-                "title": tc.title or tc.domain or "Pestaña",
+                "title": tc.title or tc.domain or tr("Pestaña"),
                 "domain": tc.domain or "",
                 "url": tc.url or "",
-                "excerpt": clean_text or "Sin contenido disponible.",
+                "excerpt": clean_text or tr("Sin contenido disponible."),
             })
         # A-011: escapar "</" para que el texto de una página no cierre el <script>
         items_json = json_for_script(items_data)
@@ -948,7 +948,7 @@ class GenTabEngine(QObject):
             ctx = TabContext(
                 index=i,
                 url=url,
-                title=title or f"Tab {i + 1}",
+                title=title or tr("Tab {value}", value=i + 1),
                 content="",
                 content_length=0,
                 domain=domain
@@ -967,13 +967,13 @@ class GenTabEngine(QObject):
                 tab_context.content_length = len(content)
                 tab_context.links = ContentExtractor.extract_links(html, tab_context.url)
             except Exception as e:
-                tab_context.content = f"[Error extracting: {e}]"
+                tab_context.content = tr("[Error extracting: {e}]", e=e)
                 tab_context.content_length = 0
             callback(tab_context)
         if hasattr(browser, 'page') and browser.page():
             browser.page().toHtml(on_html)
         else:
-            tab_context.content = "[No page available]"
+            tab_context.content = tr("[No page available]")
             callback(tab_context)
     def generate_gentab(self, server_url: str, prompt: str,
                         tab_contexts: List[TabContext],
@@ -983,11 +983,11 @@ class GenTabEngine(QObject):
                         output_format: Optional[str] = None):
         """Inicia la generación de una GenTab en un hilo de trabajo."""
         if self._worker and self._worker.isRunning():
-            self.gentab_error.emit("Ya hay una generación en curso.")
+            self.gentab_error.emit(tr("Ya hay una generación en curso."))
             return
         valid = [tc for tc in tab_contexts if tc.content and tc.content_length > 0]
         if not valid:
-            self.gentab_error.emit("No hay contenido extraído de las pestañas.")
+            self.gentab_error.emit(tr("No hay contenido extraído de las pestañas."))
             return
         # parent=self: el QThread no se destruye mientras corre; se libera en
         # QThread.finished (C-007).
@@ -1048,7 +1048,7 @@ class GenTabEngine(QObject):
                 data.append(entry)
             self.settings.setValue("history", json.dumps(data))
         except Exception as e:
-            logger.error(f"Error saving GenTab history: {e}")
+            logger.error(tr("Error saving GenTab history: {e}", e=e))
     def _load_history(self):
         try:
             raw = self.settings.value("history", "[]")
@@ -1067,5 +1067,5 @@ class GenTabEngine(QObject):
                 )
                 self.history.append(result)
         except Exception as e:
-            logger.error(f"Error loading GenTab history: {e}")
+            logger.error(tr("Error loading GenTab history: {e}", e=e))
             self.history = []

@@ -10,6 +10,7 @@ Características:
 - Predicción inteligente
 """
 
+from i18n import tr
 from PySide6.QtCore import Qt, Signal, QObject, QTimer, QStringListModel, QEvent
 from PySide6.QtWidgets import (QCompleter, QListView, QStyledItemDelegate,
                                QStyle, QApplication)
@@ -291,10 +292,10 @@ class UrlAutocompleteSystem(QObject):
         # 3. Agregar sugerencia de búsqueda
         if len(query) > 0:
             search_item = AutocompleteItem(
-                text=f"Buscar: {query}",
+                text=tr("Buscar: {query}", query=query),
                 url=query,  # Se procesará como búsqueda
                 item_type=AutocompleteItem.TYPE_SEARCH,
-                title=f"Buscar \"{query}\"",
+                title=tr("Buscar \"{query}\"", query=query),
                 visit_count=0
             )
             search_item.score = 10  # Baja prioridad
@@ -331,7 +332,7 @@ class UrlAutocompleteSystem(QObject):
                 # Limitar a 10 resultados más recientes
                 suggestions = suggestions[-10:]
         except Exception as e:
-            print(f"[Autocomplete] Error searching history: {e}")
+            print(tr("[Autocomplete] Error searching history: {e}", e=e))
         return suggestions
     def search_bookmarks(self, query):
         """Buscar en marcadores"""
@@ -365,7 +366,7 @@ class UrlAutocompleteSystem(QObject):
                     )
                     suggestions.append(item)
         except Exception as e:
-            print(f"[Autocomplete] Error searching bookmarks: {e}")
+            print(tr("[Autocomplete] Error searching bookmarks: {e}", e=e))
         return suggestions
     def on_suggestion_selected(self, text):
         """Manejar selección de sugerencia"""

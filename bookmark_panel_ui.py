@@ -14,6 +14,7 @@ Este widget reemplaza/complementa al BookmarkManager de maintag.py ofreciendo:
 
 from __future__ import annotations
 
+from i18n import tr
 import html
 import os
 from datetime import date
@@ -134,7 +135,7 @@ class AddBookmarkDialog(QDialog):
     ):
         super().__init__(parent)
         self._folders_manager = folders_manager
-        self.setWindowTitle("Guardar marcador")
+        self.setWindowTitle(tr("Guardar marcador"))
         self.setModal(True)
         self.setMinimumWidth(440)
 
@@ -142,7 +143,7 @@ class AddBookmarkDialog(QDialog):
         layout.setSpacing(8)
 
         # Título
-        layout.addWidget(QLabel("Nombre:"))
+        layout.addWidget(QLabel(tr("Nombre:")))
         self.title_edit = QLineEdit(title)
         layout.addWidget(self.title_edit)
 
@@ -153,14 +154,14 @@ class AddBookmarkDialog(QDialog):
         layout.addWidget(self.url_edit)
 
         # Carpeta destino + botón nueva carpeta
-        layout.addWidget(QLabel("Guardar en carpeta:"))
+        layout.addWidget(QLabel(tr("Guardar en carpeta:")))
         folder_row = QHBoxLayout()
         self.folder_combo = QComboBox()
         self._populate_folders(folders_manager, current_folder_id)
         folder_row.addWidget(self.folder_combo, stretch=1)
-        new_folder_btn = QPushButton("+ Nueva carpeta")
+        new_folder_btn = QPushButton(tr("+ Nueva carpeta"))
         new_folder_btn.setFixedWidth(130)
-        new_folder_btn.setToolTip("Crear una nueva carpeta y seleccionarla")
+        new_folder_btn.setToolTip(tr("Crear una nueva carpeta y seleccionarla"))
         new_folder_btn.clicked.connect(self._on_new_folder)
         folder_row.addWidget(new_folder_btn)
         layout.addLayout(folder_row)
@@ -169,9 +170,9 @@ class AddBookmarkDialog(QDialog):
         layout.addSpacing(4)
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        cancel_btn = QPushButton("Cancelar")
+        cancel_btn = QPushButton(tr("Cancelar"))
         cancel_btn.clicked.connect(self.reject)
-        save_btn = QPushButton("Guardar")
+        save_btn = QPushButton(tr("Guardar"))
         save_btn.setDefault(True)
         save_btn.clicked.connect(self.accept)
         btn_row.addWidget(cancel_btn)
@@ -182,7 +183,7 @@ class AddBookmarkDialog(QDialog):
         """Crea una nueva carpeta y la selecciona en el combo."""
         if not self._folders_manager:
             return
-        name, ok = QInputDialog.getText(self, "Nueva carpeta", "Nombre de la carpeta:")
+        name, ok = QInputDialog.getText(self, tr("Nueva carpeta"), tr("Nombre de la carpeta:"))
         if not ok or not name.strip():
             return
         try:
@@ -197,13 +198,13 @@ class AddBookmarkDialog(QDialog):
                 if idx >= 0:
                     self.folder_combo.setCurrentIndex(idx)
         except Exception as exc:
-            QMessageBox.warning(self, "Error", f"No se pudo crear la carpeta:\n{exc}")
+            QMessageBox.warning(self, tr("Error"), tr("No se pudo crear la carpeta:\n{exc}", exc=exc))
 
     def _populate_folders(self, folders_manager, current_folder_id: int):
         """Rellena el combo con todas las carpetas (árbol aplanado con sangría)."""
         self.folder_combo.clear()
         if folders_manager is None:
-            self.folder_combo.addItem("Marcadores", 1)
+            self.folder_combo.addItem(tr("Marcadores"), 1)
             return
         selected_index = 0
 
@@ -216,7 +217,7 @@ class AddBookmarkDialog(QDialog):
                     selected_index = self.folder_combo.count() - 1
                 _add(folder.id, indent + "")
 
-        self.folder_combo.addItem("Marcadores (raíz)", 1)
+        self.folder_combo.addItem(tr("Marcadores (raíz)"), 1)
         if current_folder_id == 1:
             selected_index = 0
         _add(1)
@@ -247,29 +248,29 @@ class MoveToCarpetaDialog(QDialog):
         exclude_folder_id: Optional[int] = None,
     ):
         super().__init__(parent)
-        self.setWindowTitle("Mover a…")
+        self.setWindowTitle(tr("Mover a…"))
         self.setModal(True)
         self.setMinimumWidth(300)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Selecciona la carpeta destino:"))
+        layout.addWidget(QLabel(tr("Selecciona la carpeta destino:")))
 
         self.combo = QComboBox()
         self._populate(folders_manager, exclude_folder_id)
         layout.addWidget(self.combo)
 
         btn_row = QHBoxLayout()
-        ok_btn = QPushButton("Mover")
+        ok_btn = QPushButton(tr("Mover"))
         ok_btn.setDefault(True)
         ok_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Cancelar")
+        cancel_btn = QPushButton(tr("Cancelar"))
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(ok_btn)
         btn_row.addWidget(cancel_btn)
         layout.addLayout(btn_row)
     def _populate(self, folders_manager, exclude_id: Optional[int]):
         if not folders_manager:
-            self.combo.addItem("Marcadores", 1)
+            self.combo.addItem(tr("Marcadores"), 1)
             return
         def _add(parent_id: int, indent: str = ""):
             for f in folders_manager.get_children(parent_id):
@@ -277,7 +278,7 @@ class MoveToCarpetaDialog(QDialog):
                     continue
                 self.combo.addItem(f"{indent}{f.name}", f.id)
                 _add(f.id, indent + "")
-        self.combo.addItem("Marcadores (raíz)", 1)
+        self.combo.addItem(tr("Marcadores (raíz)"), 1)
         _add(1)
     @property
     def selected_folder_id(self) -> int:
@@ -300,7 +301,7 @@ class ImportBookmarksDialog(QDialog):
         folders_manager=None,
     ):
         super().__init__(parent)
-        self.setWindowTitle("Importar marcadores")
+        self.setWindowTitle(tr("Importar marcadores"))
         self.setModal(True)
         self.setMinimumWidth(420)
         self.container_name = f"Importados {date.today().isoformat()}"
@@ -308,17 +309,16 @@ class ImportBookmarksDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
         summary = QLabel(
-            f"<b>{html.escape(file_name)}</b><br>"
-            f"{bookmark_count} marcadores en {folder_count} carpetas"
+            tr("<b>{value}</b><br>{bookmark_count} marcadores en {folder_count} carpetas", value=html.escape(file_name), bookmark_count=bookmark_count, folder_count=folder_count)
         )
         summary.setTextFormat(Qt.RichText)
         summary.setWordWrap(True)
         layout.addWidget(summary)
 
-        layout.addWidget(QLabel("Importar en:"))
+        layout.addWidget(QLabel(tr("Importar en:")))
         self.combo = QComboBox()
-        self.combo.addItem(f"Nueva carpeta «{self.container_name}»", self.NEW_FOLDER)
-        self.combo.addItem("Marcadores (raíz)", 1)
+        self.combo.addItem(tr("Nueva carpeta «{container_name}»", container_name=self.container_name), self.NEW_FOLDER)
+        self.combo.addItem(tr("Marcadores (raíz)"), 1)
         if folders_manager:
             def _add(parent_id: int, indent: str = "    "):
                 for f in folders_manager.get_children(parent_id):
@@ -327,15 +327,15 @@ class ImportBookmarksDialog(QDialog):
             _add(1)
         layout.addWidget(self.combo)
 
-        self.skip_dupes = QCheckBox("Omitir los marcadores que ya están guardados")
+        self.skip_dupes = QCheckBox(tr("Omitir los marcadores que ya están guardados"))
         self.skip_dupes.setChecked(True)
         layout.addWidget(self.skip_dupes)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        cancel_btn = QPushButton("Cancelar")
+        cancel_btn = QPushButton(tr("Cancelar"))
         cancel_btn.clicked.connect(self.reject)
-        ok_btn = QPushButton("Importar")
+        ok_btn = QPushButton(tr("Importar"))
         ok_btn.setDefault(True)
         ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(cancel_btn)
@@ -491,13 +491,13 @@ class BookmarkPanelWidget(QWidget):
         # flotante que MainWindow coloca en la esquina derecha de los paneles.
         header = QGridLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        self._title_lbl = QLabel("Marcadores")
+        self._title_lbl = QLabel(tr("Marcadores"))
         header.addWidget(self._title_lbl, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
         self._import_btn = QToolButton()
-        self._import_btn.setToolTip("Importar marcadores (HTML de Firefox, Chrome, Edge…)")
+        self._import_btn.setToolTip(tr("Importar marcadores (HTML de Firefox, Chrome, Edge…)"))
         self._import_btn.clicked.connect(self._on_import)
         self._export_btn = QToolButton()
-        self._export_btn.setToolTip("Exportar marcadores a HTML")
+        self._export_btn.setToolTip(tr("Exportar marcadores a HTML"))
         self._export_btn.clicked.connect(self._on_export)
         btn_row = QHBoxLayout()
         btn_row.setSpacing(4)
@@ -512,14 +512,14 @@ class BookmarkPanelWidget(QWidget):
 
         # — Barra de búsqueda —
         self._search_edit = QLineEdit()
-        self._search_edit.setPlaceholderText("Buscar marcadores…")
+        self._search_edit.setPlaceholderText(tr("Buscar marcadores…"))
         self._search_edit.setClearButtonEnabled(True)
         self._search_edit.textChanged.connect(self._on_search)
         root_layout.addWidget(self._search_edit)
 
         # — Árbol —
         self._tree = QTreeWidget()
-        self._tree.setHeaderLabels(["Nombre", "URL"])
+        self._tree.setHeaderLabels([tr("Nombre"), tr("URL")])
         self._tree.setColumnCount(2)
         self._tree.header().setStretchLastSection(True)
         self._tree.setAnimated(True)
@@ -540,7 +540,7 @@ class BookmarkPanelWidget(QWidget):
             self._tree.expandAll()
             self._tree.resizeColumnToContents(0)
         except Exception as e:
-            logger.error("Error recargando panel de marcadores: %s", e)
+            logger.error(tr("Error recargando panel de marcadores: %s"), e)
     def _add_node(self, parent_item: Optional[QTreeWidgetItem], node: dict):
         """Añade recursivamente carpetas y marcadores al árbol."""
         # Item de carpeta
@@ -592,7 +592,7 @@ class BookmarkPanelWidget(QWidget):
         self._tree.clear()
 
         root = QTreeWidgetItem(self._tree)
-        root.setText(0, f"Resultados ({len(results)})")
+        root.setText(0, tr("Resultados ({count})", count=len(results)))
         root.setData(0, self._ROLE_TYPE, "folder")
 
         for bm in results:
@@ -621,7 +621,7 @@ class BookmarkPanelWidget(QWidget):
     def _on_new_folder(self, parent_id: int = 1):
         """Crea una carpeta en la raíz (o en *parent_id*)."""
         name, ok = QInputDialog.getText(
-            self, "Nueva carpeta", "Nombre de la carpeta:", QLineEdit.Normal, ""
+            self, tr("Nueva carpeta"), tr("Nombre de la carpeta:"), QLineEdit.Normal, ""
         )
         if ok and name.strip():
             try:
@@ -629,10 +629,10 @@ class BookmarkPanelWidget(QWidget):
                 self.reload()
                 self.data_changed.emit()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo crear la carpeta:\n{e}")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudo crear la carpeta:\n{e}", e=e))
     def _create_subfolder(self, parent_id: int):
         name, ok = QInputDialog.getText(
-            self, "Nueva subcarpeta", "Nombre:", QLineEdit.Normal, ""
+            self, tr("Nueva subcarpeta"), tr("Nombre:"), QLineEdit.Normal, ""
         )
         if ok and name.strip():
             try:
@@ -640,23 +640,23 @@ class BookmarkPanelWidget(QWidget):
                 self.reload()
                 self.data_changed.emit()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo crear la subcarpeta:\n{e}")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudo crear la subcarpeta:\n{e}", e=e))
     def _rename_folder(self, item: QTreeWidgetItem, folder_id: int):
         old = item.text(0)
         new_name, ok = QInputDialog.getText(
-            self, "Renombrar carpeta", "Nuevo nombre:", QLineEdit.Normal, old
+            self, tr("Renombrar carpeta"), tr("Nuevo nombre:"), QLineEdit.Normal, old
         )
         if ok and new_name.strip():
             if self.fm.rename_folder(folder_id, new_name.strip()):
                 self.reload()
                 self.data_changed.emit()
             else:
-                QMessageBox.critical(self, "Error", "No se pudo renombrar la carpeta")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudo renombrar la carpeta"))
     def _delete_folder(self, folder_id: int):
         reply = QMessageBox.question(
             self,
-            "Eliminar carpeta",
-            "¿Eliminar esta carpeta y todo su contenido?",
+            tr("Eliminar carpeta"),
+            tr("¿Eliminar esta carpeta y todo su contenido?"),
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
@@ -664,7 +664,7 @@ class BookmarkPanelWidget(QWidget):
                 self.reload()
                 self.data_changed.emit()
             else:
-                QMessageBox.critical(self, "Error", "No se pudo eliminar la carpeta")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudo eliminar la carpeta"))
     def _move_folder(self, folder_id: int):
         dlg = MoveToCarpetaDialog(self, self.fm, exclude_folder_id=folder_id)
         if dlg.exec():
@@ -673,7 +673,7 @@ class BookmarkPanelWidget(QWidget):
                 self.reload()
                 self.data_changed.emit()
             else:
-                QMessageBox.critical(self, "Error", "No se pudo mover la carpeta")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudo mover la carpeta"))
     def _folder_properties(self, folder_id: int):
         if not self.fm:
             return
@@ -683,12 +683,9 @@ class BookmarkPanelWidget(QWidget):
         crumbs = self.fm.get_breadcrumb(folder_id)
         ruta = " › ".join(f.name for f in crumbs)
         msg = (
-            f"Carpeta: {folder.name}\n"
-            f"Ruta: {ruta}\n"
-            f"Subcarpetas directas: {len(children)}\n"
-            f"Marcadores directos: {len(bms)}"
+            tr("Carpeta: {name}\nRuta: {ruta}\nSubcarpetas directas: {count}\nMarcadores directos: {count2}", name=folder.name, ruta=ruta, count=len(children), count2=len(bms))
         )
-        QMessageBox.information(self, "Propiedades", msg)
+        QMessageBox.information(self, tr("Propiedades"), msg)
     # ── Acciones sobre marcadores ─────────────────────────────────────────────
 
     def _on_add_bookmark(self):
@@ -726,10 +723,10 @@ class BookmarkPanelWidget(QWidget):
                 self.reload()
                 self.data_changed.emit()
             else:
-                QMessageBox.critical(self, "Error", "No se pudo mover el marcador")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudo mover el marcador"))
     def _delete_bookmark(self, bookmark_id: int):
         reply = QMessageBox.question(
-            self, "Eliminar marcador", "¿Eliminar este marcador?",
+            self, tr("Eliminar marcador"), tr("¿Eliminar este marcador?"),
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes and self.bm:
@@ -737,28 +734,28 @@ class BookmarkPanelWidget(QWidget):
                 self.reload()
                 self.data_changed.emit()
             else:
-                QMessageBox.critical(self, "Error", "No se pudo eliminar el marcador")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudo eliminar el marcador"))
     # ── Importar / exportar ───────────────────────────────────────────────────
 
     def _on_import(self):
         """Importa un archivo HTML de marcadores de otro navegador."""
         if not self.fm:
-            QMessageBox.information(self, "Importar", "El sistema de carpetas no está disponible.")
+            QMessageBox.information(self, tr("Importar"), tr("El sistema de carpetas no está disponible."))
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Importar marcadores", os.path.expanduser("~"),
-            "Marcadores HTML (*.html *.htm);;Todos los archivos (*)",
+            self, tr("Importar marcadores"), os.path.expanduser("~"),
+            tr("Marcadores HTML (*.html *.htm);;Todos los archivos (*)"),
         )
         if not path:
             return
         try:
             root, unsupported = bookmarks_io.parse_bookmarks_html(path)
         except (OSError, ValueError) as e:
-            QMessageBox.critical(self, "Importar", f"No se pudo leer el archivo:\n{e}")
+            QMessageBox.critical(self, tr("Importar"), tr("No se pudo leer el archivo:\n{e}", e=e))
             return
         total = root.count_bookmarks()
         if total == 0:
-            QMessageBox.information(self, "Importar", "El archivo no contiene marcadores.")
+            QMessageBox.information(self, tr("Importar"), tr("El archivo no contiene marcadores."))
             return
 
         dlg = ImportBookmarksDialog(
@@ -773,30 +770,30 @@ class BookmarkPanelWidget(QWidget):
                 container_name=container, skip_duplicates=dlg.skip_dupes.isChecked(),
             )
         except Exception as e:
-            logger.error("Error importando marcadores: %s", e)
-            QMessageBox.critical(self, "Importar", f"No se pudieron importar los marcadores:\n{e}")
+            logger.error(tr("Error importando marcadores: %s"), e)
+            QMessageBox.critical(self, tr("Importar"), tr("No se pudieron importar los marcadores:\n{e}", e=e))
             return
 
         self.reload()
         self.data_changed.emit()
-        lines = [f"Marcadores importados: {res.imported}"]
+        lines = [tr("Marcadores importados: {imported}", imported=res.imported)]
         if res.folders_created:
-            lines.append(f"Carpetas creadas: {res.folders_created}")
+            lines.append(tr("Carpetas creadas: {folders_created}", folders_created=res.folders_created))
         if res.duplicates:
-            lines.append(f"Omitidos por estar ya guardados: {res.duplicates}")
+            lines.append(tr("Omitidos por estar ya guardados: {duplicates}", duplicates=res.duplicates))
         if unsupported:
-            lines.append(f"Omitidos por no ser páginas web (place:, javascript:…): {unsupported}")
-        QMessageBox.information(self, "Importar", "\n".join(lines))
+            lines.append(tr("Omitidos por no ser páginas web (place:, javascript:…): {unsupported}", unsupported=unsupported))
+        QMessageBox.information(self, tr("Importar"), "\n".join(lines))
 
     def _on_export(self):
         if not self.fm:
-            QMessageBox.information(self, "Exportar", "El sistema de carpetas no está disponible.")
+            QMessageBox.information(self, tr("Exportar"), tr("El sistema de carpetas no está disponible."))
             return
         default = os.path.join(
             os.path.expanduser("~"), f"marcadores-katphi-{date.today().isoformat()}.html"
         )
         path, _ = QFileDialog.getSaveFileName(
-            self, "Exportar marcadores", default, "HTML (*.html)"
+            self, tr("Exportar marcadores"), default, tr("HTML (*.html)")
         )
         if not path:
             return
@@ -805,10 +802,10 @@ class BookmarkPanelWidget(QWidget):
         try:
             n = bookmarks_io.export_bookmarks_html(self.fm.db_path, path)
         except Exception as e:
-            logger.error("Error exportando marcadores: %s", e)
-            QMessageBox.critical(self, "Exportar", f"No se pudieron exportar los marcadores:\n{e}")
+            logger.error(tr("Error exportando marcadores: %s"), e)
+            QMessageBox.critical(self, tr("Exportar"), tr("No se pudieron exportar los marcadores:\n{e}", e=e))
             return
-        QMessageBox.information(self, "Exportar", f"{n} marcadores exportados a:\n{path}")
+        QMessageBox.information(self, tr("Exportar"), tr("{n} marcadores exportados a:\n{path}", n=n, path=path))
     # ── Doble clic ────────────────────────────────────────────────────────────
 
     def _on_double_click(self, item: QTreeWidgetItem, _column: int):
@@ -826,17 +823,17 @@ class BookmarkPanelWidget(QWidget):
 
         if item_type == "folder":
             if item_id and item_id != 1:   # No en carpeta raíz
-                menu.addAction("Renombrar", lambda: self._rename_folder(item, item_id))
-                menu.addAction("Mover a…", lambda: self._move_folder(item_id))
-                menu.addAction("Eliminar", lambda: self._delete_folder(item_id))
+                menu.addAction(tr("Renombrar"), lambda: self._rename_folder(item, item_id))
+                menu.addAction(tr("Mover a…"), lambda: self._move_folder(item_id))
+                menu.addAction(tr("Eliminar"), lambda: self._delete_folder(item_id))
                 menu.addSeparator()
-            menu.addAction("Nueva subcarpeta", lambda: self._create_subfolder(item_id or 1))
-            menu.addAction("Propiedades", lambda: self._folder_properties(item_id or 1))
+            menu.addAction(tr("Nueva subcarpeta"), lambda: self._create_subfolder(item_id or 1))
+            menu.addAction(tr("Propiedades"), lambda: self._folder_properties(item_id or 1))
         elif item_type == "bookmark":
-            menu.addAction("Abrir", lambda: self._open_bookmark(item))
-            menu.addAction("Abrir en nueva pestaña", lambda: self._open_in_new_tab(item))
-            menu.addAction("Copiar URL", lambda: self._copy_url(item))
+            menu.addAction(tr("Abrir"), lambda: self._open_bookmark(item))
+            menu.addAction(tr("Abrir en nueva pestaña"), lambda: self._open_in_new_tab(item))
+            menu.addAction(tr("Copiar URL"), lambda: self._copy_url(item))
             menu.addSeparator()
-            menu.addAction("Mover a carpeta…", lambda: self._move_bookmark(item, item_id))
-            menu.addAction("Eliminar", lambda: self._delete_bookmark(item_id))
+            menu.addAction(tr("Mover a carpeta…"), lambda: self._move_bookmark(item, item_id))
+            menu.addAction(tr("Eliminar"), lambda: self._delete_bookmark(item_id))
         menu.exec(self._tree.mapToGlobal(position))

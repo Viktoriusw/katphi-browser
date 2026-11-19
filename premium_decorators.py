@@ -10,6 +10,7 @@ Premium Decorators - Decorators and utilities for premium plugin features
 """
 
 
+from i18n import tr
 from functools import wraps
 
 
@@ -49,9 +50,9 @@ def _no_validator_allows(plugin_id: str) -> bool:
     """Sin validador no hay forma de comprobar la licencia: se deniega el acceso
     (solo se permite en modo desarrollo desde el código fuente)."""
     if dev_mode_allowed():
-        logger.debug("Sin plugin_validator para %s — permitido en modo desarrollo", plugin_id)
+        logger.debug(tr("Sin plugin_validator para %s — permitido en modo desarrollo"), plugin_id)
         return True
-    logger.warning("Sin plugin_validator para %s — acceso premium denegado", plugin_id)
+    logger.warning(tr("Sin plugin_validator para %s — acceso premium denegado"), plugin_id)
     return False
 
 
@@ -295,11 +296,11 @@ class PremiumMixin:
 
                 if hasattr(widget_obj, 'setToolTip'):
                     if not has_access:
-                        widget_obj.setToolTip("Función premium - Requiere suscripción")
+                        widget_obj.setToolTip(tr("Función premium - Requiere suscripción"))
                     elif access_info.access_level == PluginAccessLevel.TRIAL:
-                        widget_obj.setToolTip(f"Prueba gratuita - {access_info.trial_remaining} días restantes")
+                        widget_obj.setToolTip(tr("Prueba gratuita - {trial_remaining} días restantes", trial_remaining=access_info.trial_remaining))
                     else:
-                        widget_obj.setToolTip("Función premium activa")
+                        widget_obj.setToolTip(tr("Función premium activa"))
 
 
 class PremiumButton(QWidget):
@@ -347,11 +348,11 @@ class PremiumButton(QWidget):
 
             self.button.setStyleSheet("")
         elif access_info.access_level == PluginAccessLevel.TRIAL:
-            self.button.setText(f"{self.text} (Prueba: {access_info.trial_remaining}d)")
+            self.button.setText(tr("{text_} (Prueba: {trial_remaining}d)", text_=self.text, trial_remaining=access_info.trial_remaining))
 
             self.button.setStyleSheet("QWidget { background-color: #f39c12; color: white; }")
         else:
-            self.button.setText(f"{self.text} (Premium)")
+            self.button.setText(tr("{text_} (Premium)", text_=self.text))
 
             self.button.setStyleSheet("QWidget { background-color: #e74c3c; color: white; }")
     def _on_clicked(self):

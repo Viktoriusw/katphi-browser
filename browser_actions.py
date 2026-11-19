@@ -9,6 +9,7 @@ confirmación pensada para mostrarse en el chat o leerse en voz alta.
 """
 from __future__ import annotations
 
+from i18n import tr
 import re
 import unicodedata
 from typing import Optional, Tuple
@@ -167,86 +168,86 @@ class BrowserActions:
         """Ejecuta una acción. Devuelve (ok, mensaje para el usuario)."""
         handler = getattr(self, f"_do_{action}", None)
         if handler is None:
-            return False, f"Acción desconocida: {action}"
+            return False, tr("Acción desconocida: {action}", action=action)
         try:
             return handler((arg or "").strip().lower() if action != "find" else (arg or "").strip())
         except Exception as e:  # nunca romper el chat por una acción
-            return False, f"No se pudo ejecutar la acción: {e}"
+            return False, tr("No se pudo ejecutar la acción: {e}", e=e)
 
     def _do_nav(self, arg: str) -> Tuple[bool, str]:
         browser = self.current_browser()
         if browser is None:
-            return False, "No hay ninguna pestaña abierta."
+            return False, tr("No hay ninguna pestaña abierta.")
         if arg == "back":
             if not browser.history().canGoBack():
-                return False, "No hay ninguna página anterior."
+                return False, tr("No hay ninguna página anterior.")
             browser.back()
-            return True, "Volviendo a la página anterior."
+            return True, tr("Volviendo a la página anterior.")
         if arg == "forward":
             if not browser.history().canGoForward():
-                return False, "No hay ninguna página siguiente."
+                return False, tr("No hay ninguna página siguiente.")
             browser.forward()
-            return True, "Avanzando a la página siguiente."
+            return True, tr("Avanzando a la página siguiente.")
         if arg == "reload":
             browser.reload()
-            return True, "Recargando la página."
-        return False, f"Navegación no válida: {arg}"
+            return True, tr("Recargando la página.")
+        return False, tr("Navegación no válida: {arg}", arg=arg)
 
     def _do_tab(self, arg: str) -> Tuple[bool, str]:
         tabs = self._tabs
         tm = getattr(self._main, "tab_manager", None)
         if tabs is None or tm is None:
-            return False, "No se puede acceder a las pestañas."
+            return False, tr("No se puede acceder a las pestañas.")
         count = tabs.count()
         if arg == "new":
             tm.add_new_tab(None, focus=True)
-            return True, "Pestaña nueva abierta."
+            return True, tr("Pestaña nueva abierta.")
         if arg == "close":
             if count <= 1:
-                return False, "Es la única pestaña abierta; no la cierro."
+                return False, tr("Es la única pestaña abierta; no la cierro.")
             tm.close_tab(tabs.currentIndex())
-            return True, "Pestaña cerrada."
+            return True, tr("Pestaña cerrada.")
         if arg in ("next", "prev"):
             if count <= 1:
-                return False, "Solo hay una pestaña abierta."
+                return False, tr("Solo hay una pestaña abierta.")
             step = 1 if arg == "next" else -1
             tabs.setCurrentIndex((tabs.currentIndex() + step) % count)
-            return True, f"Pestaña {tabs.currentIndex() + 1} de {count}."
+            return True, tr("Pestaña {value} de {count}.", value=tabs.currentIndex() + 1, count=count)
         n = _number(arg)
         if n is None:
-            return False, f"Pestaña no válida: {arg}"
+            return False, tr("Pestaña no válida: {arg}", arg=arg)
         if not 1 <= n <= count:
-            return False, f"No existe la pestaña {n}; hay {count} abiertas."
+            return False, tr("No existe la pestaña {n}; hay {count} abiertas.", n=n, count=count)
         tabs.setCurrentIndex(n - 1)
-        return True, f"Pestaña {n}: {tabs.tabText(n - 1) or 'sin título'}."
+        return True, tr("Pestaña {n}: {value}.", n=n, value=tabs.tabText(n - 1) or tr('sin título'))
 
     def _do_scroll(self, arg: str) -> Tuple[bool, str]:
         browser = self.current_browser()
         if browser is None or not hasattr(browser, "page"):
-            return False, "No hay ninguna página abierta."
+            return False, tr("No hay ninguna página abierta.")
         js = self.SCROLL_JS.get(arg)
         if not js:
-            return False, f"Desplazamiento no válido: {arg}"
+            return False, tr("Desplazamiento no válido: {arg}", arg=arg)
         browser.page().runJavaScript(js)
-        return True, {"down": "Bajando.", "up": "Subiendo.", "top": "Al principio de la página.",
-                      "bottom": "Al final de la página."}[arg]
+        return True, {"down": tr("Bajando."), "up": tr("Subiendo."), "top": tr("Al principio de la página."),
+                      "bottom": tr("Al final de la página.")}[arg]
 
     def _do_zoom(self, arg: str) -> Tuple[bool, str]:
         main = self._main
         method = {"in": "zoom_in", "out": "zoom_out", "reset": "zoom_reset"}.get(arg)
         if not method or not hasattr(main, method):
-            return False, f"Zoom no válido: {arg}"
+            return False, tr("Zoom no válido: {arg}", arg=arg)
         getattr(main, method)()
         browser = self.current_browser()
         level = f" ({int(browser.zoomFactor() * 100)} %)" if browser is not None and arg != "reset" else ""
-        return True, {"in": "Zoom aumentado", "out": "Zoom reducido",
-                      "reset": "Zoom al 100 %"}[arg] + level + "."
+        return True, {"in": tr("Zoom aumentado"), "out": tr("Zoom reducido"),
+                      "reset": tr("Zoom al 100 %")}[arg] + level + "."
 
     def _do_find(self, arg: str) -> Tuple[bool, str]:
         browser = self.current_browser()
         if browser is None or not hasattr(browser, "findText"):
-            return False, "No hay ninguna página abierta."
+            return False, tr("No hay ninguna página abierta.")
         browser.findText(arg)  # texto vacío = quitar el resaltado
         if not arg:
-            return True, "Búsqueda en la página quitada."
-        return True, f"Buscando «{arg}» en la página."
+            return True, tr("Búsqueda en la página quitada.")
+        return True, tr("Buscando «{arg}» en la página.", arg=arg)

@@ -6,6 +6,7 @@ Panel conversacional AI-First que permite generar aplicaciones web interactivas
 a partir del contenido de las pestañas abiertas, inspirado en Google Disco GenTabs.
 """
 
+from i18n import tr
 import html
 from datetime import datetime
 from PySide6.QtWidgets import (
@@ -65,12 +66,12 @@ class TabContextCard(QFrame):
         title = self.tab_context.title
         if len(title) > 45:
             title = title[:42] + "..."
-        self.title_label = QLabel(f"<b>{html.escape(title)}</b>")
+        self.title_label = QLabel(tr("<b>{value}</b>", value=html.escape(title)))
         self.title_label.setObjectName("cardTitle")
         info_layout.addWidget(self.title_label)
 
         domain = self.tab_context.domain
-        self.domain_label = QLabel(f"<span style='opacity:0.7'>{html.escape(domain)}</span>")
+        self.domain_label = QLabel(tr("<span style='opacity:0.7'>{value}</span>", value=html.escape(domain)))
         self.domain_label.setObjectName("cardDomain")
         info_layout.addWidget(self.domain_label)
 
@@ -82,9 +83,9 @@ class TabContextCard(QFrame):
                 label = f"{chars // 1000}k"
             else:
                 label = str(chars)
-            self.size_label = QLabel(f"{label} chars")
+            self.size_label = QLabel(tr("{label} chars", label=label))
         else:
-            self.size_label = QLabel("pendiente")
+            self.size_label = QLabel(tr("pendiente"))
         self.size_label.setObjectName("cardSize")
         layout.addWidget(self.size_label)
     def _apply_style(self):
@@ -143,11 +144,11 @@ class TabContextCard(QFrame):
     def update_content_size(self, size: int):
         self.tab_context.content_length = size
         if size > 1000:
-            self.size_label.setText(f"{size // 1000}k chars")
+            self.size_label.setText(tr("{value}k chars", value=size // 1000))
         elif size > 0:
-            self.size_label.setText(f"{size} chars")
+            self.size_label.setText(tr("{size} chars", size=size))
         else:
-            self.size_label.setText("sin datos")
+            self.size_label.setText(tr("sin datos"))
 
 
 class GenTabPanel(BasePanel):
@@ -178,7 +179,7 @@ class GenTabPanel(BasePanel):
         return [
             (self.create_main_tab, "GenTab"),
             (self.create_settings_tab, "Config"),
-            (self.create_history_tab, "Historial"),
+            (self.create_history_tab, tr("Historial")),
         ]
     def post_setup_ui(self):
         self.set_object_name("genTabPanel")
@@ -205,12 +206,12 @@ class GenTabPanel(BasePanel):
         self.status_indicator = QLabel("●")
         self.status_indicator.setObjectName("statusDot")
         title_row.addWidget(self.status_indicator)
-        self.status_label = QLabel("Listo")
+        self.status_label = QLabel(tr("Listo"))
         self.status_label.setObjectName("statusText")
         title_row.addWidget(self.status_label)
         header_layout.addLayout(title_row)
 
-        subtitle = QLabel("Genera aplicaciones interactivas desde tus pestañas abiertas")
+        subtitle = QLabel(tr("Genera aplicaciones interactivas desde tus pestañas abiertas"))
         subtitle.setObjectName("genTabSubtitle")
         header_layout.addWidget(subtitle)
 
@@ -224,16 +225,16 @@ class GenTabPanel(BasePanel):
         context_layout.setSpacing(8)
 
         ctx_header = QHBoxLayout()
-        ctx_title = QLabel("Pestañas abiertas")
+        ctx_title = QLabel(tr("Pestañas abiertas"))
         ctx_title.setObjectName("sectionTitle")
         ctx_header.addWidget(ctx_title)
         ctx_header.addStretch()
 
-        self.tab_count_label = QLabel("0 pestañas")
+        self.tab_count_label = QLabel(tr("0 pestañas"))
         self.tab_count_label.setObjectName("tabCount")
         ctx_header.addWidget(self.tab_count_label)
 
-        self.refresh_tabs_btn = QPushButton("Escanear")
+        self.refresh_tabs_btn = QPushButton(tr("Escanear"))
         self.refresh_tabs_btn.setObjectName("scanBtn")
         self.refresh_tabs_btn.clicked.connect(self.scan_tabs)
         self.refresh_tabs_btn.setCursor(Qt.PointingHandCursor)
@@ -253,7 +254,7 @@ class GenTabPanel(BasePanel):
         self.tabs_scroll.setWidget(self.tabs_container)
         context_layout.addWidget(self.tabs_scroll)
 
-        self.extract_btn = QPushButton("Extraer contenido de pestañas")
+        self.extract_btn = QPushButton(tr("Extraer contenido de pestañas"))
         self.extract_btn.setObjectName("extractBtn")
         self.extract_btn.clicked.connect(self.extract_all_content)
         self.extract_btn.setCursor(Qt.PointingHandCursor)
@@ -283,9 +284,9 @@ class GenTabPanel(BasePanel):
         self.messages_layout.setAlignment(Qt.AlignTop)
 
         welcome = self._create_system_message(
-            "Bienvenido a <b>GenTab</b> — el generador de aplicaciones interactivas.",
-            "Escanea tus pestañas, extrae su contenido y describe qué aplicación necesitas. "
-            "GenTab analizará todas las pestañas y generará una app web personalizada."
+            tr("Bienvenido a <b>GenTab</b> — el generador de aplicaciones interactivas."),
+            tr("Escanea tus pestañas, extrae su contenido y describe qué aplicación necesitas. "
+            "GenTab analizará todas las pestañas y generará una app web personalizada.")
         )
         self.messages_layout.addWidget(welcome)
         self.messages_layout.addStretch()
@@ -303,8 +304,8 @@ class GenTabPanel(BasePanel):
         self.prompt_input = QTextEdit()
         self.prompt_input.setObjectName("promptInput")
         self.prompt_input.setPlaceholderText(
-            "Describe qué aplicación quieres generar...\n"
-            "Ej: \"Compara los productos de las pestañas abiertas en una tabla interactiva\""
+            tr("Describe qué aplicación quieres generar...\n"
+            "Ej: \"Compara los productos de las pestañas abiertas en una tabla interactiva\"")
         )
         self.prompt_input.setMinimumHeight(60)
         self.prompt_input.setMaximumHeight(100)
@@ -321,7 +322,7 @@ class GenTabPanel(BasePanel):
 
         buttons_row = QHBoxLayout()
 
-        self.generate_btn = QPushButton("Generar GenTab")
+        self.generate_btn = QPushButton(tr("Generar GenTab"))
         self.generate_btn.setObjectName("generateBtn")
         self.generate_btn.clicked.connect(self.generate_gentab)
         self.generate_btn.setCursor(Qt.PointingHandCursor)
@@ -350,17 +351,17 @@ class GenTabPanel(BasePanel):
         layout.setSpacing(12)
 
         # ── Proveedor ──────────────────────────────────────────────────────────
-        provider_group = QGroupBox("Proveedor de IA")
+        provider_group = QGroupBox(tr("Proveedor de IA"))
         prov_layout = QVBoxLayout()
 
         prov_row = QHBoxLayout()
-        prov_row.addWidget(QLabel("Proveedor:"))
+        prov_row.addWidget(QLabel(tr("Proveedor:")))
         self.provider_combo = QComboBox()
-        self.provider_combo.addItem("LM Studio / Local", PROVIDER_LOCAL)
-        self.provider_combo.addItem("llmapi.ai (cloud gratuito)", PROVIDER_LLMAPI)
-        self.provider_combo.addItem("Anthropic (Claude)", PROVIDER_ANTHROPIC)
-        self.provider_combo.addItem("HuggingFace (Inference API)", PROVIDER_HUGGINGFACE)
-        self.provider_combo.addItem("Ollama (local)", PROVIDER_OLLAMA)
+        self.provider_combo.addItem(tr("LM Studio / Local"), PROVIDER_LOCAL)
+        self.provider_combo.addItem(tr("llmapi.ai (cloud gratuito)"), PROVIDER_LLMAPI)
+        self.provider_combo.addItem(tr("Anthropic (Claude)"), PROVIDER_ANTHROPIC)
+        self.provider_combo.addItem(tr("HuggingFace (Inference API)"), PROVIDER_HUGGINGFACE)
+        self.provider_combo.addItem(tr("Ollama (local)"), PROVIDER_OLLAMA)
         for pid, spec in OPENAI_COMPAT_PROVIDERS.items():
             self.provider_combo.addItem(spec["label"], pid)
         prov_row.addWidget(self.provider_combo)
@@ -370,7 +371,7 @@ class GenTabPanel(BasePanel):
         self.local_url_widget = QWidget()
         local_url_layout = QHBoxLayout(self.local_url_widget)
         local_url_layout.setContentsMargins(0, 0, 0, 0)
-        local_url_layout.addWidget(QLabel("URL servidor:"))
+        local_url_layout.addWidget(QLabel(tr("URL servidor:")))
         self.server_url_input = QLineEdit()
         self.server_url_input.setPlaceholderText("http://localhost:1234")
         self.server_url_input.textChanged.connect(self._on_url_changed)
@@ -383,7 +384,7 @@ class GenTabPanel(BasePanel):
         cloud_layout.setContentsMargins(0, 0, 0, 0)
 
         key_row = QHBoxLayout()
-        key_row.addWidget(QLabel("API Key:"))
+        key_row.addWidget(QLabel(tr("API Key:")))
         self.llmapi_key_input = QLineEdit()
         self.llmapi_key_input.setPlaceholderText("lak-...")
         self.llmapi_key_input.setEchoMode(QLineEdit.Password)
@@ -401,7 +402,7 @@ class GenTabPanel(BasePanel):
         cloud_layout.addLayout(key_row)
 
         model_row = QHBoxLayout()
-        model_row.addWidget(QLabel("Modelo:"))
+        model_row.addWidget(QLabel(tr("Modelo:")))
         self.llmapi_model_combo = QComboBox()
         for m in LLMAPI_FREE_MODELS:
             self.llmapi_model_combo.addItem(m)
@@ -409,7 +410,7 @@ class GenTabPanel(BasePanel):
         cloud_layout.addLayout(model_row)
 
         info_cloud = QLabel(
-            'Obtén tu API key gratuita en <a href="https://llmapi.ai" style="color:#818cf8;">llmapi.ai</a>'
+            tr('Obtén tu API key gratuita en <a href="https://llmapi.ai" style="color:#818cf8;">llmapi.ai</a>')
         )
         info_cloud.setOpenExternalLinks(True)
         info_cloud.setTextFormat(Qt.RichText)
@@ -424,7 +425,7 @@ class GenTabPanel(BasePanel):
         ant_layout.setSpacing(6)
 
         ant_key_row = QHBoxLayout()
-        ant_key_lbl = QLabel("API Key:")
+        ant_key_lbl = QLabel(tr("API Key:"))
         ant_key_lbl.setFixedWidth(72)
         ant_key_row.addWidget(ant_key_lbl)
         self.anthropic_key_input = QLineEdit()
@@ -444,14 +445,14 @@ class GenTabPanel(BasePanel):
         ant_layout.addLayout(ant_key_row)
 
         ant_model_row = QHBoxLayout()
-        ant_model_lbl = QLabel("Modelo:")
+        ant_model_lbl = QLabel(tr("Modelo:"))
         ant_model_lbl.setFixedWidth(72)
         ant_model_row.addWidget(ant_model_lbl)
         self.anthropic_model_combo = QComboBox()
         fill_anthropic_model_combo(self.anthropic_model_combo)
         ant_model_row.addWidget(self.anthropic_model_combo)
-        ant_refresh_btn = QPushButton("Actualizar")
-        ant_refresh_btn.setToolTip("Cargar los modelos disponibles para tu cuenta de Anthropic")
+        ant_refresh_btn = QPushButton(tr("Actualizar"))
+        ant_refresh_btn.setToolTip(tr("Cargar los modelos disponibles para tu cuenta de Anthropic"))
         ant_refresh_btn.clicked.connect(
             lambda: refresh_anthropic_models(
                 self, self.anthropic_key_input.text().strip(), self.anthropic_model_combo
@@ -467,9 +468,9 @@ class GenTabPanel(BasePanel):
         self.anthropic_model_combo.currentTextChanged.connect(self._update_anthropic_model_desc)
 
         ant_info = QLabel(
-            'Obtén tu API key en '
+            tr('Obtén tu API key en '
             '<a href="https://console.anthropic.com/settings/keys" '
-            'style="color:#818cf8;">console.anthropic.com</a>'
+            'style="color:#818cf8;">console.anthropic.com</a>')
         )
         ant_info.setOpenExternalLinks(True)
         ant_info.setTextFormat(Qt.RichText)
@@ -485,7 +486,7 @@ class GenTabPanel(BasePanel):
         hf_layout.setSpacing(6)
 
         hf_key_row = QHBoxLayout()
-        hf_key_lbl = QLabel("API Key:")
+        hf_key_lbl = QLabel(tr("API Key:"))
         hf_key_lbl.setFixedWidth(72)
         hf_key_row.addWidget(hf_key_lbl)
         self.hf_key_input = QLineEdit()
@@ -505,7 +506,7 @@ class GenTabPanel(BasePanel):
         hf_layout.addLayout(hf_key_row)
 
         hf_model_row = QHBoxLayout()
-        hf_model_lbl = QLabel("Modelo:")
+        hf_model_lbl = QLabel(tr("Modelo:"))
         hf_model_lbl.setFixedWidth(72)
         hf_model_row.addWidget(hf_model_lbl)
         self.hf_model_combo = QComboBox()
@@ -513,7 +514,7 @@ class GenTabPanel(BasePanel):
             self.hf_model_combo.addItem(hf_m)
         self.hf_model_combo.setEditable(True)
         self.hf_model_combo.setInsertPolicy(QComboBox.NoInsert)
-        self.hf_model_combo.setPlaceholderText("organización/nombre-del-modelo")
+        self.hf_model_combo.setPlaceholderText(tr("organización/nombre-del-modelo"))
         hf_model_row.addWidget(self.hf_model_combo)
         hf_layout.addLayout(hf_model_row)
 
@@ -524,10 +525,10 @@ class GenTabPanel(BasePanel):
         self.hf_model_combo.currentTextChanged.connect(self._update_hf_model_desc)
 
         hf_info = QLabel(
-            'Genera tu token en '
+            tr('Genera tu token en '
             '<a href="https://huggingface.co/settings/tokens" '
             'style="color:#818cf8;">huggingface.co/settings/tokens</a>'
-            ' (rol <em>Inference</em>)'
+            ' (rol <em>Inference</em>)')
         )
         hf_info.setOpenExternalLinks(True)
         hf_info.setTextFormat(Qt.RichText)
@@ -552,24 +553,24 @@ class GenTabPanel(BasePanel):
         ol_layout.addLayout(ol_url_row)
 
         ol_model_row = QHBoxLayout()
-        ol_model_lbl = QLabel("Modelo:")
+        ol_model_lbl = QLabel(tr("Modelo:"))
         ol_model_lbl.setFixedWidth(72)
         ol_model_row.addWidget(ol_model_lbl)
         self.ollama_model_combo = QComboBox()
         self.ollama_model_combo.setEditable(True)
         self.ollama_model_combo.setInsertPolicy(QComboBox.NoInsert)
-        self.ollama_model_combo.setPlaceholderText("vacío = primer modelo instalado")
+        self.ollama_model_combo.setPlaceholderText(tr("vacío = primer modelo instalado"))
         ol_model_row.addWidget(self.ollama_model_combo)
-        ol_refresh_btn = QPushButton("Actualizar")
-        ol_refresh_btn.setToolTip("Cargar los modelos instalados en Ollama")
+        ol_refresh_btn = QPushButton(tr("Actualizar"))
+        ol_refresh_btn.setToolTip(tr("Cargar los modelos instalados en Ollama"))
         ol_refresh_btn.clicked.connect(self._refresh_ollama_models)
         ol_model_row.addWidget(ol_refresh_btn)
         ol_layout.addLayout(ol_model_row)
 
         ol_info = QLabel(
-            'Instala Ollama desde <a href="https://ollama.com/download" '
+            tr('Instala Ollama desde <a href="https://ollama.com/download" '
             'style="color:#818cf8;">ollama.com</a> y descarga un modelo, '
-            'p. ej. <code>ollama pull llama3.2</code>'
+            'p. ej. <code>ollama pull llama3.2</code>')
         )
         ol_info.setOpenExternalLinks(True)
         ol_info.setTextFormat(Qt.RichText)
@@ -587,15 +588,15 @@ class GenTabPanel(BasePanel):
             prov_layout.addWidget(fields.widget)
 
         # ── Estado y botones ──────────────────────────────────────────────────
-        self.server_status = QLabel("Sin configurar")
+        self.server_status = QLabel(tr("Sin configurar"))
         self.server_status.setObjectName("serverStatus")
         prov_layout.addWidget(self.server_status)
 
         btn_row = QHBoxLayout()
-        test_btn = QPushButton("Probar conexión")
+        test_btn = QPushButton(tr("Probar conexión"))
         test_btn.clicked.connect(self._test_connection)
         btn_row.addWidget(test_btn)
-        save_btn = QPushButton("Guardar")
+        save_btn = QPushButton(tr("Guardar"))
         save_btn.clicked.connect(self._save_settings)
         btn_row.addWidget(save_btn)
         prov_layout.addLayout(btn_row)
@@ -604,11 +605,11 @@ class GenTabPanel(BasePanel):
         layout.addWidget(provider_group)
 
         # ── Generación ─────────────────────────────────────────────────────────
-        gen_group = QGroupBox("Generación")
+        gen_group = QGroupBox(tr("Generación"))
         gen_layout = QVBoxLayout()
 
         temp_row = QHBoxLayout()
-        temp_row.addWidget(QLabel("Temperatura (creatividad):"))
+        temp_row.addWidget(QLabel(tr("Temperatura (creatividad):")))
         self.temp_spin = QSpinBox()
         self.temp_spin.setRange(1, 15)
         self.temp_spin.setValue(7)
@@ -617,7 +618,7 @@ class GenTabPanel(BasePanel):
         gen_layout.addLayout(temp_row)
 
         tokens_row = QHBoxLayout()
-        tokens_row.addWidget(QLabel("Máx tokens:"))
+        tokens_row.addWidget(QLabel(tr("Máx tokens:")))
         self.tokens_spin = QSpinBox()
         self.tokens_spin.setRange(1000, 16384)
         self.tokens_spin.setValue(max(4000, int(self.llm_config.max_tokens)))
@@ -639,19 +640,19 @@ class GenTabPanel(BasePanel):
     _ANTHROPIC_MODEL_DESCRIPTIONS = ANTHROPIC_MODEL_DESCRIPTIONS
 
     _HUGGINGFACE_MODEL_DESCRIPTIONS = {
-        "meta-llama/Llama-3.3-70B-Instruct": "Llama 3.3 70B — el más potente de Meta, excelente en razonamiento",
-        "meta-llama/Llama-3.1-8B-Instruct": "Llama 3.1 8B — ligero y rápido, ideal para tareas sencillas",
-        "meta-llama/Llama-3.2-3B-Instruct": "Llama 3.2 3B — ultra-ligero, respuestas muy rápidas",
-        "mistralai/Mistral-7B-Instruct-v0.3": "Mistral 7B — equilibrio rendimiento/velocidad, multilingüe",
-        "mistralai/Mixtral-8x7B-Instruct-v0.1": "Mixtral 8x7B — MoE de alto rendimiento, contexto largo",
-        "mistralai/Mistral-Small-3.1-24B-Instruct-2503": "Mistral Small 3.1 24B — versión reciente, capacidades avanzadas",
-        "Qwen/Qwen2.5-72B-Instruct": "Qwen 2.5 72B — muy potente, destaca en código y matemáticas",
-        "Qwen/Qwen2.5-Coder-32B-Instruct": "Qwen 2.5 Coder 32B — especializado en programación",
-        "deepseek-ai/DeepSeek-R1": "DeepSeek R1 — razonamiento avanzado tipo o1, respuestas largas",
-        "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B": "DeepSeek R1 Distill 32B — R1 destilado, más rápido",
-        "google/gemma-2-27b-it": "Gemma 2 27B — modelo de Google, muy capaz en instrucciones",
-        "google/gemma-2-9b-it": "Gemma 2 9B — versión ligera de Gemma, rápida y eficiente",
-        "microsoft/Phi-4-mini-instruct": "Phi-4 Mini — modelo compacto de Microsoft, sorprendentemente capaz",
+        "meta-llama/Llama-3.3-70B-Instruct": tr("Llama 3.3 70B — el más potente de Meta, excelente en razonamiento"),
+        "meta-llama/Llama-3.1-8B-Instruct": tr("Llama 3.1 8B — ligero y rápido, ideal para tareas sencillas"),
+        "meta-llama/Llama-3.2-3B-Instruct": tr("Llama 3.2 3B — ultra-ligero, respuestas muy rápidas"),
+        "mistralai/Mistral-7B-Instruct-v0.3": tr("Mistral 7B — equilibrio rendimiento/velocidad, multilingüe"),
+        "mistralai/Mixtral-8x7B-Instruct-v0.1": tr("Mixtral 8x7B — MoE de alto rendimiento, contexto largo"),
+        "mistralai/Mistral-Small-3.1-24B-Instruct-2503": tr("Mistral Small 3.1 24B — versión reciente, capacidades avanzadas"),
+        "Qwen/Qwen2.5-72B-Instruct": tr("Qwen 2.5 72B — muy potente, destaca en código y matemáticas"),
+        "Qwen/Qwen2.5-Coder-32B-Instruct": tr("Qwen 2.5 Coder 32B — especializado en programación"),
+        "deepseek-ai/DeepSeek-R1": tr("DeepSeek R1 — razonamiento avanzado tipo o1, respuestas largas"),
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B": tr("DeepSeek R1 Distill 32B — R1 destilado, más rápido"),
+        "google/gemma-2-27b-it": tr("Gemma 2 27B — modelo de Google, muy capaz en instrucciones"),
+        "google/gemma-2-9b-it": tr("Gemma 2 9B — versión ligera de Gemma, rápida y eficiente"),
+        "microsoft/Phi-4-mini-instruct": tr("Phi-4 Mini — modelo compacto de Microsoft, sorprendentemente capaz"),
     }
 
     def _update_anthropic_model_desc(self, model_text: str) -> None:
@@ -732,10 +733,8 @@ class GenTabPanel(BasePanel):
         models = LLMClient(cfg).list_models()
         if not models:
             QMessageBox.warning(
-                self, "Ollama",
-                f"No se encontraron modelos en {cfg.ollama_url}.\n"
-                "Comprueba que Ollama está ejecutándose y que tienes algún modelo "
-                "descargado (ollama pull llama3.2).",
+                self, tr("Ollama"),
+                tr("No se encontraron modelos en {ollama_url}.\nComprueba que Ollama está ejecutándose y que tienes algún modelo descargado (ollama pull llama3.2).", ollama_url=cfg.ollama_url),
             )
             return
         self.ollama_model_combo.clear()
@@ -748,9 +747,9 @@ class GenTabPanel(BasePanel):
         layout.setSpacing(8)
 
         header = QHBoxLayout()
-        header.addWidget(QLabel("<b>Historial de GenTabs</b>"))
+        header.addWidget(QLabel(tr("<b>Historial de GenTabs</b>")))
         header.addStretch()
-        clear_btn = QPushButton("Limpiar")
+        clear_btn = QPushButton(tr("Limpiar"))
         clear_btn.clicked.connect(self._clear_history)
         header.addWidget(clear_btn)
         layout.addLayout(header)
@@ -769,7 +768,7 @@ class GenTabPanel(BasePanel):
     def scan_tabs(self):
         main_window = self.window()
         if not hasattr(main_window, 'tab_manager'):
-            self._add_error_message("No se puede acceder al gestor de pestañas.")
+            self._add_error_message(tr("No se puede acceder al gestor de pestañas."))
             return
         for i in reversed(range(self.tabs_list_layout.count())):
             item = self.tabs_list_layout.itemAt(i)
@@ -784,16 +783,15 @@ class GenTabPanel(BasePanel):
             self.context_cards.append(card)
             self.tabs_list_layout.insertWidget(self.tabs_list_layout.count() - 1, card)
         count = len(self.tab_contexts)
-        self.tab_count_label.setText(f"{count} pestaña{'s' if count != 1 else ''}")
+        self.tab_count_label.setText(tr("{count} pestaña{value}", count=count, value='s' if count != 1 else ''))
         self.extract_btn.setEnabled(count > 0)
 
         if count > 0:
             self._add_system_message(
-                f"Se detectaron <b>{count}</b> pestañas. "
-                "Haz clic en <b>Extraer contenido</b> para analizar su contenido."
+                tr("Se detectaron <b>{count}</b> pestañas. Haz clic en <b>Extraer contenido</b> para analizar su contenido.", count=count)
             )
         else:
-            self._add_system_message("No se encontraron pestañas con contenido web.")
+            self._add_system_message(tr("No se encontraron pestañas con contenido web."))
     def extract_all_content(self):
         if self._extracting:
             return
@@ -803,7 +801,7 @@ class GenTabPanel(BasePanel):
         selected = [tc for tc in self.tab_contexts
                     if any(c.tab_context.index == tc.index and c.selected for c in self.context_cards)]
         if not selected:
-            self._add_error_message("Selecciona al menos una pestaña para extraer.")
+            self._add_error_message(tr("Selecciona al menos una pestaña para extraer."))
             return
         self._extracting = True
         self._pending_extractions = len(selected)
@@ -811,7 +809,7 @@ class GenTabPanel(BasePanel):
         self.extract_btn.setEnabled(False)
         self.extract_btn.setText("Extrayendo...")
         self.progress_bar.show()
-        self._set_status("extracting", "Extrayendo contenido...")
+        self._set_status("extracting", tr("Extrayendo contenido..."))
         QTimer.singleShot(15000, self._handle_extraction_timeout)
 
         for tc in selected:
@@ -826,12 +824,12 @@ class GenTabPanel(BasePanel):
             return
         self._extracting = False
         self.extract_btn.setEnabled(True)
-        self.extract_btn.setText("Extraer contenido de pestañas")
+        self.extract_btn.setText(tr("Extraer contenido de pestañas"))
         self.progress_bar.hide()
         self.generate_btn.setEnabled(True)
-        self._set_status("ready", "Extracción parcial completada")
+        self._set_status("ready", tr("Extracción parcial completada"))
         self._add_system_message(
-            "Algunas pestañas tardaron demasiado. Se continuará con el contenido disponible."
+            tr("Algunas pestañas tardaron demasiado. Se continuará con el contenido disponible.")
         )
     def _on_tab_extracted(self, tab_context: TabContext):
         self._completed_extractions += 1
@@ -843,45 +841,43 @@ class GenTabPanel(BasePanel):
         if self._completed_extractions >= self._pending_extractions:
             self._extracting = False
             self.extract_btn.setEnabled(True)
-            self.extract_btn.setText("Extraer contenido de pestañas")
+            self.extract_btn.setText(tr("Extraer contenido de pestañas"))
             self.progress_bar.hide()
             self.generate_btn.setEnabled(True)
-            self._set_status("ready", "Contenido extraído")
+            self._set_status("ready", tr("Contenido extraído"))
 
             total_chars = sum(tc.content_length for tc in self.tab_contexts if tc.content)
             self._add_system_message(
-                f"Contenido extraído: <b>{total_chars:,}</b> caracteres de "
-                f"<b>{self._completed_extractions}</b> pestañas. "
-                "Ahora describe qué aplicación quieres generar."
+                tr("Contenido extraído: <b>{total_chars:,}</b> caracteres de <b>{completed_extractions}</b> pestañas. Ahora describe qué aplicación quieres generar.", total_chars=total_chars, completed_extractions=self._completed_extractions)
             )
     def generate_gentab(self):
         prompt = self.prompt_input.toPlainText().strip()
         if not prompt:
-            QMessageBox.warning(self, "GenTab", "Escribe una descripción de la aplicación que quieres generar.")
+            QMessageBox.warning(self, "GenTab", tr("Escribe una descripción de la aplicación que quieres generar."))
             return
         # Asegurar que la config está actualizada antes de generar
         cfg = self.llm_config
         if cfg.provider == PROVIDER_LOCAL and not cfg.local_url:
-            QMessageBox.warning(self, "GenTab", "Configura la URL del servidor LLM en la pestaña Config.")
+            QMessageBox.warning(self, "GenTab", tr("Configura la URL del servidor LLM en la pestaña Config."))
             return
         if cfg.provider == PROVIDER_LLMAPI and not cfg.llmapi_key:
-            QMessageBox.warning(self, "GenTab", "Introduce tu API key de llmapi.ai en la pestaña Config.")
+            QMessageBox.warning(self, "GenTab", tr("Introduce tu API key de llmapi.ai en la pestaña Config."))
             return
         if cfg.provider == PROVIDER_ANTHROPIC and not cfg.anthropic_key:
-            QMessageBox.warning(self, "GenTab", "Introduce tu API key de Anthropic en la pestaña Config (sk-ant-...).")
+            QMessageBox.warning(self, "GenTab", tr("Introduce tu API key de Anthropic en la pestaña Config (sk-ant-...)."))
             return
         if cfg.provider == PROVIDER_HUGGINGFACE and not cfg.huggingface_key:
-            QMessageBox.warning(self, "GenTab", "Introduce tu API key de HuggingFace en la pestaña Config (hf_...).")
+            QMessageBox.warning(self, "GenTab", tr("Introduce tu API key de HuggingFace en la pestaña Config (hf_...)."))
             return
         if cfg.provider in OPENAI_COMPAT_PROVIDERS and not cfg.compat_key(cfg.provider):
             label = OPENAI_COMPAT_PROVIDERS[cfg.provider]["label"]
-            QMessageBox.warning(self, "GenTab", f"Introduce tu API key de {label} en la pestaña Config.")
+            QMessageBox.warning(self, "GenTab", tr("Introduce tu API key de {label} en la pestaña Config.", label=label))
             return
         selected = [tc for tc in self.tab_contexts
                     if tc.content and tc.content_length > 0
                     and any(c.tab_context.index == tc.index and c.selected for c in self.context_cards)]
         if not selected:
-            QMessageBox.warning(self, "GenTab", "Extrae el contenido de al menos una pestaña primero.")
+            QMessageBox.warning(self, "GenTab", tr("Extrae el contenido de al menos una pestaña primero."))
             return
         self._add_user_message(prompt)
         self.prompt_input.clear()
@@ -903,22 +899,21 @@ class GenTabPanel(BasePanel):
 
     def _on_generation_started(self):
         self.generate_btn.setEnabled(False)
-        self.generate_btn.setText("Generando...")
+        self.generate_btn.setText(tr("Generando..."))
         self.progress_bar.show()
-        self._set_status("generating", "Generando aplicación...")
+        self._set_status("generating", tr("Generando aplicación..."))
     def _on_progress(self, message: str):
         self._add_system_message(message)
     def _on_generation_complete(self, result: GenTabResult):
         self.generate_btn.setEnabled(True)
-        self.generate_btn.setText("Generar GenTab")
+        self.generate_btn.setText(tr("Generar GenTab"))
         self.progress_bar.hide()
         self._set_status("ready", "GenTab generada")
 
         sources = len(result.source_tabs)
         self._add_gentab_message(
             f"<b>{html.escape(result.title)}</b>",
-            f"Generada en {result.generation_time}s desde {sources} pestañas. "
-            f"Modelo: {result.model_used}",
+            tr("Generada en {generation_time}s desde {sources} pestañas. Modelo: {model_used}", generation_time=result.generation_time, sources=sources, model_used=result.model_used),
             result
         )
         self._refresh_history()
@@ -926,9 +921,9 @@ class GenTabPanel(BasePanel):
         self.gentab_created.emit(result.title, apply_gentab_csp(result.html))
     def _on_generation_error(self, error: str):
         self.generate_btn.setEnabled(True)
-        self.generate_btn.setText("Generar GenTab")
+        self.generate_btn.setText(tr("Generar GenTab"))
         self.progress_bar.hide()
-        self._set_status("error", "Error")
+        self._set_status("error", tr("Error"))
         self._add_error_message(error)
     def _on_tab_toggled(self, index: int, checked: bool):
         pass
@@ -952,10 +947,9 @@ class GenTabPanel(BasePanel):
             return
         fmt = self._format_for(prompt)
         if fmt == gentab_formats.FORMAT_FREE:
-            self.format_hint.setText("Formato: página libre (la IA elige el diseño)")
+            self.format_hint.setText(tr("Formato: página libre (la IA elige el diseño)"))
         else:
-            self.format_hint.setText(f"Formato: {gentab_formats.format_label(fmt)}"
-                                     f" — {gentab_formats.FORMATS[fmt]['description']}")
+            self.format_hint.setText(tr("Formato: {value} — {value2}", value=gentab_formats.format_label(fmt), value2=gentab_formats.FORMATS[fmt]['description']))
     def _on_url_changed(self, text):
         self.server_url = text.strip()
         self.llm_config.local_url = self.server_url
@@ -1000,7 +994,7 @@ class GenTabPanel(BasePanel):
         layout.setContentsMargins(12, 8, 12, 8)
 
         timestamp = datetime.now().strftime("%H:%M")
-        label = QLabel(f"<span style='color:#6366f1;font-size:11px'>{timestamp}</span> {text}")
+        label = QLabel(tr("<span style='color:#6366f1;font-size:11px'>{timestamp}</span> {text_}", timestamp=timestamp, text_=text))
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
         label.setStyleSheet("QWidget { color: #94a3b8; font-size: 12px; }")
@@ -1022,8 +1016,7 @@ class GenTabPanel(BasePanel):
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(12, 10, 12, 10)
 
-        header = QLabel(f"<b style='color:#818cf8'>Tú</b> "
-                        f"<span style='color:#64748b;font-size:11px'>{datetime.now().strftime('%H:%M')}</span>")
+        header = QLabel(tr("<b style='color:#818cf8'>Tú</b> <span style='color:#64748b;font-size:11px'>{value}</span>", value=datetime.now().strftime('%H:%M')))
         header.setTextFormat(Qt.RichText)
         layout.addWidget(header)
 
@@ -1050,7 +1043,7 @@ class GenTabPanel(BasePanel):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(8)
 
-        header = QLabel(f"<span style='color:#818cf8;font-size:11px'>GenTab creada</span>")
+        header = QLabel(tr("<span style='color:#818cf8;font-size:11px'>GenTab creada</span>"))
         header.setTextFormat(Qt.RichText)
         layout.addWidget(header)
 
@@ -1065,7 +1058,7 @@ class GenTabPanel(BasePanel):
         info_label.setStyleSheet("QWidget { color: #94a3b8; font-size: 12px; }")
         layout.addWidget(info_label)
 
-        open_btn = QPushButton("Abrir GenTab en nueva pestaña")
+        open_btn = QPushButton(tr("Abrir GenTab en nueva pestaña"))
         open_btn.setObjectName("openGenTabBtn")
         open_btn.setCursor(Qt.PointingHandCursor)
         open_btn.clicked.connect(
@@ -1088,7 +1081,7 @@ class GenTabPanel(BasePanel):
             f"<a href='{s['url']}' style='color:#818cf8;text-decoration:none'>{s['domain']}</a>"
             for s in result.source_tabs
         )
-        sources = QLabel(f"<span style='color:#64748b;font-size:11px'>Fuentes: {sources_text}</span>")
+        sources = QLabel(tr("<span style='color:#64748b;font-size:11px'>Fuentes: {sources_text}</span>", sources_text=sources_text))
         sources.setTextFormat(Qt.RichText)
         sources.setWordWrap(True)
         sources.setOpenExternalLinks(True)
@@ -1209,7 +1202,7 @@ class GenTabPanel(BasePanel):
         self.llm_config.save("GenTabs")
         # Mantener server_url para compatibilidad con engine
         self.server_url = self.llm_config.local_url
-        self._add_system_message("Configuración guardada.")
+        self._add_system_message(tr("Configuración guardada."))
     def _test_connection(self):
         self._save_settings()
         client = LLMClient(self.llm_config)

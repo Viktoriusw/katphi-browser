@@ -8,6 +8,7 @@ Características adicionales:
 - Captura de elemento específico del DOM
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QWidget, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                                QLabel, QColorDialog, QSpinBox, QLineEdit, QComboBox,
                                QToolBar, QApplication)
@@ -115,7 +116,7 @@ class AnnotationEditor(QDialog):
         self.current_color = QColor(255, 0, 0)
         self.current_width = 3
 
-        self.setWindowTitle("Editar captura")
+        self.setWindowTitle(tr("Editar captura"))
         self.setMinimumSize(800, 600)
 
         self.setup_ui()
@@ -127,22 +128,22 @@ class AnnotationEditor(QDialog):
         toolbar = QToolBar()
 
         # Herramientas
-        self.arrow_btn = QPushButton("Flecha")
+        self.arrow_btn = QPushButton(tr("Flecha"))
         self.arrow_btn.setCheckable(True)
         self.arrow_btn.clicked.connect(lambda: self.set_tool("arrow"))
         toolbar.addWidget(self.arrow_btn)
 
-        self.rect_btn = QPushButton("Rectángulo")
+        self.rect_btn = QPushButton(tr("Rectángulo"))
         self.rect_btn.setCheckable(True)
         self.rect_btn.clicked.connect(lambda: self.set_tool("rect"))
         toolbar.addWidget(self.rect_btn)
 
-        self.text_btn = QPushButton("Texto")
+        self.text_btn = QPushButton(tr("Texto"))
         self.text_btn.setCheckable(True)
         self.text_btn.clicked.connect(lambda: self.set_tool("text"))
         toolbar.addWidget(self.text_btn)
 
-        self.highlight_btn = QPushButton("Resaltar")
+        self.highlight_btn = QPushButton(tr("Resaltar"))
         self.highlight_btn.setCheckable(True)
         self.highlight_btn.clicked.connect(lambda: self.set_tool("highlight"))
         toolbar.addWidget(self.highlight_btn)
@@ -150,12 +151,12 @@ class AnnotationEditor(QDialog):
         toolbar.addSeparator()
 
         # Color
-        color_btn = QPushButton("Color")
+        color_btn = QPushButton(tr("Color"))
         color_btn.clicked.connect(self.choose_color)
         toolbar.addWidget(color_btn)
 
         # Grosor
-        toolbar.addWidget(QLabel("Grosor:"))
+        toolbar.addWidget(QLabel(tr("Grosor:")))
         self.width_spin = QSpinBox()
         self.width_spin.setMinimum(1)
         self.width_spin.setMaximum(10)
@@ -166,12 +167,12 @@ class AnnotationEditor(QDialog):
         toolbar.addSeparator()
 
         # Deshacer
-        undo_btn = QPushButton("Deshacer")
+        undo_btn = QPushButton(tr("Deshacer"))
         undo_btn.clicked.connect(self.undo)
         toolbar.addWidget(undo_btn)
 
         # Limpiar
-        clear_btn = QPushButton("Limpiar todo")
+        clear_btn = QPushButton(tr("Limpiar todo"))
         clear_btn.clicked.connect(self.clear_all)
         toolbar.addWidget(clear_btn)
 
@@ -185,11 +186,11 @@ class AnnotationEditor(QDialog):
         # Botones
         buttons_layout = QHBoxLayout()
 
-        save_btn = QPushButton("Guardar")
+        save_btn = QPushButton(tr("Guardar"))
         save_btn.clicked.connect(self.accept)
         buttons_layout.addWidget(save_btn)
 
-        cancel_btn = QPushButton("Cancelar")
+        cancel_btn = QPushButton(tr("Cancelar"))
         cancel_btn.clicked.connect(self.reject)
         buttons_layout.addWidget(cancel_btn)
 
@@ -331,7 +332,7 @@ class AnnotationCanvas(QWidget):
             # Para texto, pedir input inmediatamente
             if self.current_tool == "text":
                 from PySide6.QtWidgets import QInputDialog
-                text, ok = QInputDialog.getText(self, "Texto", "Ingrese el texto:")
+                text, ok = QInputDialog.getText(self, tr("Texto"), tr("Ingrese el texto:"))
                 if ok and text:
                     annotation = {
                         'type': 'text',

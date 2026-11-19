@@ -15,6 +15,7 @@ Funciones públicas principales:
 
 from __future__ import annotations
 
+from i18n import tr
 import os
 import re
 from functools import lru_cache

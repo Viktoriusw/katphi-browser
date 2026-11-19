@@ -1,3 +1,4 @@
+from i18n import tr
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QLineEdit, QListWidget, QListWidgetItem,
                               QDialog, QMessageBox, QCheckBox, QGroupBox,
@@ -33,7 +34,7 @@ except Exception:  # pragma: no cover - PySide6 sin WebEngine
     _APP_WORLD = 1
 
 # Texto que se muestra en la UI para entradas que no se pueden descifrar
-UNDECRYPTABLE_LABEL = "[no descifrable]"
+UNDECRYPTABLE_LABEL = tr("[no descifrable]")
 
 # Límites del payload que llega desde JS por el canal
 _MAX_PAYLOAD_LEN  = 16384
@@ -84,7 +85,7 @@ def _restrict_permissions(path) -> None:
         if os.path.exists(path):
             os.chmod(path, 0o600)
     except OSError as exc:
-        logger.warning("[PasswordManager] No se pudo aplicar chmod 600 a %s: %s", path, exc)
+        logger.warning(tr("[PasswordManager] No se pudo aplicar chmod 600 a %s: %s"), path, exc)
 
 
 def _migrate_legacy_db(legacy: str, new: str) -> bool:
@@ -112,12 +113,12 @@ def _migrate_legacy_db(legacy: str, new: str) -> bool:
         finally:
             src.close()
         if n_src != n_dst:
-            raise RuntimeError(f"recuento distinto tras copiar ({n_src} != {n_dst})")
+            raise RuntimeError(tr("recuento distinto tras copiar ({n_src} != {n_dst})", n_src=n_src, n_dst=n_dst))
         os.replace(tmp, new)
         _restrict_permissions(new)
-        logger.info("[PasswordManager] BD de contraseñas migrada a %s (%d entradas)", new, n_dst)
+        logger.info(tr("[PasswordManager] BD de contraseñas migrada a %s (%d entradas)"), new, n_dst)
     except Exception as exc:
-        logger.error("[PasswordManager] No se pudo migrar %s -> %s: %s", legacy, new, exc)
+        logger.error(tr("[PasswordManager] No se pudo migrar %s -> %s: %s"), legacy, new, exc)
         try:
             if os.path.exists(tmp):
                 os.remove(tmp)
@@ -128,7 +129,7 @@ def _migrate_legacy_db(legacy: str, new: str) -> bool:
         os.replace(legacy, legacy + ".migrated")
     except OSError as exc:
         logger.warning(
-            "[PasswordManager] BD migrada; la antigua se deja intacta en %s (%s)", legacy, exc)
+            tr("[PasswordManager] BD migrada; la antigua se deja intacta en %s (%s)"), legacy, exc)
     return True
 
 
@@ -150,7 +151,7 @@ def _resolve_db_path() -> str:
     try:
         os.makedirs(os.path.dirname(new), mode=0o700, exist_ok=True)
     except OSError as exc:
-        logger.error("[PasswordManager] No se pudo crear %s: %s", os.path.dirname(new), exc)
+        logger.error(tr("[PasswordManager] No se pudo crear %s: %s"), os.path.dirname(new), exc)
     return new
 
 
@@ -281,7 +282,7 @@ class CredentialReceiver(QObject):
         try:
             data = self._parse_payload(json_str)
             if data is None:
-                logger.warning("[PasswordManager] Payload de credencial descartado (formato)")
+                logger.warning(tr("[PasswordManager] Payload de credencial descartado (formato)"))
                 return
             username = data.get("username", "")
             password = data.get("password", "")
@@ -308,7 +309,7 @@ class CredentialReceiver(QObject):
                 "old_password": old_password, "kind": kind,
                 "doc": self._doc_id(data)})
         except Exception as exc:
-            logger.error("[PasswordManager] Error parsing credential payload: %s", exc)
+            logger.error(tr("[PasswordManager] Error parsing credential payload: %s"), exc)
 
     @Slot(str)
     def onUsername(self, json_str: str) -> None:
@@ -324,7 +325,7 @@ class CredentialReceiver(QObject):
             if origin:
                 self.username_captured.emit(origin, username)
         except Exception as exc:
-            logger.error("[PasswordManager] Error parsing username payload: %s", exc)
+            logger.error(tr("[PasswordManager] Error parsing username payload: %s"), exc)
 
     @Slot(str, result=str)
     def hello(self, json_str: str) -> str:
@@ -336,7 +337,7 @@ class CredentialReceiver(QObject):
                 got = self._flags_getter(origin) or {}
                 flags = {"has": bool(got.get("has")), "auto": bool(got.get("auto"))}
         except Exception as exc:
-            logger.error("[PasswordManager] Error in hello: %s", exc)
+            logger.error(tr("[PasswordManager] Error in hello: %s"), exc)
         return json.dumps(flags)
 
     @Slot(str)
@@ -351,7 +352,7 @@ class CredentialReceiver(QObject):
             if origin and doc:
                 self.page_ready.emit(origin, doc, data.get("login_form") is True)
         except Exception as exc:
-            logger.error("[PasswordManager] Error parsing page-ready payload: %s", exc)
+            logger.error(tr("[PasswordManager] Error parsing page-ready payload: %s"), exc)
 
     @Slot(str)
     def onLoginOutcome(self, json_str: str) -> None:
@@ -364,7 +365,7 @@ class CredentialReceiver(QObject):
             if origin:
                 self.login_outcome.emit(origin, "success")
         except Exception as exc:
-            logger.error("[PasswordManager] Error parsing login outcome: %s", exc)
+            logger.error(tr("[PasswordManager] Error parsing login outcome: %s"), exc)
 
     @staticmethod
     def _parse_rect(value):
@@ -398,7 +399,7 @@ class CredentialReceiver(QObject):
             if origin:
                 self.autofill_requested.emit(origin, info)
         except Exception as exc:
-            logger.error("[PasswordManager] Error en la petición de autorrelleno: %s", exc)
+            logger.error(tr("[PasswordManager] Error en la petición de autorrelleno: %s"), exc)
 
 
 # ---------------------------------------------------------------------------
@@ -455,20 +456,20 @@ class PasswordSaveBanner(QFrame):
         lbl.setTextFormat(Qt.RichText)
         layout.addWidget(lbl, 1)
 
-        save_btn = QPushButton("Update" if self.is_update else "Save")
+        save_btn = QPushButton(tr("Update") if self.is_update else tr("Save"))
         save_btn.setFixedHeight(30)
         save_btn.setCursor(Qt.PointingHandCursor)
         save_btn.clicked.connect(self._on_accept)
         layout.addWidget(save_btn)
 
-        dismiss_btn = QPushButton("Not now")
+        dismiss_btn = QPushButton(tr("Not now"))
         dismiss_btn.setFixedHeight(30)
         dismiss_btn.setCursor(Qt.PointingHandCursor)
         dismiss_btn.clicked.connect(self._on_dismiss)
         layout.addWidget(dismiss_btn)
 
         if not self.is_update:
-            never_btn = QPushButton("Never for this site")
+            never_btn = QPushButton(tr("Never for this site"))
             never_btn.setFixedHeight(30)
             never_btn.setCursor(Qt.PointingHandCursor)
             never_btn.clicked.connect(self._on_never)
@@ -1128,7 +1129,7 @@ class PasswordManager(QWidget):
 
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search passwords...")
+        self.search_input.setPlaceholderText(tr("Search passwords..."))
         self.search_input.setFixedHeight(32)
         if hasattr(self.search_input, "setClearButtonEnabled"):
             self.search_input.setClearButtonEnabled(True)
@@ -1137,7 +1138,7 @@ class PasswordManager(QWidget):
         layout.addLayout(search_layout)
 
         self.passwords_list = QListWidget()
-        self.passwords_list.setToolTip("Double-click to view password details")
+        self.passwords_list.setToolTip(tr("Double-click to view password details"))
         # Se conecta una sola vez (antes se reconectaba en cada load_passwords)
         self.passwords_list.itemDoubleClicked.connect(self.view_password_details)
         layout.addWidget(self.passwords_list)
@@ -1160,7 +1161,7 @@ class PasswordManager(QWidget):
 
     def _notify_user(self, title: str, message: str, key: str = None) -> None:
         """Muestra el problema en el panel y, una vez por tipo, en un diálogo."""
-        logger.warning("[PasswordManager] %s: %s", title, message)
+        logger.warning(tr("[PasswordManager] %s: %s"), title, message)
         try:
             self.status_label.setText(message)
             self.status_label.show()
@@ -1241,7 +1242,7 @@ class PasswordManager(QWidget):
                     "Saved passwords are unavailable in this session.",
                     key="db_unavailable")
         except Exception as e:
-            logger.error("[PasswordManager] Error initializing database: %s", e)
+            logger.error(tr("[PasswordManager] Error initializing database: %s"), e)
             self.conn = None
             self._notify_user(
                 "Password database unavailable",
@@ -1277,7 +1278,7 @@ class PasswordManager(QWidget):
                     key="undecryptable")
             self.refresh_key_icon()
         except Exception as e:
-            logger.error("[PasswordManager] Error loading passwords: %s", e)
+            logger.error(tr("[PasswordManager] Error loading passwords: %s"), e)
 
     def filter_passwords(self):
         search = self.search_input.text().lower()
@@ -1296,7 +1297,7 @@ class PasswordManager(QWidget):
             key = self._load_or_create_key()
             self.fernet = Fernet(key.encode() if isinstance(key, str) else key)
         except Exception as e:
-            logger.error("[PasswordManager] Error setting up encryption: %s", e)
+            logger.error(tr("[PasswordManager] Error setting up encryption: %s"), e)
             self.fernet = None
             self._notify_user(
                 "Password encryption unavailable",
@@ -1324,19 +1325,19 @@ class PasswordManager(QWidget):
             try:
                 kr_key = kr.get_password(_KEYRING_SERVICE, _KEYRING_ENTRY)
             except Exception as exc:
-                logger.warning("[PasswordManager] keyring no disponible: %s", exc)
+                logger.warning(tr("[PasswordManager] keyring no disponible: %s"), exc)
                 kr = None
 
         if qs_key:
             if kr is None:
                 logger.warning(
-                    "[PasswordManager] keyring no disponible: la clave de cifrado "
-                    "sigue en QSettings (en claro en el perfil del usuario)")
+                    tr("[PasswordManager] keyring no disponible: la clave de cifrado "
+                    "sigue en QSettings (en claro en el perfil del usuario)"))
                 return qs_key
             if kr_key and kr_key != qs_key:
                 logger.warning(
-                    "[PasswordManager] La clave del llavero no coincide con la de "
-                    "QSettings; se usa la de QSettings y no se toca ninguna")
+                    tr("[PasswordManager] La clave del llavero no coincide con la de "
+                    "QSettings; se usa la de QSettings y no se toca ninguna"))
                 return qs_key
             try:
                 if not kr_key:
@@ -1345,10 +1346,10 @@ class PasswordManager(QWidget):
                     self.settings.setValue("key_in_keyring", True)
                     self.settings.remove("encryption_key")
                     self.settings.sync()
-                    logger.info("[PasswordManager] Clave de cifrado migrada al llavero del sistema")
+                    logger.info(tr("[PasswordManager] Clave de cifrado migrada al llavero del sistema"))
             except Exception as exc:
                 logger.warning(
-                    "[PasswordManager] No se pudo migrar la clave al llavero: %s", exc)
+                    tr("[PasswordManager] No se pudo migrar la clave al llavero: %s"), exc)
             return qs_key
 
         if kr_key:
@@ -1367,9 +1368,9 @@ class PasswordManager(QWidget):
                     self.settings.sync()
                     return new_key
             except Exception as exc:
-                logger.warning("[PasswordManager] No se pudo guardar la clave en el llavero: %s", exc)
+                logger.warning(tr("[PasswordManager] No se pudo guardar la clave en el llavero: %s"), exc)
         logger.warning(
-            "[PasswordManager] keyring no disponible: la clave de cifrado se guarda en QSettings")
+            tr("[PasswordManager] keyring no disponible: la clave de cifrado se guarda en QSettings"))
         self.settings.setValue("encryption_key", new_key)
         self.settings.sync()
         return new_key
@@ -1429,7 +1430,7 @@ class PasswordManager(QWidget):
             if not self._require_fernet() or self.conn is None:
                 return
             dialog = QDialog(self)
-            dialog.setWindowTitle("Add Password")
+            dialog.setWindowTitle(tr("Add Password"))
             layout = QVBoxLayout(dialog)
 
             url_input      = QLineEdit()
@@ -1440,7 +1441,7 @@ class PasswordManager(QWidget):
 
             show_btn = QPushButton()
 
-            show_btn.setToolTip("Mostrar u ocultar")
+            show_btn.setToolTip(tr("Mostrar u ocultar"))
 
             try:
 
@@ -1472,8 +1473,8 @@ class PasswordManager(QWidget):
                     layout.addLayout(pw_layout)
 
             btn_layout = QHBoxLayout()
-            save_btn   = QPushButton("Save");   save_btn.clicked.connect(dialog.accept)
-            cancel_btn = QPushButton("Cancel"); cancel_btn.clicked.connect(dialog.reject)
+            save_btn   = QPushButton(tr("Save"));   save_btn.clicked.connect(dialog.accept)
+            cancel_btn = QPushButton(tr("Cancel")); cancel_btn.clicked.connect(dialog.reject)
             btn_layout.addWidget(save_btn)
             btn_layout.addWidget(cancel_btn)
             layout.addLayout(btn_layout)
@@ -1488,7 +1489,7 @@ class PasswordManager(QWidget):
                 self.load_passwords()
                 self.password_saved.emit(url_input.text(), username_input.text())
         except Exception as e:
-            logger.error("[PasswordManager] Error adding password: %s", e)
+            logger.error(tr("[PasswordManager] Error adding password: %s"), e)
 
     def edit_password(self):
         try:
@@ -1511,7 +1512,7 @@ class PasswordManager(QWidget):
             undecryptable = current_plain is None
 
             dialog = QDialog(self)
-            dialog.setWindowTitle("Edit Password")
+            dialog.setWindowTitle(tr("Edit Password"))
             layout = QVBoxLayout(dialog)
 
             url_input      = QLineEdit(url)
@@ -1520,12 +1521,12 @@ class PasswordManager(QWidget):
             password_input.setEchoMode(QLineEdit.Password)
             if undecryptable:
                 password_input.setPlaceholderText(
-                    f"{UNDECRYPTABLE_LABEL} - type a new password to replace it")
+                    tr("{UNDECRYPTABLE_LABEL} - type a new password to replace it", UNDECRYPTABLE_LABEL=UNDECRYPTABLE_LABEL))
             notes_input    = QLineEdit(row[1] or "")
 
             show_btn = QPushButton()
 
-            show_btn.setToolTip("Mostrar u ocultar")
+            show_btn.setToolTip(tr("Mostrar u ocultar"))
 
             try:
 
@@ -1557,8 +1558,8 @@ class PasswordManager(QWidget):
                     layout.addLayout(pw_layout)
 
             btn_layout = QHBoxLayout()
-            save_btn   = QPushButton("Save");   save_btn.clicked.connect(dialog.accept)
-            cancel_btn = QPushButton("Cancel"); cancel_btn.clicked.connect(dialog.reject)
+            save_btn   = QPushButton(tr("Save"));   save_btn.clicked.connect(dialog.accept)
+            cancel_btn = QPushButton(tr("Cancel")); cancel_btn.clicked.connect(dialog.reject)
             btn_layout.addWidget(save_btn)
             btn_layout.addWidget(cancel_btn)
             layout.addLayout(btn_layout)
@@ -1578,7 +1579,7 @@ class PasswordManager(QWidget):
                 self.load_passwords()
                 self.password_updated.emit(url_input.text(), username_input.text())
         except Exception as e:
-            logger.error("[PasswordManager] Error editing password: %s", e)
+            logger.error(tr("[PasswordManager] Error editing password: %s"), e)
 
     def view_password_details(self, item):
         try:
@@ -1598,10 +1599,10 @@ class PasswordManager(QWidget):
             undecryptable = plain is None
 
             dialog = QDialog(self)
-            dialog.setWindowTitle("Password Details")
+            dialog.setWindowTitle(tr("Password Details"))
             layout = QVBoxLayout(dialog)
-            layout.addWidget(QLabel(f"<b>URL:</b> {url}"))
-            layout.addWidget(QLabel(f"<b>Username:</b> {username}"))
+            layout.addWidget(QLabel(tr("<b>URL:</b> {url}", url=url)))
+            layout.addWidget(QLabel(tr("<b>Username:</b> {username}", username=username)))
 
             pw_input = QLineEdit(UNDECRYPTABLE_LABEL if undecryptable else plain)
             pw_input.setEchoMode(QLineEdit.Normal if undecryptable else QLineEdit.Password)
@@ -1609,7 +1610,7 @@ class PasswordManager(QWidget):
 
             show_btn = QPushButton()
 
-            show_btn.setToolTip("Mostrar u ocultar")
+            show_btn.setToolTip(tr("Mostrar u ocultar"))
 
             try:
 
@@ -1636,7 +1637,7 @@ class PasswordManager(QWidget):
             except Exception:
                 pass
             copy_btn.setFixedSize(32, 32)
-            copy_btn.setToolTip("Copy password to clipboard")
+            copy_btn.setToolTip(tr("Copy password to clipboard"))
             copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(plain))
             if undecryptable:
                 show_btn.setEnabled(False)
@@ -1647,17 +1648,17 @@ class PasswordManager(QWidget):
             pw_layout.addWidget(show_btn)
             pw_layout.addWidget(copy_btn)
 
-            layout.addWidget(QLabel("<b>Password:</b>"))
+            layout.addWidget(QLabel(tr("<b>Password:</b>")))
             layout.addLayout(pw_layout)
             if row[1]:
-                layout.addWidget(QLabel(f"<b>Notes:</b> {row[1]}"))
+                layout.addWidget(QLabel(tr("<b>Notes:</b> {value}", value=row[1])))
 
-            close_btn = QPushButton("Close")
+            close_btn = QPushButton(tr("Close"))
             close_btn.clicked.connect(dialog.accept)
             layout.addWidget(close_btn)
             dialog.exec()
         except Exception as e:
-            logger.error("[PasswordManager] Error viewing password details: %s", e)
+            logger.error(tr("[PasswordManager] Error viewing password details: %s"), e)
 
     def remove_password(self):
         try:
@@ -1666,8 +1667,8 @@ class PasswordManager(QWidget):
                 return
             url, username = item.text().split(" - ", 1)
             reply = QMessageBox.question(
-                self, "Confirm removal",
-                f"Are you sure you want to remove the password for {url}?",
+                self, tr("Confirm removal"),
+                tr("Are you sure you want to remove the password for {url}?", url=url),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.Yes:
                 cur = self.conn.cursor()
@@ -1678,7 +1679,7 @@ class PasswordManager(QWidget):
                 self.load_passwords()
                 self.password_deleted.emit(url)
         except Exception as e:
-            logger.error("[PasswordManager] Error removing password: %s", e)
+            logger.error(tr("[PasswordManager] Error removing password: %s"), e)
 
     # -----------------------------------------------------------------
     # Password generator dialog
@@ -1687,10 +1688,10 @@ class PasswordManager(QWidget):
     def show_generator(self):
         try:
             dialog = QDialog(self)
-            dialog.setWindowTitle("Password Generator")
+            dialog.setWindowTitle(tr("Password Generator"))
             layout = QVBoxLayout(dialog)
 
-            opts = QGroupBox("Options")
+            opts = QGroupBox(tr("Options"))
             opts_layout = QVBoxLayout()
             length_input = QLineEdit("16")
             length_input.setValidator(QIntValidator(8, 10_000_000))
@@ -1708,7 +1709,7 @@ class PasswordManager(QWidget):
             opts.setLayout(opts_layout)
             layout.addWidget(opts)
 
-            result_group = QGroupBox("Result")
+            result_group = QGroupBox(tr("Result"))
             result_layout = QVBoxLayout()
             pw_out    = QLineEdit(); pw_out.setReadOnly(True)
             stats_lbl = QLabel()
@@ -1729,10 +1730,9 @@ class PasswordManager(QWidget):
                     )
                     pw_out.setText(result["password"])
                     stats_lbl.setText(
-                        f"Time: {result['time']}  CPU: {result['cpu_usage']}  "
-                        f"RAM: {result['ram_usage']}")
+                        tr("Time: {value}  CPU: {value2}  RAM: {value3}", value=result['time'], value2=result['cpu_usage'], value3=result['ram_usage']))
                 except Exception as exc:
-                    QMessageBox.critical(dialog, "Error", str(exc))
+                    QMessageBox.critical(dialog, tr("Error"), str(exc))
 
             btn_row = QHBoxLayout()
             for label, slot in [
@@ -1745,7 +1745,7 @@ class PasswordManager(QWidget):
             generate()
             dialog.exec()
         except Exception as e:
-            logger.error("[PasswordManager] Error showing generator: %s", e)
+            logger.error(tr("[PasswordManager] Error showing generator: %s"), e)
 
     # -----------------------------------------------------------------
     # Encrypted CRUD — used by browser integration
@@ -1766,7 +1766,7 @@ class PasswordManager(QWidget):
             self.load_passwords()
             return True
         except Exception as e:
-            logger.error("[PasswordManager] Error saving password: %s", e)
+            logger.error(tr("[PasswordManager] Error saving password: %s"), e)
             self._notify_user("Password not saved",
                               f"The password for {url} could not be saved ({e}).",
                               key="save_error")
@@ -1788,7 +1788,7 @@ class PasswordManager(QWidget):
             self.load_passwords()
             return True
         except Exception as e:
-            logger.error("[PasswordManager] Error updating password: %s", e)
+            logger.error(tr("[PasswordManager] Error updating password: %s"), e)
             self._notify_user("Password not updated",
                               f"The password for {origin} could not be updated ({e}).",
                               key="save_error")
@@ -1812,7 +1812,7 @@ class PasswordManager(QWidget):
             raw = self._get_raw_password(url, username)
             return self._decrypt_password(raw) if raw is not None else None
         except Exception as e:
-            logger.error("[PasswordManager] Error getting password: %s", e)
+            logger.error(tr("[PasswordManager] Error getting password: %s"), e)
             return None
 
     def get_all_passwords(self) -> list:
@@ -1831,7 +1831,7 @@ class PasswordManager(QWidget):
                                "undecryptable": plain is None})
             return result
         except Exception as e:
-            logger.error("[PasswordManager] Error getting all passwords: %s", e)
+            logger.error(tr("[PasswordManager] Error getting all passwords: %s"), e)
             return []
 
     def get_credentials_for_origin(self, origin: str) -> list:
@@ -1855,7 +1855,7 @@ class PasswordManager(QWidget):
                 creds.append({"username": username, "password": plain})
             return creds
         except Exception as e:
-            logger.error("[PasswordManager] Error getting credentials for origin: %s", e)
+            logger.error(tr("[PasswordManager] Error getting credentials for origin: %s"), e)
             return []
 
     def has_credentials_for_origin(self, origin: str) -> bool:
@@ -1867,7 +1867,7 @@ class PasswordManager(QWidget):
             conn.close()
             return any(self._is_decryptable(r[0]) for r in rows)
         except Exception as e:
-            logger.error("[PasswordManager] Error checking credentials for origin: %s", e)
+            logger.error(tr("[PasswordManager] Error checking credentials for origin: %s"), e)
             return False
 
     def delete_password(self, url: str, username: str) -> bool:
@@ -1878,7 +1878,7 @@ class PasswordManager(QWidget):
             conn.close()
             return True
         except Exception as e:
-            logger.error("[PasswordManager] Error deleting password: %s", e)
+            logger.error(tr("[PasswordManager] Error deleting password: %s"), e)
             return False
 
     def clear_all_passwords(self) -> bool:
@@ -1907,7 +1907,7 @@ class PasswordManager(QWidget):
             logger.info("[PasswordManager] All saved passwords cleared")
             return True
         except Exception as e:
-            logger.error("[PasswordManager] Error clearing all passwords: %s", e)
+            logger.error(tr("[PasswordManager] Error clearing all passwords: %s"), e)
             return False
 
     # -----------------------------------------------------------------
@@ -1924,7 +1924,7 @@ class PasswordManager(QWidget):
                 conn.close()
             return row is not None
         except Exception as e:
-            logger.error("[PasswordManager] Error checking never-save list: %s", e)
+            logger.error(tr("[PasswordManager] Error checking never-save list: %s"), e)
             return False
 
     def add_never_save(self, origin: str) -> bool:
@@ -1939,7 +1939,7 @@ class PasswordManager(QWidget):
             logger.info("[PasswordManager] Never save passwords for %s", origin)
             return True
         except Exception as e:
-            logger.error("[PasswordManager] Error adding never-save origin: %s", e)
+            logger.error(tr("[PasswordManager] Error adding never-save origin: %s"), e)
             return False
 
     def remove_never_save(self, origin: str) -> bool:
@@ -1952,7 +1952,7 @@ class PasswordManager(QWidget):
                 conn.close()
             return True
         except Exception as e:
-            logger.error("[PasswordManager] Error removing never-save origin: %s", e)
+            logger.error(tr("[PasswordManager] Error removing never-save origin: %s"), e)
             return False
 
     def get_never_save_origins(self) -> list:
@@ -1964,21 +1964,21 @@ class PasswordManager(QWidget):
                 conn.close()
             return [r[0] for r in rows]
         except Exception as e:
-            logger.error("[PasswordManager] Error reading never-save list: %s", e)
+            logger.error(tr("[PasswordManager] Error reading never-save list: %s"), e)
             return []
 
     def show_never_save_sites(self):
         """Diálogo con los sitios en los que nunca se ofrece guardar."""
         try:
             dialog = QDialog(self)
-            dialog.setWindowTitle("Never save passwords for")
+            dialog.setWindowTitle(tr("Never save passwords for"))
             dialog.setMinimumSize(420, 300)
             layout = QVBoxLayout(dialog)
             sites = QListWidget()
             sites.addItems(self.get_never_save_origins())
             layout.addWidget(sites)
-            empty = QLabel("No sites. They are added with \"Never for this site\" "
-                           "when Katphi offers to save a password.")
+            empty = QLabel(tr("No sites. They are added with \"Never for this site\" "
+                           "when Katphi offers to save a password."))
             empty.setWordWrap(True)
             empty.setVisible(sites.count() == 0)
             layout.addWidget(empty)
@@ -1992,14 +1992,14 @@ class PasswordManager(QWidget):
                     empty.setVisible(sites.count() == 0)
 
             btn_row = QHBoxLayout()
-            remove_btn = QPushButton("Remove"); remove_btn.clicked.connect(remove_selected)
-            close_btn  = QPushButton("Close");  close_btn.clicked.connect(dialog.accept)
+            remove_btn = QPushButton(tr("Remove")); remove_btn.clicked.connect(remove_selected)
+            close_btn  = QPushButton(tr("Close"));  close_btn.clicked.connect(dialog.accept)
             btn_row.addWidget(remove_btn)
             btn_row.addWidget(close_btn)
             layout.addLayout(btn_row)
             dialog.exec()
         except Exception as e:
-            logger.error("[PasswordManager] Error showing never-save sites: %s", e)
+            logger.error(tr("[PasswordManager] Error showing never-save sites: %s"), e)
 
     # -----------------------------------------------------------------
     # Credential comparison
@@ -2050,7 +2050,7 @@ class PasswordManager(QWidget):
                 username = self._resolve_username(browser, origin, username,
                                                   old_password, kind)
             if not username:
-                logger.debug("[PasswordManager] No username for %s (%s), skipping", origin, kind)
+                logger.debug(tr("[PasswordManager] No username for %s (%s), skipping"), origin, kind)
                 return
             action, _ = self.compare_credentials(origin, username, password)
             logger.info("[PasswordManager] Action=%s for %s (%s)", action, origin, kind)
@@ -2064,7 +2064,7 @@ class PasswordManager(QWidget):
                 "origin": origin, "username": username, "password": password,
                 "is_update": action == "update", "t": time.monotonic(), "doc": doc}
         except Exception as e:
-            logger.error("[PasswordManager] Error handling captured credentials: %s", e)
+            logger.error(tr("[PasswordManager] Error handling captured credentials: %s"), e)
 
     def _resolve_username(self, browser, origin: str, username: str,
                           old_password: str, kind: str) -> str:
@@ -2136,8 +2136,8 @@ class PasswordManager(QWidget):
             if main_win is None:
                 self._store_credential(origin, username, password, is_update)
                 logger.warning(
-                    "[PasswordManager] Main window not found; credential for %s "
-                    "saved silently (no banner)", origin)
+                    tr("[PasswordManager] Main window not found; credential for %s "
+                    "saved silently (no banner)"), origin)
                 return
 
             logger.info(
@@ -2186,7 +2186,7 @@ class PasswordManager(QWidget):
             banner.timed_out.connect(on_timed_out)
             self._insert_banner_in_layout(main_win, banner)
         except Exception as e:
-            logger.error("[PasswordManager] Error showing save banner: %s", e)
+            logger.error(tr("[PasswordManager] Error showing save banner: %s"), e)
 
     def _store_credential(self, origin: str, username: str, password: str,
                           is_update: bool):
@@ -2218,7 +2218,7 @@ class PasswordManager(QWidget):
             layout.insertWidget(1, banner)
             banner.show()
         except Exception as e:
-            logger.error("[PasswordManager] Error inserting banner: %s", e)
+            logger.error(tr("[PasswordManager] Error inserting banner: %s"), e)
             banner.setParent(main_win)
             banner.show()
 
@@ -2232,13 +2232,13 @@ class PasswordManager(QWidget):
     def show_passwords_dialog(self):
         try:
             dialog = QDialog(self.parent)
-            dialog.setWindowTitle("Saved Passwords")
+            dialog.setWindowTitle(tr("Saved Passwords"))
             dialog.setMinimumSize(600, 400)
             layout = QVBoxLayout()
 
             table = QTableWidget()
             table.setColumnCount(3)
-            table.setHorizontalHeaderLabels(["URL", "Username", "Password"])
+            table.setHorizontalHeaderLabels([tr("URL"), tr("Username"), tr("Password")])
             table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
             passwords = self.get_all_passwords()
             table.setRowCount(len(passwords))
@@ -2255,7 +2255,7 @@ class PasswordManager(QWidget):
             dialog.setLayout(layout)
             dialog.exec()
         except Exception as e:
-            logger.error("[PasswordManager] Error showing passwords dialog: %s", e)
+            logger.error(tr("[PasswordManager] Error showing passwords dialog: %s"), e)
 
     # -----------------------------------------------------------------
     # Cleanup
@@ -2266,7 +2266,7 @@ class PasswordManager(QWidget):
             if getattr(self, 'conn', None) is not None:
                 self.conn.close()
         except Exception as e:
-            logger.error("[PasswordManager] Error closing DB connection: %s", e)
+            logger.error(tr("[PasswordManager] Error closing DB connection: %s"), e)
         finally:
             super().closeEvent(event)
 
@@ -2294,7 +2294,7 @@ class PasswordManager(QWidget):
                 entry.pop("channel",  None)
                 logger.debug("[PasswordManager] Cleaned up browser %s", browser_id)
         except Exception as e:
-            logger.error("[PasswordManager] Error cleaning up browser: %s", e)
+            logger.error(tr("[PasswordManager] Error cleaning up browser: %s"), e)
 
     # -----------------------------------------------------------------
     # Browser integration — QWebChannel approach
@@ -2349,7 +2349,7 @@ class PasswordManager(QWidget):
                 logger.debug("[PasswordManager] Private mode: credential capture disabled")
                 return
             if not browser or not hasattr(browser, 'page'):
-                logger.warning("[PasswordManager] setup_browser: invalid browser object")
+                logger.warning(tr("[PasswordManager] setup_browser: invalid browser object"))
                 return
             browser_id = id(browser)
             if browser_id in self._browser_connections:
@@ -2362,8 +2362,8 @@ class PasswordManager(QWidget):
                 PasswordManager._qwebchannel_js = self._load_qwebchannel_js()
             if not PasswordManager._qwebchannel_js:
                 logger.warning(
-                    "[PasswordManager] qwebchannel.js empty — capture-only mode "
-                    "(no WebChannel)")
+                    tr("[PasswordManager] qwebchannel.js empty — capture-only mode "
+                    "(no WebChannel)"))
 
             # Create receiver + channel, register on current page.
             # IMPORTANT: keep strong Python references to both objects in
@@ -2443,7 +2443,7 @@ class PasswordManager(QWidget):
                 "script":   script,
             }
         except Exception as e:
-            logger.error("[PasswordManager] Error setting up browser: %s", e)
+            logger.error(tr("[PasswordManager] Error setting up browser: %s"), e)
 
     def _page_credentials(self, origin: str) -> list:
         """Credenciales para la página: las del origen o, en https sin ninguna,
@@ -2516,7 +2516,7 @@ class PasswordManager(QWidget):
             elif cands:
                 self._show_account_menu(browser, origin, cands, mode, info.get("rect"))
         except Exception as e:
-            logger.error("[PasswordManager] Error filling credential: %s", e)
+            logger.error(tr("[PasswordManager] Error filling credential: %s"), e)
 
     def _inject_fill(self, browser, origin: str, cred: dict, mode: str,
                      own_frame: bool = False):
@@ -2547,7 +2547,7 @@ class PasswordManager(QWidget):
                 pass
         menu = QMenu(browser)
         if _is_insecure_origin(origin):
-            warn = menu.addAction("Not secure connection (http): the password can be intercepted")
+            warn = menu.addAction(tr("Not secure connection (http): the password can be intercepted"))
             warn.setEnabled(False)
             menu.addSeparator()
         for c in cands:
@@ -2576,7 +2576,7 @@ class PasswordManager(QWidget):
                     self._inject_fill(browser, origin, c, mode)
                     return
         except Exception as e:
-            logger.error("[PasswordManager] Error filling selected account: %s", e)
+            logger.error(tr("[PasswordManager] Error filling selected account: %s"), e)
 
     # -----------------------------------------------------------------
     # Llave en la barra de URL
@@ -2603,7 +2603,7 @@ class PasswordManager(QWidget):
             self._key_action.triggered.connect(self._show_key_menu)
             self.refresh_key_icon()
         except Exception as e:
-            logger.error("[PasswordManager] Error attaching key icon: %s", e)
+            logger.error(tr("[PasswordManager] Error attaching key icon: %s"), e)
 
     def _current_browser(self):
         try:
@@ -2659,18 +2659,18 @@ class PasswordManager(QWidget):
         except RuntimeError:
             self._key_action = None   # la barra de URL ya no existe
         except Exception as e:
-            logger.error("[PasswordManager] Error refreshing key icon: %s", e)
+            logger.error(tr("[PasswordManager] Error refreshing key icon: %s"), e)
 
     def _build_key_menu(self, browser, origin: str):
         """Menú de la llave: cuentas del sitio, guardar lo pendiente, gestionar."""
         menu = QMenu(self._url_bar)
         if _is_insecure_origin(origin):
-            warn = menu.addAction("Not secure connection (http): passwords can be intercepted")
+            warn = menu.addAction(tr("Not secure connection (http): passwords can be intercepted"))
             warn.setEnabled(False)
             menu.addSeparator()
         creds = self._page_credentials(origin)
         if creds:
-            head = menu.addAction("Fill in:")
+            head = menu.addAction(tr("Fill in:"))
             head.setEnabled(False)
             for c in creds:
                 act = menu.addAction(c["username"].replace("&", "&&"))
@@ -2684,7 +2684,7 @@ class PasswordManager(QWidget):
             act = menu.addAction(f"{verb} password for {unsaved['username']}".replace("&", "&&"))
             act.triggered.connect(lambda _=False, b=browser: self._save_unsaved(b))
         menu.addSeparator()
-        manage = menu.addAction("Manage passwords")
+        manage = menu.addAction(tr("Manage passwords"))
         manage.triggered.connect(self._open_manager_panel)
         return menu
 
@@ -2700,7 +2700,7 @@ class PasswordManager(QWidget):
             x = max(0, bar.width() - menu.sizeHint().width())
             menu.popup(bar.mapToGlobal(QPoint(x, bar.height())))
         except Exception as e:
-            logger.error("[PasswordManager] Error showing key menu: %s", e)
+            logger.error(tr("[PasswordManager] Error showing key menu: %s"), e)
 
     def _fill_from_key(self, browser, origin: str, username: str):
         if _is_private_mode() or self._browser_origin(browser) != origin:
@@ -2725,4 +2725,4 @@ class PasswordManager(QWidget):
             try:
                 main_win.toggle_password_manager()
             except Exception as e:
-                logger.error("[PasswordManager] Error opening password panel: %s", e)
+                logger.error(tr("[PasswordManager] Error opening password panel: %s"), e)

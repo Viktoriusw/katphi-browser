@@ -13,6 +13,7 @@ Características:
 
 from __future__ import annotations
 
+from i18n import tr
 import logging
 import logging.handlers
 import os
@@ -186,13 +187,13 @@ def clear_log_files() -> None:
                 try:
                     os.remove(os.path.join(log_dir, name))
                 except OSError as exc:
-                    print(f"[logger_setup] No se pudo borrar {name}: {exc}", file=sys.stderr)
+                    print(tr("[logger_setup] No se pudo borrar {name}: {exc}", name=name, exc=exc), file=sys.stderr)
         if old is not None:
             try:
                 _file_handler = _make_file_handler()
                 root.addHandler(_file_handler)
             except Exception as exc:
-                print(f"[logger_setup] No se pudo reabrir el fichero de log: {exc}", file=sys.stderr)
+                print(tr("[logger_setup] No se pudo reabrir el fichero de log: {exc}", exc=exc), file=sys.stderr)
     # El buffer en memoria también contiene los mismos registros
     if memory_handler is not None:
         memory_handler.clear()
@@ -237,7 +238,7 @@ def setup_logging(level: str = "DEBUG", file_enabled: bool = True) -> None:
             _file_handler = _make_file_handler()
             root.addHandler(_file_handler)
         except Exception as exc:
-            print(f"[logger_setup] No se pudo abrir el fichero de log: {exc}", file=sys.stderr)
+            print(tr("[logger_setup] No se pudo abrir el fichero de log: {exc}", exc=exc), file=sys.stderr)
     # ── Handler en memoria ────────────────────────────────────────────────────
     memory_handler = MemoryLogHandler()
     memory_handler.setLevel(logging.DEBUG)
@@ -257,7 +258,7 @@ def setup_logging(level: str = "DEBUG", file_enabled: bool = True) -> None:
             sys.__excepthook__(exc_type, exc_value, exc_tb)
             return
         _log.critical(
-            "EXCEPCIÓN NO CAPTURADA:\n%s",
+            tr("EXCEPCIÓN NO CAPTURADA:\n%s"),
             "".join(traceback.format_exception(exc_type, exc_value, exc_tb)),
         )
     sys.excepthook = _excepthook
@@ -265,7 +266,7 @@ def setup_logging(level: str = "DEBUG", file_enabled: bool = True) -> None:
     # ── Excepciones no capturadas en threads secundarios ─────────────────────
     def _threading_excepthook(args):
         _log.critical(
-            "EXCEPCIÓN NO CAPTURADA EN THREAD [%s]:\n%s",
+            tr("EXCEPCIÓN NO CAPTURADA EN THREAD [%s]:\n%s"),
             getattr(args.thread, "name", "?"),
             "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_tb)),
         )
@@ -275,9 +276,9 @@ def setup_logging(level: str = "DEBUG", file_enabled: bool = True) -> None:
     _install_qt_message_handler()
 
     _log.info(
-        "Sistema de logging iniciado — nivel=%s, fichero=%s",
+        tr("Sistema de logging iniciado — nivel=%s, fichero=%s"),
         level.upper(),
-        LOG_FILE_PATH if _file_handler is not None else "(desactivado)",
+        LOG_FILE_PATH if _file_handler is not None else tr("(desactivado)"),
     )
 
 
@@ -334,5 +335,5 @@ def _install_qt_message_handler() -> None:
         qInstallMessageHandler(_qt_handler)
     except Exception as exc:
         logging.getLogger(__name__).debug(
-            "No se pudo instalar el handler Qt: %s", exc
+            tr("No se pudo instalar el handler Qt: %s"), exc
         )

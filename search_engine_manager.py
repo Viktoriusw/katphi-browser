@@ -9,6 +9,7 @@ Características:
 - Búsqueda directa desde barra de direcciones
 """
 
+from i18n import tr
 from PySide6.QtCore import QSettings, Signal, QObject, Qt
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                                QComboBox, QPushButton, QListWidget, QMessageBox,
@@ -240,7 +241,7 @@ class SearchEngineButton(QToolButton):
         self.setFixedHeight(32)
         self.setMaximumWidth(130)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("Cambiar motor de búsqueda")
+        self.setToolTip(tr("Cambiar motor de búsqueda"))
 
         self._apply_style()
         self.setup_menu()
@@ -297,7 +298,7 @@ class SearchEngineButton(QToolButton):
                 lambda checked=False, eid=engine.id: self.select_engine(eid)
             )
         menu.addSeparator()
-        manage_action = menu.addAction("Gestionar motores...")
+        manage_action = menu.addAction(tr("Gestionar motores..."))
         manage_action.triggered.connect(self.show_settings)
         self.setMenu(menu)
     def select_engine(self, engine_id: str):
@@ -334,7 +335,7 @@ class SearchEngineSettingsDialog(QDialog):
         super().__init__(parent)
         self.search_manager = search_manager
 
-        self.setWindowTitle("Configuración de motores de búsqueda")
+        self.setWindowTitle(tr("Configuración de motores de búsqueda"))
         self.setMinimumSize(500, 400)
 
         self.setup_ui()
@@ -343,13 +344,13 @@ class SearchEngineSettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Motores de búsqueda")
+        title = QLabel(tr("Motores de búsqueda"))
         title.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
         # Motor predeterminado
         default_layout = QHBoxLayout()
-        default_layout.addWidget(QLabel("Motor predeterminado:"))
+        default_layout.addWidget(QLabel(tr("Motor predeterminado:")))
 
         self.default_combo = QComboBox()
         for engine in self.search_manager.get_all_engines():
@@ -367,7 +368,7 @@ class SearchEngineSettingsDialog(QDialog):
         layout.addLayout(default_layout)
 
         # Lista de motores disponibles
-        layout.addWidget(QLabel("Motores disponibles:"))
+        layout.addWidget(QLabel(tr("Motores disponibles:")))
 
         self.engines_list = QListWidget()
         for engine in self.search_manager.get_all_engines():
@@ -377,8 +378,8 @@ class SearchEngineSettingsDialog(QDialog):
 
         # Información
         info_label = QLabel(
-            "Puedes cambiar el motor predeterminado o usar el selector "
-            "en la barra de búsqueda para búsquedas específicas."
+            tr("Puedes cambiar el motor predeterminado o usar el selector "
+            "en la barra de búsqueda para búsquedas específicas.")
         )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-top: 10px; }")
@@ -388,7 +389,7 @@ class SearchEngineSettingsDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
 
-        close_btn = QPushButton("Cerrar")
+        close_btn = QPushButton(tr("Cerrar"))
         close_btn.clicked.connect(self.accept)
         buttons_layout.addWidget(close_btn)
 
@@ -400,6 +401,6 @@ class SearchEngineSettingsDialog(QDialog):
             self.search_manager.set_default_engine(engine_id)
             QMessageBox.information(
                 self,
-                "Motor cambiado",
-                f"Motor de búsqueda predeterminado cambiado a: {self.default_combo.currentText()}"
+                tr("Motor cambiado"),
+                tr("Motor de búsqueda predeterminado cambiado a: {value}", value=self.default_combo.currentText())
             )

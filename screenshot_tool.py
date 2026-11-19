@@ -10,6 +10,7 @@ Características:
 - Diálogo de opciones con preview
 """
 
+from i18n import tr
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                QLabel, QDialog, QFileDialog, QMessageBox,
                                QRadioButton, QButtonGroup, QSpinBox, QCheckBox,
@@ -40,8 +41,8 @@ class ScreenshotTool:
         if not self.browser:
             QMessageBox.warning(
                 self.parent,
-                "Sin página activa",
-                "No hay ninguna página activa para capturar."
+                tr("Sin página activa"),
+                tr("No hay ninguna página activa para capturar.")
             )
             return
         dialog = ScreenshotDialog(self.browser, self.parent)
@@ -97,8 +98,8 @@ class ScreenshotTool:
 
         # Mostrar diálogo de progreso
         self.progress_dialog = QProgressDialog(
-            "Capturando página completa...",
-            "Cancelar",
+            tr("Capturando página completa..."),
+            tr("Cancelar"),
             0,
             page_height,
             self.parent
@@ -197,9 +198,9 @@ class ScreenshotTool:
         # Diálogo para guardar
         file_path, selected_filter = QFileDialog.getSaveFileName(
             self.parent,
-            "Guardar captura de pantalla",
+            tr("Guardar captura de pantalla"),
             os.path.expanduser(f"~/Pictures/{suggested_filename}"),
-            "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;All Files (*.*)"
+            tr("PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;All Files (*.*)")
         )
 
         if file_path:
@@ -217,15 +218,15 @@ class ScreenshotTool:
             if success:
                 QMessageBox.information(
                     self.parent,
-                    "Captura guardada",
-                    f"La captura se guardó exitosamente en:\n{file_path}"
+                    tr("Captura guardada"),
+                    tr("La captura se guardó exitosamente en:\n{file_path}", file_path=file_path)
                 )
                 return True
             else:
                 QMessageBox.critical(
                     self.parent,
-                    "Error",
-                    "No se pudo guardar la captura de pantalla."
+                    tr("Error"),
+                    tr("No se pudo guardar la captura de pantalla.")
                 )
                 return False
         return False
@@ -244,8 +245,8 @@ class ScreenshotTool:
 
         QMessageBox.information(
             self.parent,
-            "Copiado al portapapeles",
-            "La captura de pantalla se copió al portapapeles."
+            tr("Copiado al portapapeles"),
+            tr("La captura de pantalla se copió al portapapeles.")
         )
         return True
     def on_screenshot_captured(self, image):
@@ -266,7 +267,7 @@ class ScreenshotDialog(QDialog):
         self.screenshot_tool = ScreenshotTool(browser_view, parent)
         self.captured_image = None
 
-        self.setWindowTitle("Captura de pantalla")
+        self.setWindowTitle(tr("Captura de pantalla"))
         self.setModal(True)
         self.setMinimumWidth(400)
 
@@ -276,21 +277,21 @@ class ScreenshotDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Captura de pantalla")
+        title = QLabel(tr("Captura de pantalla"))
         title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
         # Opciones de captura
         options_group = QButtonGroup(self)
 
-        self.visible_radio = QRadioButton("Capturar área visible")
-        self.visible_radio.setToolTip("Captura solo lo que se ve en pantalla actualmente")
+        self.visible_radio = QRadioButton(tr("Capturar área visible"))
+        self.visible_radio.setToolTip(tr("Captura solo lo que se ve en pantalla actualmente"))
         self.visible_radio.setChecked(True)
         options_group.addButton(self.visible_radio)
         layout.addWidget(self.visible_radio)
 
-        self.fullpage_radio = QRadioButton("Capturar página completa")
-        self.fullpage_radio.setToolTip("Captura toda la página haciendo scroll automático")
+        self.fullpage_radio = QRadioButton(tr("Capturar página completa"))
+        self.fullpage_radio.setToolTip(tr("Captura toda la página haciendo scroll automático"))
         options_group.addButton(self.fullpage_radio)
         layout.addWidget(self.fullpage_radio)
 
@@ -298,15 +299,15 @@ class ScreenshotDialog(QDialog):
         layout.addSpacing(20)
 
         # Opciones de guardado
-        save_label = QLabel("Opciones de guardado:")
+        save_label = QLabel(tr("Opciones de guardado:"))
         save_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(save_label)
 
-        self.save_file_check = QCheckBox("Guardar en archivo")
+        self.save_file_check = QCheckBox(tr("Guardar en archivo"))
         self.save_file_check.setChecked(True)
         layout.addWidget(self.save_file_check)
 
-        self.copy_clipboard_check = QCheckBox("Copiar al portapapeles")
+        self.copy_clipboard_check = QCheckBox(tr("Copiar al portapapeles"))
         self.copy_clipboard_check.setChecked(False)
         layout.addWidget(self.copy_clipboard_check)
 
@@ -316,7 +317,7 @@ class ScreenshotDialog(QDialog):
         # Botones de acción
         buttons_layout = QHBoxLayout()
 
-        self.capture_btn = QPushButton("Capturar")
+        self.capture_btn = QPushButton(tr("Capturar"))
         self.capture_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4a90e2;
@@ -333,7 +334,7 @@ class ScreenshotDialog(QDialog):
         self.capture_btn.clicked.connect(self.perform_capture)
         buttons_layout.addWidget(self.capture_btn)
 
-        cancel_btn = QPushButton("Cancelar")
+        cancel_btn = QPushButton(tr("Cancelar"))
         cancel_btn.clicked.connect(self.reject)
         buttons_layout.addWidget(cancel_btn)
 
@@ -341,8 +342,8 @@ class ScreenshotDialog(QDialog):
 
         # Info
         info_label = QLabel(
-            "Tip: La captura de página completa puede tardar unos segundos "
-            "en páginas largas."
+            tr("Tip: La captura de página completa puede tardar unos segundos "
+            "en páginas largas.")
         )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-top: 10px; }")
@@ -362,7 +363,7 @@ class ScreenshotDialog(QDialog):
     def on_full_page_captured(self, image):
         """Callback cuando termina la captura de página completa"""
         self.capture_btn.setEnabled(True)
-        self.capture_btn.setText("Capturar")
+        self.capture_btn.setText(tr("Capturar"))
 
         if image:
             self.process_captured_image(image)
@@ -396,7 +397,7 @@ class ScreenshotButton(QPushButton):
             self.setIconSize(QSize(18, 18))
         except Exception:
             pass
-        self.setToolTip("Captura de pantalla (Ctrl+Shift+S)")
+        self.setToolTip(tr("Captura de pantalla (Ctrl+Shift+S)"))
         self.setFixedSize(36, 36)
         self.setStyleSheet("""
             QPushButton {

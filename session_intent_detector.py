@@ -6,6 +6,7 @@ Analiza las pestañas abiertas (dominios, títulos, contenido) para inferir
 qué está haciendo el usuario y sugerir acciones proactivas.
 """
 
+from i18n import tr
 import logging
 import re
 from collections import Counter
@@ -192,13 +193,13 @@ class SessionContextAnalyzer(QObject):
     analysis_ready = Signal(dict)
 
     _ACTION_MAP: Dict[SessionIntent, str] = {
-        SessionIntent.RESEARCH: "Crear resumen de investigación con GenTab",
-        SessionIntent.SHOPPING: "Comparar productos en una tabla",
-        SessionIntent.NEWS: "Generar briefing de noticias",
-        SessionIntent.TRAVEL: "Crear itinerario de viaje",
-        SessionIntent.CODING: "Generar documentación técnica",
-        SessionIntent.ENTERTAINMENT: "Crear playlist o watchlist",
-        SessionIntent.GENERAL: "Organizar pestañas por tema",
+        SessionIntent.RESEARCH: tr("Crear resumen de investigación con GenTab"),
+        SessionIntent.SHOPPING: tr("Comparar productos en una tabla"),
+        SessionIntent.NEWS: tr("Generar briefing de noticias"),
+        SessionIntent.TRAVEL: tr("Crear itinerario de viaje"),
+        SessionIntent.CODING: tr("Generar documentación técnica"),
+        SessionIntent.ENTERTAINMENT: tr("Crear playlist o watchlist"),
+        SessionIntent.GENERAL: tr("Organizar pestañas por tema"),
     }
 
     def __init__(self, parent: Optional[QObject] = None):

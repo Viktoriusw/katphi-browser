@@ -1,3 +1,4 @@
+from i18n import tr
 from PySide6.QtWidgets import (
     QMainWindow,
     QToolBar,
@@ -56,7 +57,7 @@ try:
 except ImportError as _e:
     _FOLDERS_AVAILABLE = False
     import logging as _logging
-    _logging.getLogger(__name__).warning("Sistema de carpetas no disponible: %s", _e)
+    _logging.getLogger(__name__).warning(tr("Sistema de carpetas no disponible: %s"), _e)
 from password_manager import PasswordManager
 from auth_manager import AuthManager
 from auth_panel import LoginDialog, AuthPanel
@@ -252,10 +253,10 @@ try:
     from chat_panel_safe import ChatPanelSafe as ChatPanel
 
     CHAT_AVAILABLE = True
-    print("[OK] AI chat module loaded correctly")
+    print(tr("[OK] AI chat module loaded correctly"))
 except ImportError as e:
     CHAT_AVAILABLE = False
-    print(f"Warning: AI chat module not available - {e}")
+    print(tr("Warning: AI chat module not available - {e}", e=e))
 
 # Import Log Viewer panel
 try:
@@ -351,12 +352,12 @@ class LoginWorker(QThread):
             print(f"[LoginWorker] Login completed with success={result.success}")
             self.login_completed.emit(result)
         except Exception as e:
-            print(f"[LoginWorker] Login error: {e}")
+            print(tr("[LoginWorker] Login error: {e}", e=e))
             # Crear un resultado de error
             from auth_manager import AuthError
 
             error_result = AuthResult(
-                False, AuthError.NETWORK_ERROR, f"Error: {str(e)}"
+                False, AuthError.NETWORK_ERROR, tr("Error: {value}", value=str(e))
             )
             self.login_completed.emit(error_result)
 
@@ -400,7 +401,7 @@ class _GenTabPage(QWebEnginePage):
                 and is_main_frame and scheme in ("http", "https")):
             self._open_link(url.toString())
         else:
-            print(f"[GenTab] Navegación bloqueada: {url.toString()[:120]}")
+            print(tr("[GenTab] Navegación bloqueada: {value}", value=url.toString()[:120]))
         return False
 
     def createWindow(self, _window_type):
@@ -445,7 +446,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         # A-001: ventana privada (perfil off-the-record, sin sesión ni historial)
         self._private_mode = _is_private_mode()
-        self.setWindowTitle("Katphi")
+        self.setWindowTitle(tr("Katphi"))
         self.setGeometry(100, 100, 1200, 800)
         self.settings = QSettings("Katphi", "Settings")
         self._window_frameless = False
@@ -487,7 +488,7 @@ class MainWindow(QMainWindow):
                 self.folders_manager = FoldersManager("bookmarks.db")
             except Exception as _ex:
                 import logging as _log
-                _log.getLogger(__name__).error("Error iniciando FoldersManager: %s", _ex)
+                _log.getLogger(__name__).error(tr("Error iniciando FoldersManager: %s"), _ex)
         self.password_manager = PasswordManager(self)
         self.navigation_manager = NavigationManager(self)
         self.tab_manager = TabManager(self.history_manager, self)
@@ -498,7 +499,7 @@ class MainWindow(QMainWindow):
             self.session_manager = SessionManager(self)
         except Exception as e:
             self.session_manager = None
-            print(f"[ERROR] Failed to initialize Session Manager: {e}")
+            print(tr("[ERROR] Failed to initialize Session Manager: {e}", e=e))
 
         # ====================================================================
         # NUEVAS FUNCIONALIDADES UX/UI
@@ -550,7 +551,7 @@ class MainWindow(QMainWindow):
                 self.auth_manager = AuthManager()
                 print("[OK] Authentication system initialized")
             except Exception as e:
-                print(f"[ERROR] Failed to initialize auth system: {e}")
+                print(tr("[ERROR] Failed to initialize auth system: {e}", e=e))
         else:
             print("[WARNING] Authentication system not available")
         # Initialize GenTab panel early (needed by setup_side_strip before setup_dock_widgets)
@@ -562,7 +563,7 @@ class MainWindow(QMainWindow):
                 print("[OK] GenTab panel initialized")
             except Exception as e:
                 self.gentab_panel = None
-                print(f"[ERROR] Failed to initialize GenTab panel: {e}")
+                print(tr("[ERROR] Failed to initialize GenTab panel: {e}", e=e))
         # Initialize Tor manager
         self.tor_manager = None
         if TOR_AVAILABLE:
@@ -571,7 +572,7 @@ class MainWindow(QMainWindow):
                 print("[OK] Tor manager initialized")
             except Exception as e:
                 self.tor_manager = None
-                print(f"[ERROR] Failed to initialize Tor manager: {e}")
+                print(tr("[ERROR] Failed to initialize Tor manager: {e}", e=e))
         # ====================================================================
         # AI NAVIGATION SYSTEM
         # ====================================================================
@@ -629,16 +630,16 @@ class MainWindow(QMainWindow):
                     self.auth_manager.plugin_license_changed.connect(
                         self.resync_plugins_to_current_user
                     )
-                    print("[OK] Plugin resync conectado a señales de auth")
+                    print(tr("[OK] Plugin resync conectado a señales de auth"))
                 except Exception as _sig_e:
-                    print(f"[WARNING] No se pudieron conectar señales de auth para resync: {_sig_e}")
+                    print(tr("[WARNING] No se pudieron conectar señales de auth para resync: {sig_e}", sig_e=_sig_e))
 
                 print("[OK] Unified Plugin system initialized with auth")
 
                 # Cargar plugins gratuitos inmediatamente (sin necesidad de autenticación)
                 QTimer.singleShot(1000, self._load_free_plugins)
             except Exception as e:
-                print(f"[ERROR] Failed to initialize plugin system: {e}")
+                print(tr("[ERROR] Failed to initialize plugin system: {e}", e=e))
         else:
             print("[WARNING] Plugin system not available or auth_manager missing")
         # Search Engine Manager (ANTES de crear la barra de navegación)
@@ -646,14 +647,14 @@ class MainWindow(QMainWindow):
             self.search_engine_manager = SearchEngineManager(self)
             print("[OK] Search Engine Manager initialized")
         except Exception as e:
-            print(f"[ERROR] Failed to initialize Search Engine Manager: {e}")
+            print(tr("[ERROR] Failed to initialize Search Engine Manager: {e}", e=e))
             self.search_engine_manager = None
         # Homepage Manager (DESPUÉS del SearchEngineManager)
         try:
             self.homepage_manager = HomepageManager(self)
             print("[OK] Homepage Manager initialized")
         except Exception as e:
-            print(f"[ERROR] Failed to initialize Homepage Manager: {e}")
+            print(tr("[ERROR] Failed to initialize Homepage Manager: {e}", e=e))
             self.homepage_manager = None
         # Crear la barra de navegación después de tener navigation_manager
         self.nav_bar = QToolBar("Navigation")
@@ -701,11 +702,11 @@ class MainWindow(QMainWindow):
         # A-001: indicador visible de ventana privada
         self._private_badge = None
         if self._private_mode:
-            self._private_badge = QLabel("Privada")
+            self._private_badge = QLabel(tr("Privada"))
             self._private_badge.setObjectName("privateWindowBadge")
             self._private_badge.setToolTip(
-                "Ventana privada: no se guardan historial, cookies, caché, "
-                "sesión de pestañas, descargas ni contraseñas"
+                tr("Ventana privada: no se guardan historial, cookies, caché, "
+                "sesión de pestañas, descargas ni contraseñas")
             )
             self._private_badge.setStyleSheet(
                 "QLabel#privateWindowBadge { background: #6a1b9a; color: #ffffff; "
@@ -780,7 +781,7 @@ class MainWindow(QMainWindow):
 
         # Botón de cierre para paneles avanzados (se reubica por panel activo)
         self.close_panel_btn = QPushButton("X", self.advanced_panel_stack)
-        self.close_panel_btn.setToolTip("Cerrar panel")
+        self.close_panel_btn.setToolTip(tr("Cerrar panel"))
         self.close_panel_btn.setFixedSize(24, 24)
         self.close_panel_btn.clicked.connect(self.hide_advanced_panel)
         self.close_panel_btn.setStyleSheet(
@@ -923,7 +924,7 @@ class MainWindow(QMainWindow):
         self.devtools_dock.hide()
 
         # Configurar Bookmark Manager (panel clásico — mantenido por compatibilidad)
-        self.bookmark_dock = QDockWidget("Gestor de Marcadores", self)
+        self.bookmark_dock = QDockWidget(tr("Gestor de Marcadores"), self)
         self.bookmark_dock.setWidget(self.bookmark_manager)
         self.bookmark_dock.setAllowedAreas(
             Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea
@@ -960,7 +961,7 @@ class MainWindow(QMainWindow):
         except Exception as _fav_ex:
             import logging as _l
             _l.getLogger(__name__).warning(
-                "No se pudo insertar favorites_bar en el layout, usando toolbar: %s",
+                tr("No se pudo insertar favorites_bar en el layout, usando toolbar: %s"),
                 _fav_ex,
             )
             self.favorites_bar.setAllowedAreas(
@@ -1009,7 +1010,7 @@ class MainWindow(QMainWindow):
 
         # Configurar Download Panel (NUEVA FUNCIONALIDAD)
         self.download_panel = DownloadPanel(self)
-        self.download_dock = QDockWidget("Descargas", self)
+        self.download_dock = QDockWidget(tr("Descargas"), self)
         self.download_dock.setWidget(self.download_panel)
         self.download_dock.setAllowedAreas(
             Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea
@@ -1031,7 +1032,7 @@ class MainWindow(QMainWindow):
                 print("[OK] Tor panel configured correctly")
             except Exception as e:
                 self.tor_panel = None
-                print(f"[ERROR] Failed to configure Tor panel: {e}")
+                print(tr("[ERROR] Failed to configure Tor panel: {e}", e=e))
         # Configurar Scraping Panel (si está disponible)
         if SCRAPING_AVAILABLE:
             self.scraping_integration = scraping_integration
@@ -1039,7 +1040,7 @@ class MainWindow(QMainWindow):
                 self.scraping_integration,
                 plugin_validator=self.plugin_manager,
             )
-            self.scraping_dock = QDockWidget("Scrapelillo Completo", self)
+            self.scraping_dock = QDockWidget(tr("Scrapelillo Completo"), self)
             self.scraping_dock.setWidget(self.scraping_panel)
             self.scraping_dock.setAllowedAreas(
                 Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea
@@ -1053,7 +1054,7 @@ class MainWindow(QMainWindow):
             self.scraping_integration = None
             self.scraping_panel = None
             self.scraping_dock = None
-            print("[INFO] Plugin Scraping no instalado")
+            print(tr("[INFO] Plugin Scraping no instalado"))
         # Configurar Proxy Panel (si está disponible)
         if PROXY_AVAILABLE:
             # Obtener el proxy manager del scraping integration si está disponible
@@ -1074,25 +1075,25 @@ class MainWindow(QMainWindow):
         else:
             self.proxy_panel = None
             self.proxy_dock = None
-            print("[INFO] Plugin Proxy no instalado")
+            print(tr("[INFO] Plugin Proxy no instalado"))
         # Configurar Chat Panel (si está disponible)
         if CHAT_AVAILABLE:
             self.chat_panel = ChatPanel()
             # Conectar señal de GenTab desde el chat
             if hasattr(self.chat_panel, "gentab_requested"):
                 self.chat_panel.gentab_requested.connect(self._on_gentab_from_navbar)
-            self.chat_dock = QDockWidget("Chat con IA", self)
+            self.chat_dock = QDockWidget(tr("Chat con IA"), self)
             self.chat_dock.setWidget(self.chat_panel)
             self.chat_dock.setAllowedAreas(
                 Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea
             )
             self.addDockWidget(Qt.RightDockWidgetArea, self.chat_dock)
             self.chat_dock.hide()
-            print("[OK] AI chat panel configured correctly (with AI Navigation)")
+            print(tr("[OK] AI chat panel configured correctly (with AI Navigation)"))
         else:
             self.chat_panel = None
             self.chat_dock = None
-            print("[ERROR] AI chat panel not available")
+            print(tr("[ERROR] AI chat panel not available"))
         # Log Viewer Panel
         if LOG_VIEWER_AVAILABLE:
             self.log_viewer_panel = LogViewerPanel()
@@ -1120,7 +1121,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.tab_groups_panel = None
             self.tab_groups_dock = None
-            print(f"[ERROR] Tab Groups panel not available: {e}")
+            print(tr("[ERROR] Tab Groups panel not available: {e}", e=e))
         # SEO Analyzer Plugin - NOW LOADED DYNAMICALLY through UnifiedPluginManager
         # (Removed static initialization)
 
@@ -1143,7 +1144,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self.unified_plugin_panel = None
                 self.plugin_store_dock = None
-                print(f"[ERROR] Failed to configure plugin panel: {e}")
+                print(tr("[ERROR] Failed to configure plugin panel: {e}", e=e))
         else:
             print(
                 "[WARNING] Plugin panel not configured (system not available or auth_manager missing)"
@@ -1156,7 +1157,7 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(1500, self._setup_auth_panel)
             print("[OK] Authentication panel will be configured")
         else:
-            print("[ERROR] Authentication panel not available")
+            print(tr("[ERROR] Authentication panel not available"))
     def setup_theme(self):
         # Cargar configuración de tema (Settings ya existe desde __init__)
         if getattr(self, "settings", None) is None:
@@ -1269,7 +1270,7 @@ class MainWindow(QMainWindow):
             self.show_plugins_panel
         )
 
-        print("[OK] Atajos de teclado configurados")
+        print(tr("[OK] Atajos de teclado configurados"))
     def _ensure_chat_button_visible(self):
         """Garantiza que el botón de Chat IA esté presente en la barra lateral."""
         try:
@@ -1285,12 +1286,12 @@ class MainWindow(QMainWindow):
             icon = QIcon("icons/chat.svg")
             if icon.isNull():
                 icon = QIcon("icons/sidebar.svg")
-            self.chat_action = QAction(icon, "Chat IA", self)
+            self.chat_action = QAction(icon, tr("Chat IA"), self)
             self.chat_action.triggered.connect(self.toggle_chat_panel)
             self.side_strip.addAction(self.chat_action)
-            print("[UI] Chat IA button re-injected into sidebar")
+            print(tr("[UI] Chat IA button re-injected into sidebar"))
         except Exception as e:
-            print(f"[UI] Error ensuring Chat IA button visibility: {e}")
+            print(tr("[UI] Error ensuring Chat IA button visibility: {e}", e=e))
     def _ensure_navigation_assistant_button_visible(self):
         """El asistente de navegación está integrado en el chat — no se añade botón separado."""
         pass
@@ -1306,7 +1307,7 @@ class MainWindow(QMainWindow):
                 if w.isRunning():
                     w.requestInterruption()
                     if not w.wait(timeout_ms):
-                        print("[AI] IndexWorker sigue activo tras el timeout; se conserva la referencia")
+                        print(tr("[AI] IndexWorker sigue activo tras el timeout; se conserva la referencia"))
                         for _sig in (w.indexing_done, w.finished):
                             try:
                                 _sig.disconnect()
@@ -1314,7 +1315,7 @@ class MainWindow(QMainWindow):
                                 pass
                         _LINGERING_WORKERS.append(w)
             except Exception as e:
-                print(f"[AI] Error deteniendo IndexWorker: {e}")
+                print(tr("[AI] Error deteniendo IndexWorker: {e}", e=e))
 
     def _shutdown_cleanup(self) -> None:
         """Limpieza común al cerrar la ventana y antes de reiniciar (Tor)."""
@@ -1324,13 +1325,13 @@ class MainWindow(QMainWindow):
             try:
                 chat.shutdown_workers()
             except Exception as e:
-                print(f"[Browser] Error stopping assistant workers: {e}")
+                print(tr("[Browser] Error stopping assistant workers: {e}", e=e))
         engine = getattr(getattr(self, "gentab_panel", None), "engine", None)
         if engine is not None and hasattr(engine, "shutdown"):
             try:
                 engine.shutdown()
             except Exception as e:
-                print(f"[Browser] Error stopping GenTab worker: {e}")
+                print(tr("[Browser] Error stopping GenTab worker: {e}", e=e))
         # AI Navigation cleanup
         if self.ai_nav_enabled:
             self._stop_index_workers()
@@ -1366,13 +1367,13 @@ class MainWindow(QMainWindow):
             self._stop_tor_on_exit()
             event.accept()
         except Exception as e:
-            print(f"[Browser] Error during shutdown: {e}")
+            print(tr("[Browser] Error during shutdown: {e}", e=e))
             event.accept()
 
     def setWindowTitle(self, title):
         """A-001: en la ventana privada el título lleva siempre "(Privada)"."""
         if getattr(self, "_private_mode", False) and "(Privada)" not in (title or ""):
-            title = f"{title} (Privada)"
+            title = tr("{title} (Privada)", title=title)
         super().setWindowTitle(title)
     def resizeEvent(self, event):
         """
@@ -1431,7 +1432,7 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "search_engine_button"):
                     self.search_engine_button.hide()
         except Exception as e:
-            print(f"[UI] Error in resizeEvent: {e}")
+            print(tr("[UI] Error in resizeEvent: {e}", e=e))
         try:
             self._layout_frameless_resize_handles()
         except Exception as e_layout:
@@ -1467,31 +1468,31 @@ class MainWindow(QMainWindow):
         # Toggle Sidebar
         self.sidebar_visible = True
         self.toggle_sidebar_action = _nav_action(
-            "sidebar", "Ocultar/Mostrar Panel Lateral", self.toggle_sidebar
+            "sidebar", tr("Ocultar/Mostrar Panel Lateral"), self.toggle_sidebar
         )
         self.nav_bar.addAction(self.toggle_sidebar_action)
 
         # Back
         self.back_action = _nav_action(
-            "back", "Atrás (Alt+←)", self.navigation_manager.navigate_back
+            "back", tr("Atrás (Alt+←)"), self.navigation_manager.navigate_back
         )
         self.nav_bar.addAction(self.back_action)
 
         # Forward
         self.forward_action = _nav_action(
-            "forward", "Adelante (Alt+→)", self.navigation_manager.navigate_forward
+            "forward", tr("Adelante (Alt+→)"), self.navigation_manager.navigate_forward
         )
         self.nav_bar.addAction(self.forward_action)
 
         # Refresh
         self.refresh_action_nav = _nav_action(
-            "refresh", "Recargar (F5)", self.navigation_manager.refresh_page
+            "refresh", tr("Recargar (F5)"), self.navigation_manager.refresh_page
         )
         self.nav_bar.addAction(self.refresh_action_nav)
 
         # History
         self.history_action_nav = _nav_action(
-            "history", "Historial",
+            "history", tr("Historial"),
             lambda: self.history_manager.show_history(self.tab_manager)
         )
         self.nav_bar.addAction(self.history_action_nav)
@@ -1530,7 +1531,7 @@ class MainWindow(QMainWindow):
             print("[OK] Conversational NavBar active")
         else:
             self.url_bar = ExpandableUrlBar()
-            self.url_bar.setPlaceholderText("Buscar o escribir URL...")
+            self.url_bar.setPlaceholderText(tr("Buscar o escribir URL..."))
         self.url_bar.setObjectName("urlBar")
         self.url_bar.returnPressed.connect(lambda: self.load_url(self.url_bar.text()))
         self.url_bar.setFixedHeight(36)
@@ -1556,7 +1557,7 @@ class MainWindow(QMainWindow):
 
         # Botón de favoritos (entre URL bar y búsqueda de pestañas)
         self.favorite_nav_action = _nav_action(
-            "star", "Guardar pestaña actual en marcadores",
+            "star", tr("Guardar pestaña actual en marcadores"),
             self.show_save_favorite_menu
         )
         self.nav_bar.addAction(self.favorite_nav_action)
@@ -1564,7 +1565,7 @@ class MainWindow(QMainWindow):
 
         # Botón para mostrar/ocultar la barra de favoritos (junto al anterior)
         self.toggle_favbar_nav_action = _nav_action(
-            "heart", "Mostrar / ocultar barra de favoritos",
+            "heart", tr("Mostrar / ocultar barra de favoritos"),
             self.toggle_favorites_bar
         )
         self.nav_bar.addAction(self.toggle_favbar_nav_action)
@@ -1591,7 +1592,7 @@ class MainWindow(QMainWindow):
 
         # Campo de búsqueda de pestañas - PUEDE OCULTARSE en ventanas pequeñas
         self.tab_search = QLineEdit()
-        self.tab_search.setPlaceholderText("Search tabs...")
+        self.tab_search.setPlaceholderText(tr("Search tabs..."))
         # CRÍTICO: Reducir ancho mínimo para evitar overflow
         self.tab_search.setMinimumWidth(100)  # Reducido de 200 a 100
         self.tab_search.setMaximumWidth(250)  # Reducido de 350 a 250
@@ -1612,7 +1613,7 @@ class MainWindow(QMainWindow):
         except Exception:
             self.menu_btn.setIcon(QIcon("icons/menu.svg"))
         self.menu_btn.setFixedSize(36, 36)  # Ajustado para coincidir con sidebar
-        self.menu_btn.setToolTip("Menú principal")
+        self.menu_btn.setToolTip(tr("Menú principal"))
         self.menu_btn.setProperty("class", "menu-button")
         self.menu_btn.clicked.connect(self.show_main_menu)
         self.nav_bar.addWidget(self.menu_btn)
@@ -1620,7 +1621,7 @@ class MainWindow(QMainWindow):
         # Login Button with account icon
         self.login_btn = QPushButton()
         self.login_btn.setFixedSize(36, 36)  # Ajustado para coincidir con sidebar
-        self.login_btn.setToolTip("Iniciar sesión en Katphi")
+        self.login_btn.setToolTip(tr("Iniciar sesión en Katphi"))
         self.login_btn.clicked.connect(self.show_login_dialog)
 
         # Icono SVG temático (se re-colorea en refresh_all_nav_icons)
@@ -1711,7 +1712,7 @@ class MainWindow(QMainWindow):
             return action
         # Botón de Chat IA SIEMPRE visible y en primera posición (panel izquierdo)
         self.chat_action = create_strip_action(
-            "icons/chat.png", "Asistente IA", self.toggle_chat_panel
+            "icons/chat.png", tr("Asistente IA"), self.toggle_chat_panel
         )
         self.side_strip.addAction(self.chat_action)
 
@@ -1782,12 +1783,12 @@ class MainWindow(QMainWindow):
         # Botón de "Cuenta" eliminado según requerimiento del usuario
 
         self.bookmark_action = create_strip_action(
-            "icons/bookmark.png", "Marcadores", self.toggle_bookmark_manager
+            "icons/bookmark.png", tr("Marcadores"), self.toggle_bookmark_manager
         )
         self.side_strip.addAction(self.bookmark_action)
 
         self.theme_action = create_strip_action(
-            "icons/themes.svg", "Gestor de Temas", self.open_theme_selector
+            "icons/themes.svg", tr("Gestor de Temas"), self.open_theme_selector
         )
         self.side_strip.addAction(self.theme_action)
 
@@ -2044,9 +2045,9 @@ class MainWindow(QMainWindow):
 
         self._chrome_min_btn = _mk("\u2212", "Minimizar", self._chrome_minimize, "chromeMin")
         self._chrome_max_btn = _mk(
-            "\u25a1", "Maximizar o restaurar", self._chrome_toggle_maximize, "chromeMax"
+            "\u25a1", tr("Maximizar o restaurar"), self._chrome_toggle_maximize, "chromeMax"
         )
-        self._chrome_close_btn = _mk("\u2715", "Cerrar", self._chrome_close_window, "chromeClose")
+        self._chrome_close_btn = _mk("\u2715", tr("Cerrar"), self._chrome_close_window, "chromeClose")
         lay.addWidget(self._chrome_min_btn)
         lay.addWidget(self._chrome_max_btn)
         lay.addWidget(self._chrome_close_btn)
@@ -2343,7 +2344,7 @@ class MainWindow(QMainWindow):
             try:
                 wh = self.windowHandle()
                 if wh is None:
-                    raise RuntimeError("sin windowHandle")
+                    raise RuntimeError(tr("sin windowHandle"))
                 if isinstance(event, QMouseEvent):
                     pos_pt = (
                         event.position().toPoint()
@@ -2505,7 +2506,7 @@ class MainWindow(QMainWindow):
                         btn.setFixedSize(18, 18)
                         btn.setStyleSheet(_btn_qss)
         except Exception as e:
-            print(f"[THEME] Error actualizando estilo del tab bar: {e}")
+            print(tr("[THEME] Error actualizando estilo del tab bar: {e}", e=e))
 
     def _refresh_side_strip_icons(self, theme_id=None):
         """Vuelve a tiñar iconos SVG/PNG de la barra lateral según icon_color del tema."""
@@ -2550,9 +2551,9 @@ class MainWindow(QMainWindow):
                     f"[THEME] Theme loaded via theme manager: {theme_manager.get_current_theme()}"
                 )
             else:
-                print("[ERROR] Theme manager not available")
+                print(tr("[ERROR] Theme manager not available"))
         else:
-            print("[ERROR] Theme system not available")
+            print(tr("[ERROR] Theme system not available"))
     def load_theme(self):
         """Carga el tema guardado o usa el tema por defecto"""
         self._load_legacy_theme()
@@ -2566,9 +2567,9 @@ class MainWindow(QMainWindow):
                 theme_manager.apply_theme(theme)
                 self._apply_tooltip_theme(theme_manager)
             else:
-                print("[ERROR] Theme manager not available")
+                print(tr("[ERROR] Theme manager not available"))
         else:
-            print("[ERROR] Theme system not available")
+            print(tr("[ERROR] Theme system not available"))
     def _apply_tooltip_theme(self, theme_manager=None):
         """Aplica el estilo de QToolTip según el tema activo"""
         try:
@@ -2624,7 +2625,7 @@ class MainWindow(QMainWindow):
             pal.setColor(QPalette.WindowText, QColor(text))
             QToolTip.setPalette(pal)
         except Exception as e:
-            print(f"[THEME] Error actualizando estilo de tooltip: {e}")
+            print(tr("[THEME] Error actualizando estilo de tooltip: {e}", e=e))
     def toggle_theme(self):
         """Alterna entre tema claro y oscuro usando el theme manager"""
         if THEME_SYSTEM_AVAILABLE:
@@ -2634,9 +2635,9 @@ class MainWindow(QMainWindow):
                 self._apply_tooltip_theme(theme_manager)
                 print(f"[THEME] Theme toggled to: {theme_manager.get_current_theme()}")
             else:
-                print("[ERROR] Theme manager not available")
+                print(tr("[ERROR] Theme manager not available"))
         else:
-            print("[ERROR] Theme system not available")
+            print(tr("[ERROR] Theme system not available"))
     def open_theme_selector(self):
         """Abre el gestor de temas en el panel lateral (como el resto de funciones)."""
         # Si el plugin de temas está cargado, usar el panel integrado
@@ -2656,13 +2657,13 @@ class MainWindow(QMainWindow):
                 )
 
                 dialog = QDialog(self)
-                dialog.setWindowTitle("Seleccionar Tema")
+                dialog.setWindowTitle(tr("Seleccionar Tema"))
                 dialog.setModal(True)
                 dialog.resize(300, 150)
 
                 layout = QVBoxLayout(dialog)
 
-                title = QLabel("Selecciona un tema:")
+                title = QLabel(tr("Selecciona un tema:"))
                 title.setStyleSheet(
                     "font-size: 14px; font-weight: bold; margin-bottom: 10px;"
                 )
@@ -2670,25 +2671,25 @@ class MainWindow(QMainWindow):
 
                 buttons_layout = QHBoxLayout()
 
-                light_btn = QPushButton("Tema Claro")
+                light_btn = QPushButton(tr("Tema Claro"))
                 light_btn.clicked.connect(lambda: self._select_theme("light", dialog))
                 buttons_layout.addWidget(light_btn)
 
-                dark_btn = QPushButton("Tema Oscuro")
+                dark_btn = QPushButton(tr("Tema Oscuro"))
                 dark_btn.clicked.connect(lambda: self._select_theme("dark", dialog))
                 buttons_layout.addWidget(dark_btn)
 
                 layout.addLayout(buttons_layout)
 
-                cancel_btn = QPushButton("Cancelar")
+                cancel_btn = QPushButton(tr("Cancelar"))
                 cancel_btn.clicked.connect(dialog.reject)
                 layout.addWidget(cancel_btn)
 
                 dialog.exec()
             else:
-                print("[ERROR] Theme manager not available")
+                print(tr("[ERROR] Theme manager not available"))
         else:
-            print("[ERROR] Theme system not available")
+            print(tr("[ERROR] Theme system not available"))
     def _select_theme(self, theme, dialog):
         """Selecciona un tema y cierra el diálogo"""
         if THEME_SYSTEM_AVAILABLE:
@@ -2697,9 +2698,9 @@ class MainWindow(QMainWindow):
                 theme_manager.apply_theme(theme)
                 dialog.accept()
             else:
-                print("[ERROR] Theme manager not available")
+                print(tr("[ERROR] Theme manager not available"))
         else:
-            print("[ERROR] Theme system not available")
+            print(tr("[ERROR] Theme system not available"))
     def _load_custom_styles(self):
         """Carga estilos QSS personalizados desde themes/modern.qss (legacy)"""
         try:
@@ -2711,7 +2712,7 @@ class MainWindow(QMainWindow):
                     return f.read()
             return ""
         except Exception as e:
-            print(f"Error cargando estilos personalizados: {e}")
+            print(tr("Error cargando estilos personalizados: {e}", e=e))
             return ""
     # Métodos de estilos básicos - ahora se usan los temas JSON
 
@@ -2910,7 +2911,7 @@ class MainWindow(QMainWindow):
                     self.menu_btn.setIcon(_menu_ico)
             print(f"[OK] Nav icons refreshed with color {color}")
         except Exception as e:
-            print(f"[WARNING] Error refreshing nav icons: {e}")
+            print(tr("[WARNING] Error refreshing nav icons: {e}", e=e))
     # ── Animación de paneles ──────────────────────────────────────────────────
 
     @staticmethod
@@ -3007,11 +3008,11 @@ class MainWindow(QMainWindow):
                     self.url_bar.setText(final_url)
                     self.tab_manager.tabs.setCurrentWidget(new_tab)
                 else:
-                    QMessageBox.warning(self, "Error", "Could not create a new tab")
+                    QMessageBox.warning(self, tr("Error"), tr("Could not create a new tab"))
         except Exception as e:
-            error_msg = f"Error loading URL: {str(e)}"
+            error_msg = tr("Error loading URL: {value}", value=str(e))
             print(error_msg)
-            QMessageBox.critical(self, "Error", error_msg)
+            QMessageBox.critical(self, tr("Error"), error_msg)
     def open_new_tab(self, url=None):
         """Abre una nueva pestaña con la URL dada (o página de inicio si url es None). Usado por Split View y otros."""
         if hasattr(self, "tab_manager") and self.tab_manager:
@@ -3035,7 +3036,7 @@ class MainWindow(QMainWindow):
             if SCRAPING_AVAILABLE and self.scraping_integration:
                 self.scraping_integration.browser_widget = browser_tab
         except Exception as e:
-            print(f"Error en on_page_loaded: {e}")
+            print(tr("Error en on_page_loaded: {e}", e=e))
     def update_tab_title(self, title):
         """Update the title of the current tab"""
         current_tab = self.tab_manager.tabs.currentWidget()
@@ -3071,7 +3072,7 @@ class MainWindow(QMainWindow):
                         dlg.result_title or dlg.result_url,
                         dlg.result_folder_id,
                     )
-                    self.statusBar().showMessage("Marcador guardado", 4000)
+                    self.statusBar().showMessage(tr("Marcador guardado"), 4000)
                     self.update_favorites_bar()
                     if self.bookmark_panel_widget:
                         self.bookmark_panel_widget.reload()
@@ -3099,13 +3100,13 @@ class MainWindow(QMainWindow):
                         menu.exec(QCursor.pos())
         except sqlite3.Error as e:
             QMessageBox.critical(
-                self, "Database Error", f"Error loading categories: {e}"
+                self, tr("Database Error"), tr("Error loading categories: {e}", e=e)
             )
     def save_favorite_to_category(self, category):
         """Save a favorite in the specified category with safe transaction"""
         current_url = self.url_bar.text().strip()
         if not current_url:
-            self.statusBar().showMessage("Error: No URL to save", 5000)
+            self.statusBar().showMessage(tr("Error: No URL to save"), 5000)
             return
         try:
             with closing(self._get_db_connection()) as conn:
@@ -3123,13 +3124,13 @@ class MainWindow(QMainWindow):
                             "No tags",
                         ),
                     )
-                self.statusBar().showMessage(f"Bookmark saved in '{category}'", 5000)
+                self.statusBar().showMessage(tr("Bookmark saved in '{category}'", category=category), 5000)
         except sqlite3.IntegrityError:
             QMessageBox.warning(
-                self, "Error", "This URL already exists in the selected category"
+                self, tr("Error"), tr("This URL already exists in the selected category")
             )
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Database Error", f"Error saving bookmark: {e}")
+            QMessageBox.critical(self, tr("Database Error"), tr("Error saving bookmark: {e}", e=e))
     def _get_db_connection(self):
         """Get a database connection with safe handling"""
         try:
@@ -3138,7 +3139,7 @@ class MainWindow(QMainWindow):
             return conn
         except sqlite3.Error as e:
             QMessageBox.critical(
-                self, "Database Error", f"Could not connect to database: {e}"
+                self, tr("Database Error"), tr("Could not connect to database: {e}", e=e)
             )
             return None
     def toggle_devtools(self):
@@ -3172,7 +3173,7 @@ class MainWindow(QMainWindow):
             screenshot_tool.show_screenshot_dialog()
         else:
             QMessageBox.warning(
-                self, "Sin página activa", "No hay ninguna página activa para capturar."
+                self, tr("Sin página activa"), tr("No hay ninguna página activa para capturar.")
             )
     def reload_with_new_profile(self):
         """Recargar el navegador con el nuevo perfil activo"""
@@ -3208,17 +3209,17 @@ class MainWindow(QMainWindow):
             profile = self.profile_manager.get_current_profile()
             if profile:
                 self.status_bar.update_status(
-                    f"Cambiado a perfil: {profile['name']}"
+                    tr("Cambiado a perfil: {value}", value=profile['name'])
                 )
             print(
                 f"[OK] Browser reloaded with profile: {self.profile_manager.current_profile_id}"
             )
         except Exception as e:
-            print(f"[ERROR] Error reloading with new profile: {e}")
+            print(tr("[ERROR] Error reloading with new profile: {e}", e=e))
             QMessageBox.critical(
                 self,
-                "Error al cambiar perfil",
-                f"Ocurrió un error al cambiar de perfil:\n{str(e)}",
+                tr("Error al cambiar perfil"),
+                tr("Ocurrió un error al cambiar de perfil:\n{value}", value=str(e)),
             )
     def toggle_scraping_panel(self):
         """Alterna la visibilidad del panel de scraping USANDO EL STACK FIJO"""
@@ -3247,7 +3248,7 @@ class MainWindow(QMainWindow):
                     self.advanced_panel_stack.addWidget(self.scraping_panel)
                 print("[OK] Scraping panel loaded dynamically")
             except Exception as e:
-                print(f"[ERROR] Failed to load scraping panel dynamically: {e}")
+                print(tr("[ERROR] Failed to load scraping panel dynamically: {e}", e=e))
                 plugin_available = False
         if plugin_available and hasattr(self, "scraping_panel") and self.scraping_panel:
             if (
@@ -3267,9 +3268,9 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(
                 self,
-                "Premium Feature",
-                "Advanced Scraping is a premium feature.\n"
-                "Please install the Advanced Scraping plugin to use this functionality.",
+                tr("Premium Feature"),
+                tr("Advanced Scraping is a premium feature.\n"
+                "Please install the Advanced Scraping plugin to use this functionality."),
             )
     def _stop_tor_on_exit(self):
         """Para el proceso Tor al cerrar el navegador. Tor también se cierra
@@ -3279,9 +3280,9 @@ class MainWindow(QMainWindow):
             import net_proxy
             if self.tor_manager and net_proxy.is_tor_active():
                 self.tor_manager.stop()
-                print("[TOR] Tor detenido al cerrar el navegador")
+                print(tr("[TOR] Tor detenido al cerrar el navegador"))
         except Exception as e:
-            print(f"[TOR] No se pudo detener Tor al cerrar: {e}")
+            print(tr("[TOR] No se pudo detener Tor al cerrar: {e}", e=e))
 
     def has_previous_session(self) -> bool:
         """True si hay pestañas de la sesión anterior sin restaurar."""
@@ -3293,8 +3294,8 @@ class MainWindow(QMainWindow):
     def restore_previous_session(self):
         """Reabre las pestañas de la sesión anterior (una sola vez)."""
         if not self.has_previous_session():
-            QMessageBox.information(self, "Restaurar sesión anterior",
-                                    "No hay ninguna sesión anterior que restaurar.")
+            QMessageBox.information(self, tr("Restaurar sesión anterior"),
+                                    tr("No hay ninguna sesión anterior que restaurar."))
             return False
         self._previous_session_restored = True
         ok = self.tab_manager.restaurar_sesion()
@@ -3314,7 +3315,7 @@ class MainWindow(QMainWindow):
         try:
             self._shutdown_cleanup()
         except Exception as e:
-            print(f"[TOR] Error en la limpieza previa al reinicio: {e}")
+            print(tr("[TOR] Error en la limpieza previa al reinicio: {e}", e=e))
         restart_with_tor(enabled, self)
 
     def _restart_browser(self):
@@ -3323,7 +3324,7 @@ class MainWindow(QMainWindow):
         try:
             self._shutdown_cleanup()
         except Exception as e:
-            print(f"[PROFILE] Error en la limpieza previa al reinicio: {e}")
+            print(tr("[PROFILE] Error en la limpieza previa al reinicio: {e}", e=e))
         relaunch()
     def toggle_tor_panel(self):
         """Toggle Tor panel visibility USING FIXED STACK"""
@@ -3341,10 +3342,10 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(
                 self,
-                "Tor",
-                "Tor no está disponible.\n\n"
+                tr("Tor"),
+                tr("Tor no está disponible.\n\n"
                 "Instale: pip install stem\n"
-                "Y asegúrese de tener el binario 'tor' en su sistema.",
+                "Y asegúrese de tener el binario 'tor' en su sistema."),
             )
     def toggle_proxy_panel(self):
         """Toggle proxy management panel visibility USING FIXED STACK"""
@@ -3362,9 +3363,9 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(
                 self,
-                "Premium Feature",
-                "Proxy Management is a premium feature.\n"
-                "Please install the Proxy Management plugin to use this functionality.",
+                tr("Premium Feature"),
+                tr("Proxy Management is a premium feature.\n"
+                "Please install the Proxy Management plugin to use this functionality."),
             )
     def toggle_pentesting_panel(self):
         """Toggle Pentesting Suite panel visibility USING FIXED STACK"""
@@ -3377,9 +3378,9 @@ class MainWindow(QMainWindow):
         ):
             QMessageBox.information(
                 self,
-                "Plugin premium",
-                "Pentesting Suite es un plugin premium.\n"
-                "Inicia sesión con una cuenta con licencia e instálalo desde la tienda de plugins.",
+                tr("Plugin premium"),
+                tr("Pentesting Suite es un plugin premium.\n"
+                "Inicia sesión con una cuenta con licencia e instálalo desde la tienda de plugins."),
             )
             return
         # Crear el panel directamente desde el módulo del plugin si aún no existe
@@ -3410,7 +3411,7 @@ class MainWindow(QMainWindow):
                     if self.advanced_panel_stack.indexOf(panel) < 0:
                         self.advanced_panel_stack.addWidget(panel)
             except Exception as e:
-                error_msg = f"[UI] Error creating Pentesting panel: {e}"
+                error_msg = tr("[UI] Error creating Pentesting panel: {e}", e=e)
                 print(error_msg)
                 # Escribir a archivo para depuración
                 import traceback
@@ -3422,9 +3423,9 @@ class MainWindow(QMainWindow):
         if panel is None:
             QMessageBox.information(
                 self,
-                "Pentesting Suite",
-                "El panel de Pentesting no está disponible.\n"
-                "Asegúrate de tener instalado y activado el plugin Pentesting Suite.",
+                tr("Pentesting Suite"),
+                tr("El panel de Pentesting no está disponible.\n"
+                "Asegúrate de tener instalado y activado el plugin Pentesting Suite."),
             )
             print("[UI] Pentesting panel not available or plugin not loaded")
             return
@@ -3448,9 +3449,9 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(
                 self,
-                "Plugin Store",
-                "The Plugin Store is not available.\n"
-                "Please ensure you are logged in to access the plugin store.",
+                tr("Plugin Store"),
+                tr("The Plugin Store is not available.\n"
+                "Please ensure you are logged in to access the plugin store."),
             )
     def toggle_chat_panel(self):
         """Toggle AI chat panel visibility USING FIXED STACK"""
@@ -3469,7 +3470,7 @@ class MainWindow(QMainWindow):
                     )
             except Exception as e:
                 self.chat_panel = None
-                print(f"[ERROR] Failed to lazy-load AI chat panel: {e}")
+                print(tr("[ERROR] Failed to lazy-load AI chat panel: {e}", e=e))
         if hasattr(self, "chat_panel") and self.chat_panel:
             if (
                 self.advanced_panel_stack.currentWidget() == self.chat_panel
@@ -3481,8 +3482,8 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(
                 self,
-                "AI Chat",
-                "AI chat tools are not available. Verify that chat_panel_safe.py is present and valid.",
+                tr("AI Chat"),
+                tr("AI chat tools are not available. Verify that chat_panel_safe.py is present and valid."),
             )
     def toggle_log_viewer(self):
         """Toggle Log Viewer panel visibility."""
@@ -3494,12 +3495,11 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 import logging as _lg
 
-                _lg.getLogger(__name__).error("Error cargando Log Viewer: %s", exc)
+                _lg.getLogger(__name__).error(tr("Error cargando Log Viewer: %s"), exc)
                 QMessageBox.information(
                     self,
-                    "Log Viewer",
-                    "El visor de logs no está disponible.\n"
-                    f"Revisa el fichero katphi_browser.log manualmente.\n\nError: {exc}",
+                    tr("Log Viewer"),
+                    tr("El visor de logs no está disponible.\nRevisa el fichero katphi_browser.log manualmente.\n\nError: {exc}", exc=exc),
                 )
                 return
         panel = self.log_viewer_panel
@@ -3521,7 +3521,7 @@ class MainWindow(QMainWindow):
                 self.gentab_panel.gentab_created.connect(self._open_gentab_in_new_tab)
             except Exception as e:
                 self.gentab_panel = None
-                print(f"[ERROR] Failed to lazy-load GenTab panel: {e}")
+                print(tr("[ERROR] Failed to lazy-load GenTab panel: {e}", e=e))
         if hasattr(self, "gentab_panel") and self.gentab_panel:
             if (
                 self.advanced_panel_stack.currentWidget() == self.gentab_panel
@@ -3534,8 +3534,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "GenTab",
-                "GenTab no está disponible.\n"
-                "Verifica que gentab_panel.py y gentab_engine.py estén presentes.",
+                tr("GenTab no está disponible.\n"
+                "Verifica que gentab_panel.py y gentab_engine.py estén presentes."),
             )
     def _open_gentab_in_new_tab(self, title: str, html_content: str):
         """Abre una GenTab generada en una nueva pestaña del navegador."""
@@ -3550,7 +3550,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "GenTab",
-                    "La IA devolvió contenido vacío o inválido. Revisa el contexto de pestañas e inténtalo de nuevo.",
+                    tr("La IA devolvió contenido vacío o inválido. Revisa el contexto de pestañas e inténtalo de nuevo."),
                 )
                 return
             browser = BrowserView(self.tab_manager)
@@ -3587,11 +3587,11 @@ class MainWindow(QMainWindow):
 
             if hasattr(self, "url_bar"):
                 self.url_bar.setText(f"gentab://{title.lower().replace(' ', '-')}")
-            self.setWindowTitle(f"{title} - Katphi GenTab")
+            self.setWindowTitle(tr("{title} - Katphi GenTab", title=title))
             print(f"[GenTab] Opened GenTab: {title} | html_len={len(html_content)}")
         except Exception as e:
-            print(f"[GenTab] Error opening GenTab: {e}")
-            QMessageBox.warning(self, "GenTab", f"Error al abrir GenTab: {str(e)}")
+            print(tr("[GenTab] Error opening GenTab: {e}", e=e))
+            QMessageBox.warning(self, "GenTab", tr("Error al abrir GenTab: {value}", value=str(e)))
     def toggle_tab_groups_panel(self):
         """Toggle Tab Groups panel visibility USING FIXED STACK"""
         if hasattr(self, "tab_groups_panel") and self.tab_groups_panel:
@@ -3604,7 +3604,7 @@ class MainWindow(QMainWindow):
                 self.show_advanced_panel(self.tab_groups_panel)
         else:
             QMessageBox.information(
-                self, "Tab Groups", "Tab Groups panel is not available."
+                self, tr("Tab Groups"), tr("Tab Groups panel is not available.")
             )
     def toggle_history_panel(self):
         """Toggle History panel visibility using MAIN SIDEBAR STACK"""
@@ -3617,7 +3617,7 @@ class MainWindow(QMainWindow):
                     self.history_manager, self.tab_manager
                 )
             except ImportError:
-                print("Error importing HistoryPanel")
+                print(tr("Error importing HistoryPanel"))
                 return
         # Use helper method
         if (
@@ -3697,12 +3697,12 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(
                 self,
-                "Plugins",
-                "Plugin system is not available.\n"
+                tr("Plugins"),
+                tr("Plugin system is not available.\n"
                 "Verify that:\n"
                 "• Authentication system is working\n"
                 "• Plugin files are present\n"
-                "• You are connected to the backend",
+                "• You are connected to the backend"),
             )
     def toggle_auth_panel(self):
         """Toggle authentication panel visibility USING FIXED STACK"""
@@ -3716,7 +3716,7 @@ class MainWindow(QMainWindow):
                 self.show_advanced_panel(self.auth_panel)
         else:
             QMessageBox.information(
-                self, "Autenticación", "Sistema de autenticación no disponible."
+                self, tr("Autenticación"), tr("Sistema de autenticación no disponible.")
             )
     def update_scraping_content(self):
         """Update the content of the current page in the scraping integration"""
@@ -3749,7 +3749,7 @@ class MainWindow(QMainWindow):
                 y = click_data.get("y", 0)
                 self.scraping_panel.handle_page_click(x, y)
         except Exception as e:
-            print(f"Error manejando clic en elemento: {e}")
+            print(tr("Error manejando clic en elemento: {e}", e=e))
     def on_html_loaded(self, html_content, url):
         """Callback when page HTML is loaded"""
         if SCRAPING_AVAILABLE and self.scraping_integration:
@@ -3782,7 +3782,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).debug("AI index error: %s", e)
+            logging.getLogger(__name__).debug(tr("AI index error: %s"), e)
     def _ai_cleanup_worker(self, worker) -> None:
         """Elimina referencia al worker finalizado."""
         try:
@@ -3813,12 +3813,12 @@ class MainWindow(QMainWindow):
             action = analysis.get("suggested_action", "")
             if action and isinstance(self.url_bar, ConversationalNavBar):
                 self.url_bar.set_placeholder_with_suggestion(
-                    f"{action} — o escribe tu búsqueda..."
+                    tr("{action} — o escribe tu búsqueda...", action=action)
                 )
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).debug("AI analysis error: %s", e)
+            logging.getLogger(__name__).debug(tr("AI analysis error: %s"), e)
     def _on_suggestion_accepted(self, suggestion) -> None:
         """Sugerencia aceptada — abre el chat con la acción sugerida."""
         if not self.suggestion_engine:
@@ -3848,13 +3848,13 @@ class MainWindow(QMainWindow):
                     "playlist",
                 ):
                     prompt_map = {
-                        "summarize": "Resume el contenido de todas mis pestañas abiertas con los puntos clave.",
-                        "compare": "Compara los productos/contenidos de todas mis pestañas en una tabla interactiva.",
-                        "document": "Genera documentación técnica a partir del contenido de mis pestañas de código.",
-                        "briefing": "Crea un briefing de noticias con las pestañas que tengo abiertas.",
-                        "itinerary": "Crea un itinerario de viaje interactivo basado en mis pestañas de viajes.",
-                        "playlist": "Organiza mi contenido de entretenimiento en una lista.",
-                        "gentab": "Genera una aplicación interactiva con el contenido de mis pestañas.",
+                        "summarize": tr("Resume el contenido de todas mis pestañas abiertas con los puntos clave."),
+                        "compare": tr("Compara los productos/contenidos de todas mis pestañas en una tabla interactiva."),
+                        "document": tr("Genera documentación técnica a partir del contenido de mis pestañas de código."),
+                        "briefing": tr("Crea un briefing de noticias con las pestañas que tengo abiertas."),
+                        "itinerary": tr("Crea un itinerario de viaje interactivo basado en mis pestañas de viajes."),
+                        "playlist": tr("Organiza mi contenido de entretenimiento en una lista."),
+                        "gentab": tr("Genera una aplicación interactiva con el contenido de mis pestañas."),
                     }
                     p = prompt_map.get(
                         action,
@@ -3868,12 +3868,12 @@ class MainWindow(QMainWindow):
                         else:
                             chat.set_input_text(p)
                             mode_map = {
-                                "summarize": "Resumen pestañas abiertas",
-                                "briefing": "Analizar sesión",
-                                "document": "Analizar sesión",
-                                "playlist": "Resumen pestañas abiertas",
+                                "summarize": tr("Resumen pestañas abiertas"),
+                                "briefing": tr("Analizar sesión"),
+                                "document": tr("Analizar sesión"),
+                                "playlist": tr("Resumen pestañas abiertas"),
                             }
-                            target_mode = mode_map.get(action, "Analizar sesión")
+                            target_mode = mode_map.get(action, tr("Analizar sesión"))
                             if hasattr(chat, "assistant_mode"):
                                 idx = chat.assistant_mode.findText(target_mode)
                                 if idx >= 0:
@@ -3881,7 +3881,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).debug("Suggestion acceptance error: %s", e)
+            logging.getLogger(__name__).debug(tr("Suggestion acceptance error: %s"), e)
     def _on_suggestion_dismissed(self, suggestion) -> None:
         """Procesa el descarte de una sugerencia."""
         if self.suggestion_engine and hasattr(suggestion, "type"):
@@ -3910,14 +3910,14 @@ class MainWindow(QMainWindow):
         if hasattr(self, "favorites_bar"):
             if self.favorites_bar.isVisible():
                 self.favorites_bar.hide()
-                self.statusBar().showMessage("Barra de favoritos oculta", 3000)
+                self.statusBar().showMessage(tr("Barra de favoritos oculta"), 3000)
             else:
                 self.favorites_bar.show()
                 self.update_favorites_bar()   # Carga con carpetas si están disponibles
-                self.statusBar().showMessage("Barra de favoritos visible", 3000)
+                self.statusBar().showMessage(tr("Barra de favoritos visible"), 3000)
         else:
             QMessageBox.information(
-                self, "Favorites Bar", "The favorites bar is not available."
+                self, tr("Favorites Bar"), tr("The favorites bar is not available.")
             )
     def update_favorites_bar(self):
         """
@@ -3943,24 +3943,24 @@ class MainWindow(QMainWindow):
         fm = getattr(self, "folders_manager", None)
         bpw = getattr(self, "bookmark_panel_widget", None)
         if not fm:
-            QMessageBox.information(self, "Marcadores", "El sistema de carpetas no está disponible.")
+            QMessageBox.information(self, tr("Marcadores"), tr("El sistema de carpetas no está disponible."))
             return
         from PySide6.QtWidgets import QInputDialog
-        name, ok = QInputDialog.getText(self, "Nueva carpeta", "Nombre de la carpeta:")
+        name, ok = QInputDialog.getText(self, tr("Nueva carpeta"), tr("Nombre de la carpeta:"))
         if ok and name.strip():
             try:
                 fm.create_folder(name.strip())
                 self.update_favorites_bar()
                 if bpw:
                     bpw.reload()
-                self.statusBar().showMessage(f"Carpeta '{name.strip()}' creada", 3000)
+                self.statusBar().showMessage(tr("Carpeta '{value}' creada", value=name.strip()), 3000)
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo crear la carpeta:\n{e}")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudo crear la carpeta:\n{e}", e=e))
     def _hamburger_import_bookmarks(self):
         """Importa marcadores HTML de otro navegador (desde el menú hamburguesa)."""
         bpw = getattr(self, "bookmark_panel_widget", None)
         if not bpw:
-            QMessageBox.information(self, "Importar", "El sistema de carpetas no está disponible.")
+            QMessageBox.information(self, tr("Importar"), tr("El sistema de carpetas no está disponible."))
             return
         bpw._on_import()
     def _hamburger_export_bookmarks(self):
@@ -3972,17 +3972,17 @@ class MainWindow(QMainWindow):
         bm = getattr(self, "bookmark_manager", None)
         fm = getattr(self, "folders_manager", None)
         if not bm or not fm:
-            QMessageBox.information(self, "Exportar", "El sistema de carpetas no está disponible.")
+            QMessageBox.information(self, tr("Exportar"), tr("El sistema de carpetas no está disponible."))
             return
         from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getSaveFileName(
-            self, "Exportar marcadores", "bookmarks.html", "HTML (*.html)"
+            self, tr("Exportar marcadores"), "bookmarks.html", tr("HTML (*.html)")
         )
         if path:
             if bm.export_bookmarks_html(path, fm):
-                QMessageBox.information(self, "Exportado", f"Marcadores exportados a:\n{path}")
+                QMessageBox.information(self, tr("Exportado"), tr("Marcadores exportados a:\n{path}", path=path))
             else:
-                QMessageBox.critical(self, "Error", "No se pudieron exportar los marcadores.")
+                QMessageBox.critical(self, tr("Error"), tr("No se pudieron exportar los marcadores."))
     def reapply_privacy_to_all_tabs(self):
         """Apply privacy settings to all open tabs"""
         try:
@@ -3991,12 +3991,12 @@ class MainWindow(QMainWindow):
                 and self.tab_manager
                 and hasattr(self, "privacy_manager")
             ):
-                print("Tab manager o privacy manager no disponibles")
+                print(tr("Tab manager o privacy manager no disponibles"))
                 return
             # Obtener todas las pestañas
             tabs_count = self.tab_manager.tabs.count()
             if tabs_count == 0:
-                print("No open tabs")
+                print(tr("No open tabs"))
                 return
             # Variables para controlar recarga
             needs_reload = False
@@ -4025,7 +4025,7 @@ class MainWindow(QMainWindow):
                     != current_block_third_party
                 ):
                     needs_reload = True
-                    print("Detectados cambios en filtros de red - programando recarga")
+                    print(tr("Detectados cambios en filtros de red - programando recarga"))
                 # Actualizar estados guardados
                 self._last_privacy_settings.update(
                     {
@@ -4060,9 +4060,9 @@ class MainWindow(QMainWindow):
                                         f"Tab {i + 1} reloaded: {current_url.toString()[:50]}..."
                                     )
                             except Exception as reload_error:
-                                print(f"Error reloading tab {i + 1}: {reload_error}")
+                                print(tr("Error reloading tab {value}: {reload_error}", value=i + 1, reload_error=reload_error))
                 except Exception as tab_error:
-                    print(f"Error applying privacy to tab {i + 1}: {tab_error}")
+                    print(tr("Error applying privacy to tab {value}: {tab_error}", value=i + 1, tab_error=tab_error))
                     failed_applications += 1
             # Reporte de resultados
             print(
@@ -4077,7 +4077,7 @@ class MainWindow(QMainWindow):
             except Exception as sync_err:
                 print(f"[WARNING] sync_default_webengine_profile: {sync_err}")
         except Exception as e:
-            print(f"Critical error reapplying privacy settings: {e}")
+            print(tr("Critical error reapplying privacy settings: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -4115,76 +4115,76 @@ class MainWindow(QMainWindow):
         """)
 
         # === Sección 1: Pestañas y Ventanas ===
-        new_tab_action = menu.addAction("Nueva pestaña")
+        new_tab_action = menu.addAction(tr("Nueva pestaña"))
         new_tab_action.setShortcut("Ctrl+T")
         new_tab_action.triggered.connect(lambda: self.tab_manager.add_new_tab())
 
-        new_window_action = menu.addAction("Nueva ventana")
+        new_window_action = menu.addAction(tr("Nueva ventana"))
         new_window_action.setShortcut("Ctrl+N")
         new_window_action.triggered.connect(self.open_new_window)
 
-        private_window_action = menu.addAction("Nueva ventana privada")
+        private_window_action = menu.addAction(tr("Nueva ventana privada"))
         private_window_action.setShortcut("Ctrl+Shift+P")
         private_window_action.triggered.connect(self.open_private_window)
 
         menu.addSeparator()
 
         # === Sección 1.5: Gestión de sesiones ===
-        session_menu = menu.addMenu("Sesiones")
-        restore_prev = session_menu.addAction("Restaurar sesión anterior")
+        session_menu = menu.addMenu(tr("Sesiones"))
+        restore_prev = session_menu.addAction(tr("Restaurar sesión anterior"))
         restore_prev.setEnabled(self.has_previous_session())
         restore_prev.triggered.connect(self.restore_previous_session)
-        session_menu.addAction("Guardar sesión actual...").triggered.connect(
+        session_menu.addAction(tr("Guardar sesión actual...")).triggered.connect(
             self.save_current_session
         )
-        session_menu.addAction("Restaurar sesión...").triggered.connect(
+        session_menu.addAction(tr("Restaurar sesión...")).triggered.connect(
             self.show_session_manager
         )
 
         menu.addSeparator()
 
         # === Sección 2: Gestión de contenido ===
-        bookmarks_menu = menu.addMenu("Marcadores")
+        bookmarks_menu = menu.addMenu(tr("Marcadores"))
 
-        bookmarks_menu.addAction("Abrir panel de marcadores").triggered.connect(
+        bookmarks_menu.addAction(tr("Abrir panel de marcadores")).triggered.connect(
             self.toggle_bookmark_manager
         )
 
-        bookmarks_menu.addAction("Guardar esta página…").triggered.connect(
+        bookmarks_menu.addAction(tr("Guardar esta página…")).triggered.connect(
             self.show_save_favorite_menu
         )
 
         bookmarks_menu.addSeparator()
 
-        bookmarks_menu.addAction("Nueva carpeta…").triggered.connect(
+        bookmarks_menu.addAction(tr("Nueva carpeta…")).triggered.connect(
             self._hamburger_new_folder
         )
 
-        bookmarks_menu.addAction("Importar marcadores…").triggered.connect(
+        bookmarks_menu.addAction(tr("Importar marcadores…")).triggered.connect(
             self._hamburger_import_bookmarks
         )
 
-        bookmarks_menu.addAction("Exportar marcadores…").triggered.connect(
+        bookmarks_menu.addAction(tr("Exportar marcadores…")).triggered.connect(
             self._hamburger_export_bookmarks
         )
 
         bookmarks_menu.addSeparator()
 
-        bookmarks_menu.addAction("Mostrar / ocultar barra de favoritos").triggered.connect(
+        bookmarks_menu.addAction(tr("Mostrar / ocultar barra de favoritos")).triggered.connect(
             self.toggle_favorites_bar
         )
 
-        history_action = menu.addAction("Historial")
+        history_action = menu.addAction(tr("Historial"))
         history_action.triggered.connect(self.toggle_history_panel)
 
-        downloads_action = menu.addAction("Descargas")
+        downloads_action = menu.addAction(tr("Descargas"))
         downloads_action.setShortcut("Ctrl+Shift+Y")
         downloads_action.triggered.connect(self.toggle_download_panel)
 
-        passwords_action = menu.addAction("Contraseñas")
+        passwords_action = menu.addAction(tr("Contraseñas"))
         passwords_action.triggered.connect(self.toggle_password_manager)
 
-        extensions_action = menu.addAction("Extensiones y temas")
+        extensions_action = menu.addAction(tr("Extensiones y temas"))
         extensions_action.setShortcut("Ctrl+Shift+A")
         # Fix: Ensure plugin store toggle works or falls back to basic panel
         extensions_action.triggered.connect(
@@ -4196,85 +4196,85 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
 
         # === Sección 3: Herramientas de página ===
-        print_action = menu.addAction("Imprimir...")
+        print_action = menu.addAction(tr("Imprimir..."))
         print_action.setShortcut("Ctrl+P")
         print_action.triggered.connect(self.print_page)
 
-        save_action = menu.addAction("Guardar como...")
+        save_action = menu.addAction(tr("Guardar como..."))
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.save_page_as)
 
-        find_action = menu.addAction("Buscar en la página...")
+        find_action = menu.addAction(tr("Buscar en la página..."))
         find_action.setShortcut("Ctrl+F")
         find_action.triggered.connect(self.show_find_dialog)
 
         menu.addSeparator()
 
         # === Sección 4: Zoom ===
-        zoom_menu = menu.addMenu("Tamaño")
+        zoom_menu = menu.addMenu(tr("Tamaño"))
 
-        zoom_in_action = zoom_menu.addAction("Aumentar")
+        zoom_in_action = zoom_menu.addAction(tr("Aumentar"))
         zoom_in_action.setShortcut("Ctrl++")
         zoom_in_action.triggered.connect(self.zoom_in)
 
-        zoom_out_action = zoom_menu.addAction("Reducir")
+        zoom_out_action = zoom_menu.addAction(tr("Reducir"))
         zoom_out_action.setShortcut("Ctrl+-")
         zoom_out_action.triggered.connect(self.zoom_out)
 
-        zoom_reset_action = zoom_menu.addAction("Restablecer")
+        zoom_reset_action = zoom_menu.addAction(tr("Restablecer"))
         zoom_reset_action.setShortcut("Ctrl+0")
         zoom_reset_action.triggered.connect(self.zoom_reset)
 
         zoom_menu.addSeparator()
 
-        fullscreen_action = zoom_menu.addAction("Pantalla completa")
+        fullscreen_action = zoom_menu.addAction(tr("Pantalla completa"))
         fullscreen_action.setShortcut("F11")
         fullscreen_action.triggered.connect(self.toggle_fullscreen)
 
         menu.addSeparator()
 
         # === Sección 5: Más herramientas ===
-        tools_menu = menu.addMenu("Más herramientas")
+        tools_menu = menu.addMenu(tr("Más herramientas"))
 
-        tools_menu.addAction("Limpiar datos de navegación...").triggered.connect(
+        tools_menu.addAction(tr("Limpiar datos de navegación...")).triggered.connect(
             self.show_clear_data_dialog
         )
-        tools_menu.addAction("Configuración de red...").triggered.connect(
+        tools_menu.addAction(tr("Configuración de red...")).triggered.connect(
             self.show_network_settings
         )
         tools_menu.addAction("UserScripts...").triggered.connect(self.show_userscripts)
 
         # Submenú de temas modernos - AUDITED & FIXED
-        themes_menu = tools_menu.addMenu("Cambiar tema visual")
+        themes_menu = tools_menu.addMenu(tr("Cambiar tema visual"))
         # Use simple string identifiers for the theme manager
-        themes_menu.addAction("Tema Claro (Light)").triggered.connect(
+        themes_menu.addAction(tr("Tema Claro (Light)")).triggered.connect(
             lambda: self.apply_theme("light")
         )
-        themes_menu.addAction("Tema Oscuro (Dark)").triggered.connect(
+        themes_menu.addAction(tr("Tema Oscuro (Dark)")).triggered.connect(
             lambda: self.apply_theme("dark")
         )
         # themes_menu.addAction("Tema Azul (Blue)").triggered.connect(
         #     lambda: self.apply_theme('blue'))
 
-        tools_menu.addAction("Herramientas de desarrollador").setShortcut("F12")
+        tools_menu.addAction(tr("Herramientas de desarrollador")).setShortcut("F12")
         tools_menu.actions()[-1].triggered.connect(self.toggle_dev_tools)
-        tools_menu.addAction("Administrador de tareas").triggered.connect(
+        tools_menu.addAction(tr("Administrador de tareas")).triggered.connect(
             self.show_performance_monitor
         )
-        tools_menu.addAction("Diagnóstico de rendimiento").triggered.connect(
+        tools_menu.addAction(tr("Diagnóstico de rendimiento")).triggered.connect(
             self.run_performance_diagnostic
         )
-        tools_menu.addAction("Ver código fuente").setShortcut("Ctrl+U")
+        tools_menu.addAction(tr("Ver código fuente")).setShortcut("Ctrl+U")
         tools_menu.actions()[-1].triggered.connect(self.view_page_source)
 
         menu.addSeparator()
 
         # === Sección 6: Configuración y ayuda ===
-        settings_menu = menu.addMenu("Ajustes")
-        prefs_action = settings_menu.addAction("Preferencias…")
+        settings_menu = menu.addMenu(tr("Ajustes"))
+        prefs_action = settings_menu.addAction(tr("Preferencias…"))
         prefs_action.triggered.connect(self.show_settings)
         settings_menu.addSeparator()
-        ff_action = settings_menu.addAction("Ventana sin marco del sistema")
+        ff_action = settings_menu.addAction(tr("Ventana sin marco del sistema"))
         ff_action.setCheckable(True)
         ff_action.setChecked(
             bool(self.windowFlags() & Qt.WindowType.FramelessWindowHint)
@@ -4283,19 +4283,19 @@ class MainWindow(QMainWindow):
             lambda c: self._set_frameless_window(bool(c), persist=True)
         )
 
-        help_menu = menu.addMenu("Ayuda")
-        help_menu.addAction("Acerca de Katphi").triggered.connect(self.show_about)
-        help_menu.addAction("Documentación").triggered.connect(
+        help_menu = menu.addMenu(tr("Ayuda"))
+        help_menu.addAction(tr("Acerca de Katphi")).triggered.connect(self.show_about)
+        help_menu.addAction(tr("Documentación")).triggered.connect(
             lambda: self.tab_manager.add_new_tab("https://katphi.com")
         )
-        help_menu.addAction("Informar de un problema").triggered.connect(
+        help_menu.addAction(tr("Informar de un problema")).triggered.connect(
             self.report_issue
         )
 
         menu.addSeparator()
 
         # === Sección 7: Perfiles de usuario ===
-        profiles_menu = menu.addMenu("Perfiles")
+        profiles_menu = menu.addMenu(tr("Perfiles"))
         try:
             if hasattr(self, "profile_manager") and self.profile_manager:
                 profiles     = self.profile_manager.get_all_profiles()
@@ -4311,21 +4311,21 @@ class MainWindow(QMainWindow):
                     )
 
                 profiles_menu.addSeparator()
-                profiles_menu.addAction("Nuevo perfil…").triggered.connect(
+                profiles_menu.addAction(tr("Nuevo perfil…")).triggered.connect(
                     self._create_profile_from_menu
                 )
-                profiles_menu.addAction("Gestionar perfiles…").triggered.connect(
+                profiles_menu.addAction(tr("Gestionar perfiles…")).triggered.connect(
                     self._manage_profiles_from_menu
                 )
             else:
-                profiles_menu.addAction("Gestor de perfiles no disponible").setEnabled(False)
+                profiles_menu.addAction(tr("Gestor de perfiles no disponible")).setEnabled(False)
         except Exception as e:
-            profiles_menu.addAction(f"Error: {e}").setEnabled(False)
+            profiles_menu.addAction(tr("Error: {e}", e=e)).setEnabled(False)
 
         menu.addSeparator()
 
         # === Sección 8: Salir ===
-        exit_action = menu.addAction("Salir")
+        exit_action = menu.addAction(tr("Salir"))
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
 
@@ -4344,14 +4344,14 @@ class MainWindow(QMainWindow):
                     # Cookies, caché y almacenamiento del nuevo perfil solo se
                     # pueden cargar al arrancar el motor web
                     reply = QMessageBox.question(
-                        self, "Cambiar de perfil",
-                        "Los datos del nuevo perfil (cookies, sesiones, caché) se "
-                        "cargan al reiniciar el navegador.\n\n¿Reiniciar ahora?",
+                        self, tr("Cambiar de perfil"),
+                        tr("Los datos del nuevo perfil (cookies, sesiones, caché) se "
+                        "cargan al reiniciar el navegador.\n\n¿Reiniciar ahora?"),
                         QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
                     if reply == QMessageBox.Yes:
                         self._restart_browser()
         except Exception as e:
-            print(f"[PROFILE] Error switching profile: {e}")
+            print(tr("[PROFILE] Error switching profile: {e}", e=e))
 
     def _create_profile_from_menu(self):
         """Abre el diálogo de creación de perfil."""
@@ -4362,7 +4362,7 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "profile_switcher"):
                     self.profile_switcher.update_current_profile()
         except Exception as e:
-            print(f"[PROFILE] Error opening profile dialog: {e}")
+            print(tr("[PROFILE] Error opening profile dialog: {e}", e=e))
 
     def _manage_profiles_from_menu(self):
         """Abre el gestor completo de perfiles (ProfileSwitcher como diálogo)."""
@@ -4370,12 +4370,12 @@ class MainWindow(QMainWindow):
             if hasattr(self, "profile_switcher"):
                 self.profile_switcher.show_profile_menu()
         except Exception as e:
-            print(f"[PROFILE] Error opening profile manager: {e}")
+            print(tr("[PROFILE] Error opening profile manager: {e}", e=e))
 
     def show_login_dialog(self):
         """Mostrar diálogo de login"""
         if not self.auth_manager:
-            QMessageBox.warning(self, "Error", "Sistema de autenticación no disponible")
+            QMessageBox.warning(self, tr("Error"), tr("Sistema de autenticación no disponible"))
             return
         # Verificar si ya está autenticado
         if self.auth_manager.auth_state.is_authenticated:
@@ -4405,7 +4405,7 @@ class MainWindow(QMainWindow):
         """Manejar login de usuario de forma ASÍNCRONA usando QThread para evitar congelamiento"""
         if not self.auth_manager:
             QMessageBox.critical(
-                self, "Error", "Sistema de autenticación no disponible"
+                self, tr("Error"), tr("Sistema de autenticación no disponible")
             )
             return
         # Verificar si ya hay un login en progreso
@@ -4414,7 +4414,7 @@ class MainWindow(QMainWindow):
             return
         # Deshabilitar botón durante el login
         self.login_btn.setEnabled(False)
-        self.login_btn.setToolTip("Validando credenciales...")
+        self.login_btn.setToolTip(tr("Validando credenciales..."))
 
         # Guardar referencia al diálogo para usarla en el callback
         self._current_login_dialog = dialog
@@ -4434,7 +4434,7 @@ class MainWindow(QMainWindow):
 
         # Restaurar botón
         self.login_btn.setEnabled(True)
-        self.login_btn.setToolTip("Iniciar sesión en Katphi")
+        self.login_btn.setToolTip(tr("Iniciar sesión en Katphi"))
 
         # Limpiar worker thread
         if self.login_worker:
@@ -4449,7 +4449,7 @@ class MainWindow(QMainWindow):
                 email = (
                     self._current_login_dialog.email_edit.text()
                     if self._current_login_dialog
-                    else "usuario"
+                    else tr("usuario")
                 )
 
                 # Cerrar el diálogo primero
@@ -4461,11 +4461,8 @@ class MainWindow(QMainWindow):
                     200,
                     lambda: QMessageBox.information(
                         self,
-                        "Inicio de Sesión Exitoso",
-                        f"¡Bienvenido, {email}!\n\n"
-                        "• Sesión iniciada correctamente\n"
-                        "• Acceso a plugins premium habilitado\n"
-                        "• Sincronización completada",
+                        tr("Inicio de Sesión Exitoso"),
+                        tr("¡Bienvenido, {email}!\n\n• Sesión iniciada correctamente\n• Acceso a plugins premium habilitado\n• Sincronización completada", email=email),
                     ),
                 )
             else:
@@ -4475,30 +4472,30 @@ class MainWindow(QMainWindow):
                 error_details = ""
                 if result.error == AuthError.INVALID_CREDENTIALS:
                     error_details = (
-                        "Credenciales incorrectas. Verifica tu email y contraseña."
+                        tr("Credenciales incorrectas. Verifica tu email y contraseña.")
                     )
                 elif result.error == AuthError.USER_NOT_VERIFIED:
-                    error_details = "Cuenta no verificada. Revisa tu correo electrónico y activa tu cuenta."
+                    error_details = tr("Cuenta no verificada. Revisa tu correo electrónico y activa tu cuenta.")
                 elif result.error == AuthError.NETWORK_ERROR:
                     error_details = (
-                        "Error de conexión. Verifica tu conexión a internet."
+                        tr("Error de conexión. Verifica tu conexión a internet.")
                     )
                 else:
-                    error_details = f"Error: {result.message}"
-                print(f"[UI] Showing error in login dialog: {result.error}")
+                    error_details = tr("Error: {message}", message=result.message)
+                print(tr("[UI] Showing error in login dialog: {error}", error=result.error))
 
                 # CRÍTICO: Mostrar error DIRECTAMENTE en el diálogo sin QMessageBox
                 # Esto evita bloqueos modales y mantiene el navegador responsive
                 if self._current_login_dialog:
                     self._current_login_dialog.show_error_in_dialog(error_details)
         except Exception as e:
-            print(f"[UI] Login callback error: {e}")
+            print(tr("[UI] Login callback error: {e}", e=e))
             import traceback
 
             traceback.print_exc()
 
             # Mostrar error crítico en el diálogo
-            error_msg = f"Error crítico: {str(e)}"
+            error_msg = tr("Error crítico: {value}", value=str(e))
             if self._current_login_dialog:
                 self._current_login_dialog.show_error_in_dialog(error_msg)
     def show_logout_dialog(self):
@@ -4507,8 +4504,8 @@ class MainWindow(QMainWindow):
             return
         reply = QMessageBox.question(
             self,
-            "Cerrar Sesión",
-            "¿Deseas cerrar sesión?",
+            tr("Cerrar Sesión"),
+            tr("¿Deseas cerrar sesión?"),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -4517,7 +4514,7 @@ class MainWindow(QMainWindow):
             self.auth_manager.logout()
             self.update_auth_ui()  # Esto ya llama a disable_premium_plugins()
             QMessageBox.information(
-                self, "Sesión Cerrada", "Has cerrado sesión correctamente"
+                self, tr("Sesión Cerrada"), tr("Has cerrado sesión correctamente")
             )
     def update_auth_ui(self):
         """Actualizar la interfaz de usuario según el estado de autenticación"""
@@ -4526,10 +4523,10 @@ class MainWindow(QMainWindow):
         if self.auth_manager.auth_state.is_authenticated:
             # Usuario autenticado
             user_info = self.auth_manager.get_user_info()
-            email = user_info.get("email", "Usuario") if user_info else "Usuario"
+            email = user_info.get("email", tr("Usuario")) if user_info else tr("Usuario")
 
             # Keep the account icon but change tooltip and class
-            self.login_btn.setToolTip(f"Cerrar sesión ({email})")
+            self.login_btn.setToolTip(tr("Cerrar sesión ({email})", email=email))
             # Los estilos del botón de logout se manejan por el tema JSON
             self.login_btn.setProperty("class", "logout-button")
 
@@ -4541,7 +4538,7 @@ class MainWindow(QMainWindow):
             self.enable_premium_plugins()
         else:
             # Usuario no autenticado
-            self.login_btn.setToolTip("Iniciar sesión en Katphi")
+            self.login_btn.setToolTip(tr("Iniciar sesión en Katphi"))
             # Los estilos del botón de login se manejan por el tema JSON
             self.login_btn.setProperty("class", "login-button")
 
@@ -4558,7 +4555,7 @@ class MainWindow(QMainWindow):
             registration_url = get_registration_url()
         except ImportError:
             # Fallback si no existe network_config.py
-            registration_url = "https://katphi.com/auth/registro.html"
+            registration_url = tr("https://katphi.com/auth/registro.html")
         self.tab_manager.add_new_tab(registration_url)
     def _plugin_has_subscription(self, plugin_id: str) -> bool:
         """Comprobar si la cuenta autenticada tiene licencia o trial activo
@@ -4572,7 +4569,7 @@ class MainWindow(QMainWindow):
                 PluginAccessLevel.TRIAL,
             )
         except Exception as e:
-            print(f"[AUTH] Error checking subscription for {plugin_id}: {e}")
+            print(tr("[AUTH] Error checking subscription for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
             return False
     def enable_premium_plugins(self):
         """(compat) Delegado en resync_plugins_to_current_user()."""
@@ -4638,7 +4635,7 @@ class MainWindow(QMainWindow):
                         pass
             print(f"[AUTH] Core panel {plugin_id}: {'activo' if allowed else 'cortado'}")
         except Exception as e:
-            print(f"[AUTH] Error en _gate_core_panel({plugin_id}): {e}")
+            print(tr("[AUTH] Error en _gate_core_panel({plugin_id}): {e}", plugin_id=plugin_id, e=e))
 
     def resync_plugins_to_current_user(self, *args, **kwargs):
         """D-003: agrupa en una sola resincronización las señales seguidas
@@ -4676,7 +4673,7 @@ class MainWindow(QMainWindow):
                     ):
                         entitled.add(plugin_id)
                 except Exception as e:
-                    print(f"[AUTH] resync: error consultando {plugin_id}: {e}")
+                    print(tr("[AUTH] resync: error consultando {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
         # --- 2. Descargar de memoria los plugins cargados SIN derecho
         #        (los realmente gratuitos se mantienen)
@@ -4685,12 +4682,12 @@ class MainWindow(QMainWindow):
                 if (plugin_id in entitled or self._plugin_is_free(plugin_id)
                         or self._plugin_in_dev_mode(plugin_id)):
                     continue
-                print(f"[AUTH] resync: descargando plugin sin derecho: {plugin_id}")
+                print(tr("[AUTH] resync: descargando plugin sin derecho: {plugin_id}", plugin_id=plugin_id))
                 try:
                     # Dispara on_plugin_unloaded -> quita botón del sidebar y panel
                     pm.unload_plugin(plugin_id)
                 except Exception as e:
-                    print(f"[AUTH] resync: error descargando {plugin_id}: {e}")
+                    print(tr("[AUTH] resync: error descargando {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
         # --- 2b. Barrido defensivo de restos de UI de plugins ya no permitidos
         for attr in ("dynamic_plugin_actions", "dynamic_plugin_panels"):
@@ -4711,9 +4708,9 @@ class MainWindow(QMainWindow):
                             self.removeDockWidget(obj)
                         except Exception:
                             pass
-                    print(f"[AUTH] resync: UI de {plugin_id} eliminada ({attr})")
+                    print(tr("[AUTH] resync: UI de {plugin_id} eliminada ({attr})", plugin_id=plugin_id, attr=attr))
                 except Exception as e:
-                    print(f"[AUTH] resync: error limpiando {plugin_id} ({attr}): {e}")
+                    print(tr("[AUTH] resync: error limpiando {plugin_id} ({attr}): {e}", plugin_id=plugin_id, attr=attr, e=e))
 
         # --- 3. Paneles core (scraping / proxy / seo_analyzer / ai_live_ide)
         self._gate_core_panel(
@@ -4746,17 +4743,16 @@ class MainWindow(QMainWindow):
             try:
                 results = pm.load_all_installed_plugins()
                 ok = sum(1 for v in results.values() if v)
-                print(f"[AUTH] resync: {ok}/{len(results)} plugins instalados cargados")
+                print(tr("[AUTH] resync: {ok}/{count} plugins instalados cargados", ok=ok, count=len(results)))
             except Exception as e:
-                print(f"[AUTH] resync: error cargando instalados: {e}")
+                print(tr("[AUTH] resync: error cargando instalados: {e}", e=e))
 
         # --- 5. (Eliminado) El login ya NO restaura pestañas: la sesión
         #        anterior solo se recupera a petición del usuario
         #        (restore_previous_session), así nunca se duplican.
 
         print(
-            f"[AUTH] resync completado (authed={authed}, "
-            f"con_derecho={sorted(entitled)})"
+            tr("[AUTH] resync completado (authed={authed}, con_derecho={value})", authed=authed, value=sorted(entitled))
         )
     def set_light_theme(self):
         """Aplica el tema claro usando el sistema de temas JSON"""
@@ -4768,11 +4764,11 @@ class MainWindow(QMainWindow):
                     self._apply_tooltip_theme(theme_manager)
                     print("[OK] Light theme applied via theme manager")
                 else:
-                    print("[ERROR] Theme manager not available")
+                    print(tr("[ERROR] Theme manager not available"))
             else:
-                print("[ERROR] Theme system not available")
+                print(tr("[ERROR] Theme system not available"))
         except Exception as e:
-            print(f"[ERROR] Failed to apply light theme: {e}")
+            print(tr("[ERROR] Failed to apply light theme: {e}", e=e))
     def set_dark_theme(self):
         """Aplica el tema oscuro usando el sistema de temas JSON"""
         try:
@@ -4783,11 +4779,11 @@ class MainWindow(QMainWindow):
                     self._apply_tooltip_theme(theme_manager)
                     print("[OK] Dark theme applied via theme manager")
                 else:
-                    print("[ERROR] Theme manager not available")
+                    print(tr("[ERROR] Theme manager not available"))
             else:
-                print("[ERROR] Theme system not available")
+                print(tr("[ERROR] Theme system not available"))
         except Exception as e:
-            print(f"[ERROR] Failed to apply dark theme: {e}")
+            print(tr("[ERROR] Failed to apply dark theme: {e}", e=e))
     def _initialize_auth_system(self):
         """Initialize authentication system after startup"""
         try:
@@ -4797,7 +4793,7 @@ class MainWindow(QMainWindow):
             else:
                 print("[WARNING] Authentication system not available")
         except Exception as e:
-            print(f"[ERROR] Failed to initialize auth system: {e}")
+            print(tr("[ERROR] Failed to initialize auth system: {e}", e=e))
     def _initialize_plugin_system(self):
         """Initialize plugin system after startup (LEGACY - YA NO SE USA)"""
         # Este método es legacy del sistema antiguo de plugins
@@ -4835,7 +4831,7 @@ class MainWindow(QMainWindow):
             )
             print(f"[UA-GLOBAL] ✓ User-Agent string: {user_agent_string[:100]}...")
         except Exception as e:
-            print(f"[ERROR] Failed to configure default profile User-Agent: {e}")
+            print(tr("[ERROR] Failed to configure default profile User-Agent: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -4959,13 +4955,13 @@ class MainWindow(QMainWindow):
                         else:
                             print(f"[UI] Failed to auto-load free plugin {plugin_id}")
                     except Exception as e:
-                        print(f"[UI] Error auto-discovering plugin {plugin_id}: {e}")
+                        print(tr("[UI] Error auto-discovering plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
 
             if not loaded_any:
-                print("[UI] No additional free plugins to load")
+                print(tr("[UI] No additional free plugins to load"))
 
         except Exception as e:
-            print(f"[UI] Error loading free plugins: {e}")
+            print(tr("[UI] Error loading free plugins: {e}", e=e))
             import traceback
             traceback.print_exc()
     def _setup_auth_panel(self):
@@ -4973,7 +4969,7 @@ class MainWindow(QMainWindow):
         try:
             if self.auth_manager and AUTH_SYSTEM_AVAILABLE:
                 self.auth_panel = AuthPanel(self.auth_manager)
-                self.auth_dock = QDockWidget("Cuenta", self)
+                self.auth_dock = QDockWidget(tr("Cuenta"), self)
                 self.auth_dock.setWidget(self.auth_panel)
                 self.auth_dock.setAllowedAreas(
                     Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea
@@ -4984,7 +4980,7 @@ class MainWindow(QMainWindow):
             else:
                 print("[WARNING] Auth manager not ready for panel setup")
         except Exception as e:
-            print(f"[ERROR] Failed to setup auth panel: {e}")
+            print(tr("[ERROR] Failed to setup auth panel: {e}", e=e))
     def on_plugin_loaded(self, plugin_id: str):
         """
         Manejar la carga de un plugin dinámicamente
@@ -5054,7 +5050,7 @@ class MainWindow(QMainWindow):
                                 f"[UI] Plugin {plugin_id} initialization returned False"
                             )
                     except Exception as e:
-                        print(f"[UI] Error initializing plugin {plugin_id}: {e}")
+                        print(tr("[UI] Error initializing plugin {plugin_id}: {e}", plugin_id=plugin_id, e=e))
                         import traceback
 
                         traceback.print_exc()
@@ -5087,11 +5083,11 @@ class MainWindow(QMainWindow):
             ):
                 self._load_ai_live_ide_plugin_dynamic(plugin_module)
             elif plugin_id == "themes":
-                print(f"[UI] Themes plugin loaded, no UI changes needed")
+                print(tr("[UI] Themes plugin loaded, no UI changes needed"))
             else:
                 print(f"[UI] Unknown plugin type: {plugin_id}")
         except Exception as e:
-            print(f"[UI] Error loading plugin UI for {plugin_id}: {e}")
+            print(tr("[UI] Error loading plugin UI for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
             import traceback
 
             traceback.print_exc()
@@ -5145,7 +5141,7 @@ class MainWindow(QMainWindow):
                     print(f"[UI] Sidebar button added for plugin: {plugin_id}")
 
         except Exception as e:
-            print(f"[UI] Error in generic sidebar registration for {plugin_id}: {e}")
+            print(tr("[UI] Error in generic sidebar registration for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
             import traceback
             traceback.print_exc()
 
@@ -5173,7 +5169,7 @@ class MainWindow(QMainWindow):
                 print("[UI] Updated existing scraping dock widget")
             else:
                 # Crear nuevo dock widget
-                self.scraping_dock = QDockWidget("Scraping Avanzado", self)
+                self.scraping_dock = QDockWidget(tr("Scraping Avanzado"), self)
                 self.scraping_dock.setWidget(self.scraping_panel)
                 self.scraping_dock.setAllowedAreas(
                     Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea
@@ -5234,7 +5230,7 @@ class MainWindow(QMainWindow):
             SCRAPING_AVAILABLE = True
             print("[UI] SCRAPING_AVAILABLE set to True")
         except Exception as e:
-            print(f"[UI] Error loading scraping plugin: {e}")
+            print(tr("[UI] Error loading scraping plugin: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -5266,7 +5262,7 @@ class MainWindow(QMainWindow):
                 print("[UI] Updated existing proxy dock widget")
             else:
                 # Crear nuevo dock widget
-                self.proxy_dock = QDockWidget("Gestión de Proxies", self)
+                self.proxy_dock = QDockWidget(tr("Gestión de Proxies"), self)
                 self.proxy_dock.setWidget(self.proxy_panel)
                 self.proxy_dock.setAllowedAreas(
                     Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea
@@ -5324,7 +5320,7 @@ class MainWindow(QMainWindow):
             PROXY_AVAILABLE = True
             print("[UI] PROXY_AVAILABLE set to True")
         except Exception as e:
-            print(f"[UI] Error loading proxy plugin: {e}")
+            print(tr("[UI] Error loading proxy plugin: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -5337,7 +5333,7 @@ class MainWindow(QMainWindow):
             SEOPanel = plugin_module.get_seo_panel()
 
             if not SEOPanel:
-                print("[UI] SEO plugin running in compatibility mode (no UI available)")
+                print(tr("[UI] SEO plugin running in compatibility mode (no UI available)"))
                 return
             # Determinar el tier real según la licencia del usuario (antes el panel
             # SEO caía siempre en tier "pro" por defecto, sin validar suscripción).
@@ -5348,14 +5344,14 @@ class MainWindow(QMainWindow):
                     if access_info.access_level.value != "free":
                         tier = "pro"
             except Exception as e:
-                print(f"[WARNING] No se pudo determinar el tier real de SEO Analyzer: {e}")
+                print(tr("[WARNING] No se pudo determinar el tier real de SEO Analyzer: {e}", e=e))
 
             TierManagerClass = None
             if hasattr(plugin_module, "get_tier_manager"):
                 try:
                     TierManagerClass = plugin_module.get_tier_manager()
                 except Exception as e:
-                    print(f"[WARNING] No se pudo obtener TierManager del plugin SEO: {e}")
+                    print(tr("[WARNING] No se pudo obtener TierManager del plugin SEO: {e}", e=e))
 
             # Crear panel
             if TierManagerClass:
@@ -5426,7 +5422,7 @@ class MainWindow(QMainWindow):
                     "[UI] SEO plugin loaded, button already exists in dynamic_plugin_actions"
                 )
         except Exception as e:
-            print(f"[UI] Error loading SEO plugin: {e}")
+            print(tr("[UI] Error loading SEO plugin: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -5505,7 +5501,7 @@ class MainWindow(QMainWindow):
                     "[UI] Pentesting plugin loaded, button already exists in dynamic_plugin_actions"
                 )
         except Exception as e:
-            print(f"[UI] Error loading Pentesting plugin: {e}")
+            print(tr("[UI] Error loading Pentesting plugin: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -5649,7 +5645,7 @@ class MainWindow(QMainWindow):
                 self.ai_live_ide_panel.update_premium_ui("ai_live_ide")
             print("[UI] AI Live IDE plugin loaded successfully (central area)")
         except Exception as e:
-            print(f"[UI] Error loading AI Live IDE plugin: {e}")
+            print(tr("[UI] Error loading AI Live IDE plugin: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -5668,12 +5664,12 @@ class MainWindow(QMainWindow):
 
         tabs = getattr(self.tab_manager, "tabs", None)
         if tabs is None:
-            print("[UI] tab_manager.tabs missing — no se puede crear split")
+            print(tr("[UI] tab_manager.tabs missing — no se puede crear split"))
             return
         cs = self.content_splitter
         tabs_idx = cs.indexOf(tabs)
         if tabs_idx < 0:
-            print("[UI] tabs widget no está en content_splitter")
+            print(tr("[UI] tabs widget no está en content_splitter"))
             return
         sizes_before = cs.sizes()
 
@@ -5825,7 +5821,7 @@ class MainWindow(QMainWindow):
                     print(f"[UI] Could not disconnect callbacks: {e}")
                 # Conectar el nuevo callback
                 existing_theme_action.triggered.connect(self.toggle_themes_panel)
-                existing_theme_action.setToolTip("Gestor de Temas Avanzado")
+                existing_theme_action.setToolTip(tr("Gestor de Temas Avanzado"))
                 print("[UI] Reconnected theme button to toggle_themes_panel")
                 # Asegurar ruta SVG para re-tinte al cambiar tema
                 tp = os.path.abspath("icons/themes.svg")
@@ -5852,7 +5848,7 @@ class MainWindow(QMainWindow):
                     except:
                         pass
                     theme_action.triggered.connect(self.toggle_themes_panel)
-                    theme_action.setToolTip("Gestor de Temas Avanzado")
+                    theme_action.setToolTip(tr("Gestor de Temas Avanzado"))
                     self.themes_action = theme_action
                     tp = os.path.abspath("icons/themes.svg")
                     if os.path.isfile(tp):
@@ -5870,11 +5866,11 @@ class MainWindow(QMainWindow):
                     ic = build_strip_icon(tp, ic_col, self.side_strip.iconSize())
                     self.themes_action = QAction(
                         ic if not ic.isNull() else QIcon("icons/themes.svg"),
-                        "Temas",
+                        tr("Temas"),
                         self,
                     )
                     self.themes_action.setProperty("strip_icon_path", tp)
-                    self.themes_action.setToolTip("Gestor de Temas Avanzado")
+                    self.themes_action.setToolTip(tr("Gestor de Temas Avanzado"))
                     self.themes_action.triggered.connect(self.toggle_themes_panel)
                 # Insertar antes del botón de Plugin Store
                 actions = self.side_strip.actions()
@@ -5897,7 +5893,7 @@ class MainWindow(QMainWindow):
             print("[UI] Themes plugin button configured successfully")
             self._refresh_side_strip_icons()
         except Exception as e:
-            print(f"[UI] Error loading themes plugin: {e}")
+            print(tr("[UI] Error loading themes plugin: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -5920,7 +5916,7 @@ class MainWindow(QMainWindow):
             if not sel and hasattr(self.themes_plugin_instance, "get_settings_widget"):
                 sel = self.themes_plugin_instance.get_settings_widget()
             if not sel and not ed:
-                print("[UI] No theme widgets from plugin")
+                print(tr("[UI] No theme widgets from plugin"))
                 return None
             container = QWidget()
             container.setObjectName("themesPanelContainer")
@@ -5928,14 +5924,14 @@ class MainWindow(QMainWindow):
             lay.setContentsMargins(0, 0, 0, 0)
             tabs = QTabWidget()
             if sel:
-                tabs.addTab(sel, "Temas")
+                tabs.addTab(sel, tr("Temas"))
             if ed:
-                tabs.addTab(ed, "Editor")
+                tabs.addTab(ed, tr("Editor"))
             lay.addWidget(tabs)
             self.themes_panel_widget = container
             return self.themes_panel_widget
         except Exception as e:
-            print(f"[UI] Error building themes panel: {e}")
+            print(tr("[UI] Error building themes panel: {e}", e=e))
             import traceback
 
             traceback.print_exc()
@@ -5975,7 +5971,7 @@ class MainWindow(QMainWindow):
                     "[UI] Split View plugin not loaded or missing toggle_split_view()"
                 )
         except Exception as e:
-            print(f"[UI] Error toggling Split View: {e}")
+            print(tr("[UI] Error toggling Split View: {e}", e=e))
     def on_plugin_unloaded(self, plugin_id: str):
         """
         Manejar la descarga de un plugin dinámicamente
@@ -6037,7 +6033,7 @@ class MainWindow(QMainWindow):
                         pass
                 self.ai_live_ide_panel = None
         except Exception as e:
-            print(f"[UI] Error unloading plugin UI for {plugin_id}: {e}")
+            print(tr("[UI] Error unloading plugin UI for {plugin_id}: {e}", plugin_id=plugin_id, e=e))
             import traceback
 
             traceback.print_exc()
@@ -6050,9 +6046,9 @@ class MainWindow(QMainWindow):
             import sys
 
             subprocess.Popen(_relaunch_command())
-            print("[Menu] Nueva ventana abierta")
+            print(tr("[Menu] Nueva ventana abierta"))
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"No se pudo abrir nueva ventana: {e}")
+            QMessageBox.warning(self, tr("Error"), tr("No se pudo abrir nueva ventana: {e}", e=e))
     def open_private_window(self):
         """Abrir una ventana de navegación privada"""
         try:
@@ -6060,9 +6056,9 @@ class MainWindow(QMainWindow):
             import sys
 
             subprocess.Popen(_relaunch_command("--private"))
-            print("[Menu] Ventana privada abierta")
+            print(tr("[Menu] Ventana privada abierta"))
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"No se pudo abrir ventana privada: {e}")
+            QMessageBox.warning(self, tr("Error"), tr("No se pudo abrir ventana privada: {e}", e=e))
     def show_bookmarks_panel(self):
         """Mostrar panel de marcadores"""
         if hasattr(self, "bookmark_manager") and self.bookmark_manager:
@@ -6085,7 +6081,7 @@ class MainWindow(QMainWindow):
                         subprocess.Popen(["xdg-open", download_folder])
                 except Exception as e:
                     QMessageBox.information(
-                        self, "Descargas", f"Carpeta de descargas: {download_folder}"
+                        self, tr("Descargas"), tr("Carpeta de descargas: {download_folder}", download_folder=download_folder)
                     )
     def show_plugins_panel(self):
         """Mostrar panel de plugins/extensiones"""
@@ -6104,12 +6100,12 @@ class MainWindow(QMainWindow):
                 if dialog.exec():
                     current_browser.page().print(
                         printer,
-                        lambda success: print(f"[Menu] Página impresa: {success}"),
+                        lambda success: print(tr("[Menu] Página impresa: {success}", success=success)),
                     )
             except ImportError:
-                QMessageBox.warning(self, "Error", "Módulo de impresión no disponible")
+                QMessageBox.warning(self, tr("Error"), tr("Módulo de impresión no disponible"))
             except Exception as e:
-                QMessageBox.warning(self, "Error", f"Error al imprimir: {e}")
+                QMessageBox.warning(self, tr("Error"), tr("Error al imprimir: {e}", e=e))
     def save_page_as(self):
         """Guardar página actual"""
         current_browser = self.tab_manager.tabs.currentWidget()
@@ -6119,19 +6115,19 @@ class MainWindow(QMainWindow):
             url = current_browser.url().toString()
             filename, _ = QFileDialog.getSaveFileName(
                 self,
-                "Guardar página como",
+                tr("Guardar página como"),
                 os.path.expanduser("~"),
-                "HTML Files (*.html *.htm);;All Files (*.*)",
+                tr("HTML Files (*.html *.htm);;All Files (*.*)"),
             )
             if filename:
                 try:
                     current_browser.page().save(filename)
                     QMessageBox.information(
-                        self, "Éxito", f"Página guardada en: {filename}"
+                        self, tr("Éxito"), tr("Página guardada en: {filename}", filename=filename)
                     )
                 except Exception as e:
                     QMessageBox.warning(
-                        self, "Error", f"No se pudo guardar la página: {e}"
+                        self, tr("Error"), tr("No se pudo guardar la página: {e}", e=e)
                     )
     def show_find_dialog(self):
         """Mostrar diálogo de búsqueda en página"""
@@ -6139,7 +6135,7 @@ class MainWindow(QMainWindow):
         if current_browser:
             from PySide6.QtWidgets import QInputDialog
 
-            text, ok = QInputDialog.getText(self, "Buscar en página", "Texto a buscar:")
+            text, ok = QInputDialog.getText(self, tr("Buscar en página"), tr("Texto a buscar:"))
             if ok and text:
                 current_browser.findText(text)
     def zoom_in(self):
@@ -6159,7 +6155,7 @@ class MainWindow(QMainWindow):
             new_zoom = max(current_zoom - 0.1, 0.25)  # Mínimo 25%
             current_browser.setZoomFactor(new_zoom)
             self.status_bar.update_zoom(new_zoom)  # Actualizar status bar
-            print(f"[Menu] Zoom reducido a {int(new_zoom * 100)}%")
+            print(tr("[Menu] Zoom reducido a {value}%", value=int(new_zoom * 100)))
     def zoom_reset(self):
         """Restablecer zoom al 100%"""
         current_browser = self.tab_manager.tabs.currentWidget()
@@ -6221,7 +6217,7 @@ class MainWindow(QMainWindow):
         # Status bar oculta — mantener señales funcionales para showMessage()
         browser.loadProgress.connect(self.status_bar.update_load_progress)
         _track(page.loadStarted,
-               lambda: self.status_bar.update_load_status("Cargando..."))
+               lambda: self.status_bar.update_load_status(tr("Cargando...")))
         _track(page.loadFinished, lambda: self.status_bar.update_load_status(""))
 
         if getattr(self, "password_manager", None) is not None:
@@ -6234,34 +6230,34 @@ class MainWindow(QMainWindow):
         """Alternar modo pantalla completa"""
         if self.isFullScreen():
             self.showNormal()
-            print("[Menu] Modo pantalla completa desactivado")
+            print(tr("[Menu] Modo pantalla completa desactivado"))
         else:
             self.showFullScreen()
-            print("[Menu] Modo pantalla completa activado")
+            print(tr("[Menu] Modo pantalla completa activado"))
     def show_clear_data_dialog(self):
         """Mostrar diálogo para limpiar datos de navegación"""
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QDialogButtonBox
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Limpiar datos de navegación")
+        dialog.setWindowTitle(tr("Limpiar datos de navegación"))
         dialog.setMinimumWidth(400)
 
         layout = QVBoxLayout(dialog)
 
-        layout.addWidget(QLabel("Seleccione los datos a eliminar:"))
+        layout.addWidget(QLabel(tr("Seleccione los datos a eliminar:")))
 
-        history_check = QCheckBox("Historial de navegación")
+        history_check = QCheckBox(tr("Historial de navegación"))
         history_check.setChecked(True)
         layout.addWidget(history_check)
 
-        cache_check = QCheckBox("Caché")
+        cache_check = QCheckBox(tr("Caché"))
         cache_check.setChecked(True)
         layout.addWidget(cache_check)
 
-        cookies_check = QCheckBox("Cookies y datos de sitios")
+        cookies_check = QCheckBox(tr("Cookies y datos de sitios"))
         layout.addWidget(cookies_check)
 
-        passwords_check = QCheckBox("Contraseñas guardadas")
+        passwords_check = QCheckBox(tr("Contraseñas guardadas"))
         layout.addWidget(passwords_check)
 
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -6300,27 +6296,27 @@ class MainWindow(QMainWindow):
                     for profile in profiles:
                         profile.clearHttpCache()
                         profile.cookieStore().deleteAllCookies()
-                    print("[Menu] Datos locales eliminados (clear_all_local_data)")
+                    print(tr("[Menu] Datos locales eliminados (clear_all_local_data)"))
                 else:
                     # Alternativa: borrado por categorías
                     if history_check.isChecked():
                         self.history_manager.clear_history()
-                        print("[Menu] Historial limpiado")
+                        print(tr("[Menu] Historial limpiado"))
                     if cache_check.isChecked():
                         for profile in profiles:
                             profile.clearHttpCache()
-                        print("[Menu] Caché limpiado")
+                        print(tr("[Menu] Caché limpiado"))
                     if cookies_check.isChecked():
                         for profile in profiles:
                             profile.cookieStore().deleteAllCookies()
-                        print("[Menu] Cookies eliminadas")
+                        print(tr("[Menu] Cookies eliminadas"))
                     if passwords_check.isChecked() and hasattr(self, "password_manager"):
                         self.password_manager.clear_all_passwords()
                 QMessageBox.information(
-                    self, "Éxito", "Datos de navegación eliminados correctamente"
+                    self, tr("Éxito"), tr("Datos de navegación eliminados correctamente")
                 )
             except Exception as e:
-                QMessageBox.warning(self, "Error", f"Error al limpiar datos: {e}")
+                QMessageBox.warning(self, tr("Error"), tr("Error al limpiar datos: {e}", e=e))
     def show_network_settings(self):
         """Mostrar configuración de red e interceptación"""
         if hasattr(self, "network_interceptor"):
@@ -6329,8 +6325,8 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(
                 self,
-                "Network Interceptor no disponible",
-                "El interceptor de red no está inicializado.",
+                tr("Network Interceptor no disponible"),
+                tr("El interceptor de red no está inicializado."),
             )
     def show_homepage_settings(self, parent_dialog=None):
         """Mostrar configuración de página de inicio"""
@@ -6342,8 +6338,8 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(
                 self,
-                "Homepage Manager no disponible",
-                "El gestor de página de inicio no está inicializado.",
+                tr("Homepage Manager no disponible"),
+                tr("El gestor de página de inicio no está inicializado."),
             )
     def show_userscripts(self):
         """Mostrar gestor de UserScripts"""
@@ -6353,8 +6349,8 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(
                 self,
-                "UserScript Manager no disponible",
-                "El gestor de UserScripts no está inicializado.",
+                tr("UserScript Manager no disponible"),
+                tr("El gestor de UserScripts no está inicializado."),
             )
     def change_visual_theme(self, theme_name):
         """Cambiar tema visual del navegador (light, dark, blue)"""
@@ -6372,17 +6368,17 @@ class MainWindow(QMainWindow):
             self._refresh_tab_bar_style()
 
             # Mensaje de confirmación en status bar
-            theme_names = {"light": "Claro", "dark": "Oscuro", "blue": "Azul"}
+            theme_names = {"light": tr("Claro"), "dark": tr("Oscuro"), "blue": tr("Azul")}
             self.status_bar.showMessage(
-                f"Tema cambiado a: {theme_names.get(theme_name, theme_name)}", 3000
+                tr("Tema cambiado a: {value}", value=theme_names.get(theme_name, theme_name)), 3000
             )
 
-            print(f"[THEME] Tema visual cambiado a: {theme_name}")
+            print(tr("[THEME] Tema visual cambiado a: {theme_name}", theme_name=theme_name))
         except Exception as e:
             QMessageBox.warning(
-                self, "Error al cambiar tema", f"No se pudo cambiar el tema: {str(e)}"
+                self, tr("Error al cambiar tema"), tr("No se pudo cambiar el tema: {value}", value=str(e))
             )
-            print(f"[ERROR] Error al cambiar tema visual: {e}")
+            print(tr("[ERROR] Error al cambiar tema visual: {e}", e=e))
     def toggle_dev_tools(self):
         """Alternar herramientas de desarrollador"""
         if hasattr(self, "devtools_dock") and self.devtools_dock:
@@ -6391,20 +6387,20 @@ class MainWindow(QMainWindow):
                 print("[Menu] DevTools ocultadas")
             else:
                 self.devtools_dock.show()
-                print("[Menu] DevTools mostradas")
+                print(tr("[Menu] DevTools mostradas"))
     def show_task_manager(self):
         """Mostrar administrador de tareas del navegador"""
         QMessageBox.information(
             self,
-            "Administrador de tareas",
-            "Administrador de tareas del navegador\n\n"
-            "Pestaña actual: "
+            tr("Administrador de tareas"),
+            tr("Administrador de tareas del navegador\n\n"
+            "Pestaña actual: ")
             + (
                 self.tab_manager.tabs.tabText(self.tab_manager.tabs.currentIndex())
                 if self.tab_manager.tabs.count() > 0
-                else "Ninguna"
+                else tr("Ninguna")
             )
-            + f"\nTotal de pestañas: {self.tab_manager.tabs.count()}",
+            + tr("\nTotal de pestañas: {value}", value=self.tab_manager.tabs.count()),
         )
     def show_screenshot_dialog(self):
         """Mostrar diálogo de captura de pantalla"""
@@ -6416,7 +6412,7 @@ class MainWindow(QMainWindow):
         """Captura de región específica"""
         current_browser = self.tab_manager.tabs.currentWidget()
         if not current_browser:
-            QMessageBox.warning(self, "Sin página", "No hay ninguna página activa.")
+            QMessageBox.warning(self, tr("Sin página"), tr("No hay ninguna página activa."))
             return
         # Capturar pantalla completa primero
         screenshot_tool = ScreenshotTool(current_browser, self)
@@ -6441,21 +6437,21 @@ class MainWindow(QMainWindow):
         default_name = f"region_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         filename, _ = QFileDialog.getSaveFileName(
             self,
-            "Guardar captura de región",
+            tr("Guardar captura de región"),
             os.path.join(os.path.expanduser("~"), "Pictures", default_name),
-            "PNG Image (*.png);;JPEG Image (*.jpg)",
+            tr("PNG Image (*.png);;JPEG Image (*.jpg)"),
         )
 
         if filename:
             cropped.save(filename)
             QMessageBox.information(
-                self, "Guardado", f"Captura guardada en:\n{filename}"
+                self, tr("Guardado"), tr("Captura guardada en:\n{filename}", filename=filename)
             )
     def show_annotated_capture(self):
         """Captura con editor de anotaciones"""
         current_browser = self.tab_manager.tabs.currentWidget()
         if not current_browser:
-            QMessageBox.warning(self, "Sin página", "No hay ninguna página activa.")
+            QMessageBox.warning(self, tr("Sin página"), tr("No hay ninguna página activa."))
             return
         # Capturar pantalla
         screenshot_tool = ScreenshotTool(current_browser, self)
@@ -6476,15 +6472,15 @@ class MainWindow(QMainWindow):
                 )
                 filename, _ = QFileDialog.getSaveFileName(
                     self,
-                    "Guardar captura anotada",
+                    tr("Guardar captura anotada"),
                     os.path.join(os.path.expanduser("~"), "Pictures", default_name),
-                    "PNG Image (*.png);;JPEG Image (*.jpg)",
+                    tr("PNG Image (*.png);;JPEG Image (*.jpg)"),
                 )
 
                 if filename:
                     annotated_image.save(filename)
                     QMessageBox.information(
-                        self, "Guardado", f"Captura guardada en:\n{filename}"
+                        self, tr("Guardado"), tr("Captura guardada en:\n{filename}", filename=filename)
                     )
     def show_performance_monitor(self):
         """Mostrar administrador de tareas"""
@@ -6496,24 +6492,24 @@ class MainWindow(QMainWindow):
     def save_current_session(self):
         """Guardar sesión actual con nombre"""
         if not getattr(self, "session_manager", None):
-            QMessageBox.warning(self, "Error", "Session Manager no disponible")
+            QMessageBox.warning(self, tr("Error"), tr("Session Manager no disponible"))
             return
         from PySide6.QtWidgets import QInputDialog
 
         if self._private_mode:
             QMessageBox.information(
-                self, "Ventana privada",
-                "En una ventana privada no se guardan sesiones en disco."
+                self, tr("Ventana privada"),
+                tr("En una ventana privada no se guardan sesiones en disco.")
             )
             return
-        name, ok = QInputDialog.getText(self, "Guardar sesión", "Nombre de la sesión:")
+        name, ok = QInputDialog.getText(self, tr("Guardar sesión"), tr("Nombre de la sesión:"))
 
         if ok and name and name.strip():
             self.session_manager.save_named_session(name.strip())
     def show_session_manager(self):
         """Mostrar gestor de sesiones"""
         if not getattr(self, "session_manager", None):
-            QMessageBox.warning(self, "Error", "Session Manager no disponible")
+            QMessageBox.warning(self, tr("Error"), tr("Session Manager no disponible"))
             return
         self.session_manager.show_session_manager_dialog()
     def show_userscript_manager(self):
@@ -6524,8 +6520,8 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(
                 self,
-                "UserScript Manager no disponible",
-                "El gestor de UserScripts no está inicializado.",
+                tr("UserScript Manager no disponible"),
+                tr("El gestor de UserScripts no está inicializado."),
             )
     def view_page_source(self):
         """Ver código fuente de la página"""
@@ -6537,7 +6533,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Código fuente de la página")
+        dialog.setWindowTitle(tr("Código fuente de la página"))
         dialog.setMinimumSize(800, 600)
 
         layout = QVBoxLayout(dialog)
@@ -6560,7 +6556,7 @@ class MainWindow(QMainWindow):
         )
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Configuración - Katphi")
+        dialog.setWindowTitle(tr("Configuración - Katphi"))
         dialog.setMinimumSize(600, 500)
 
         layout = QVBoxLayout(dialog)
@@ -6570,20 +6566,20 @@ class MainWindow(QMainWindow):
         # Tab 1: General
         general_tab = QWidget()
         general_layout = QVBoxLayout(general_tab)
-        general_layout.addWidget(QLabel("Configuración general del navegador"))
+        general_layout.addWidget(QLabel(tr("Configuración general del navegador")))
 
-        appearance_gb = QGroupBox("Ventana")
+        appearance_gb = QGroupBox(tr("Ventana"))
         apl = QVBoxLayout(appearance_gb)
         frameless_chk = QCheckBox(
-            "Ventana sin marco del sistema (botones − □ en la barra superior)"
+            tr("Ventana sin marco del sistema (botones − □ en la barra superior)")
         )
         frameless_chk.setChecked(
             self.settings.value("ui/frameless_window", False, type=bool)
         )
         frameless_chk.setToolTip(
-            "Oculta la decoración nativa del escritorio.\n"
+            tr("Oculta la decoración nativa del escritorio.\n"
             "Arrastra la ventana desde el espacio flexible entre la URL "
-            "y los iconos derechos."
+            "y los iconos derechos.")
         )
         frameless_chk.toggled.connect(
             lambda c: self._set_frameless_window(bool(c), persist=True)
@@ -6593,13 +6589,38 @@ class MainWindow(QMainWindow):
         apl.addStretch(1)
         general_layout.addWidget(appearance_gb)
 
+        # Idioma de la interfaz (se aplica al reiniciar)
+        import i18n
+        lang_gb = QGroupBox(tr("Idioma"))
+        lang_l = QVBoxLayout(lang_gb)
+        lang_combo = QComboBox()
+        lang_combo.addItem(tr("Automático (idioma del sistema)"), "")
+        lang_combo.addItem("Español", "es")
+        lang_combo.addItem("English", "en")
+        idx = lang_combo.findData(i18n.get_saved_language())
+        lang_combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+        def _on_language_changed(_index):
+            i18n.save_language(lang_combo.currentData())
+            reply = QMessageBox.question(
+                dialog, tr("Idioma"),
+                tr("El idioma se aplicará al reiniciar el navegador.\n\n¿Reiniciar ahora?"),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                dialog.accept()
+                self._restart_browser()
+
+        lang_combo.currentIndexChanged.connect(_on_language_changed)
+        lang_l.addWidget(lang_combo)
+        general_layout.addWidget(lang_gb)
+
         # Página de inicio
         if hasattr(self, "homepage_manager") and self.homepage_manager:
-            homepage_section = QGroupBox("Página de inicio y nuevas pestañas")
+            homepage_section = QGroupBox(tr("Página de inicio y nuevas pestañas"))
             homepage_layout = QVBoxLayout()
 
             # Botón para configurar página de inicio
-            homepage_btn = QPushButton("Configurar página de inicio")
+            homepage_btn = QPushButton(tr("Configurar página de inicio"))
             homepage_btn.clicked.connect(lambda: self.show_homepage_settings(dialog))
             homepage_btn.setMaximumWidth(250)
             homepage_btn.setStyleSheet("""
@@ -6618,13 +6639,13 @@ class MainWindow(QMainWindow):
             # Mostrar configuración actual
             current_type = self.homepage_manager.homepage_type
             type_labels = {
-                "blank": "Página en blanco",
-                "search_engine": "Motor de búsqueda predeterminado",
+                "blank": tr("Página en blanco"),
+                "search_engine": tr("Motor de búsqueda predeterminado"),
                 "custom_url": f"URL personalizada: {self.homepage_manager.custom_url}",
-                "new_tab_page": "Página de nueva pestaña",
+                "new_tab_page": tr("Página de nueva pestaña"),
             }
             current_label = QLabel(
-                f"Actual: {type_labels.get(current_type, 'No configurada')}"
+                tr("Actual: {value}", value=type_labels.get(current_type, 'No configurada'))
             )
             current_label.setStyleSheet(
                 "QWidget { color: #666; font-size: 11px; margin-top: 5px; }"
@@ -6634,7 +6655,7 @@ class MainWindow(QMainWindow):
             homepage_section.setLayout(homepage_layout)
             general_layout.addWidget(homepage_section)
         general_layout.addStretch()
-        tabs.addTab(general_tab, "General")
+        tabs.addTab(general_tab, tr("General"))
 
         # Tab 2: Búsqueda
         if hasattr(self, "search_engine_manager") and self.search_engine_manager:
@@ -6647,7 +6668,7 @@ class MainWindow(QMainWindow):
 
             # Motor predeterminado
             default_layout = QHBoxLayout()
-            default_layout.addWidget(QLabel("Motor predeterminado:"))
+            default_layout.addWidget(QLabel(tr("Motor predeterminado:")))
 
             default_combo = QComboBox()
             for engine in self.search_engine_manager.get_all_engines():
@@ -6668,28 +6689,28 @@ class MainWindow(QMainWindow):
             search_layout.addLayout(default_layout)
 
             # Lista de motores
-            search_layout.addWidget(QLabel("Motores disponibles:"))
+            search_layout.addWidget(QLabel(tr("Motores disponibles:")))
             engines_list = QListWidget()
             for engine in self.search_engine_manager.get_all_engines():
                 engines_list.addItem(f"{engine.name} - {engine.url_template}")
             search_layout.addWidget(engines_list)
 
             search_layout.addStretch()
-            tabs.addTab(search_tab, "Búsqueda")
+            tabs.addTab(search_tab, tr("Búsqueda"))
         # Tab 3: Privacidad
         privacy_tab = QWidget()
         privacy_layout = QVBoxLayout(privacy_tab)
-        privacy_layout.addWidget(QLabel("Configuración de privacidad"))
-        privacy_btn = QPushButton("Abrir panel de privacidad")
+        privacy_layout.addWidget(QLabel(tr("Configuración de privacidad")))
+        privacy_btn = QPushButton(tr("Abrir panel de privacidad"))
         privacy_btn.clicked.connect(lambda: self.toggle_privacy_panel())
         privacy_layout.addWidget(privacy_btn)
         privacy_layout.addStretch()
-        tabs.addTab(privacy_tab, "Privacidad")
+        tabs.addTab(privacy_tab, tr("Privacidad"))
 
         layout.addWidget(tabs)
 
         # Botón cerrar
-        close_btn = QPushButton("Cerrar")
+        close_btn = QPushButton(tr("Cerrar"))
         close_btn.clicked.connect(dialog.accept)
         layout.addWidget(close_btn)
 
@@ -6700,36 +6721,37 @@ class MainWindow(QMainWindow):
         dialog.exec()
     def show_about(self):
         """Mostrar información acerca de"""
+        from constants import APP_VERSION
         QMessageBox.about(
             self,
-            "Acerca de Katphi",
-            "<h2>Katphi Browser</h2>"
+            tr("Acerca de Katphi"),
+            tr("<h2>Katphi Browser</h2>"
             "<p>Navegador profesional con capacidades avanzadas de scraping.</p>"
-            "<p><b>Versión:</b> 3.4.7</p>"
+            "<p><b>Versión:</b> {version}</p>"
             "<p><b>Motor:</b> QtWebEngine (Chromium)</p>"
             "<p><b>Framework:</b> PySide6</p>"
             "<br>"
-            "<p>© 2024 Katphi. Todos los derechos reservados.</p>",
+            "<p>© 2024 Katphi. Todos los derechos reservados.</p>", version=APP_VERSION),
         )
     def report_issue(self):
         """Informar de un problema"""
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Informar de un problema")
+        dialog.setWindowTitle(tr("Informar de un problema"))
         dialog.setMinimumSize(500, 400)
 
         layout = QVBoxLayout(dialog)
 
-        layout.addWidget(QLabel("Describe el problema que encontraste:"))
+        layout.addWidget(QLabel(tr("Describe el problema que encontraste:")))
 
         text_edit = QTextEdit()
         text_edit.setPlaceholderText(
-            "Por favor describe el problema con el mayor detalle posible...\n\n"
+            tr("Por favor describe el problema con el mayor detalle posible...\n\n"
             "Incluye:\n"
             "- Qué estabas haciendo\n"
             "- Qué esperabas que sucediera\n"
-            "- Qué sucedió en su lugar"
+            "- Qué sucedió en su lugar")
         )
         layout.addWidget(text_edit)
 
@@ -6743,13 +6765,13 @@ class MainWindow(QMainWindow):
             if issue_text.strip():
                 QMessageBox.information(
                     self,
-                    "Gracias",
-                    "Gracias por tu reporte. Hemos registrado el problema.",
+                    tr("Gracias"),
+                    tr("Gracias por tu reporte. Hemos registrado el problema."),
                 )
-                print(f"[Menu] Problema reportado: {issue_text[:100]}...")
+                print(tr("[Menu] Problema reportado: {value}...", value=issue_text[:100]))
             else:
                 QMessageBox.warning(
-                    self, "Aviso", "Por favor describe el problema antes de enviar."
+                    self, tr("Aviso"), tr("Por favor describe el problema antes de enviar.")
                 )
 
 

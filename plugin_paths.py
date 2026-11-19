@@ -31,6 +31,7 @@ versión específica por sistema operativo.
 """
 from __future__ import annotations
 
+from i18n import tr
 import os
 import sys
 import logging
@@ -78,7 +79,7 @@ def ensure_user_plugins_dir() -> Path:
     try:
         USER_PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:  # pragma: no cover - depende del SO/permETC
-        logger.error("No se pudo crear USER_PLUGINS_DIR %s: %s", USER_PLUGINS_DIR, e)
+        logger.error(tr("No se pudo crear USER_PLUGINS_DIR %s: %s"), USER_PLUGINS_DIR, e)
     return USER_PLUGINS_DIR
 
 
@@ -97,7 +98,7 @@ def register_sys_path() -> None:
         if str(USER_PLUGINS_DIR) not in list(_plugins_pkg.__path__):
             _plugins_pkg.__path__.append(str(USER_PLUGINS_DIR))
     except Exception as e:  # pragma: no cover
-        logger.warning("No se pudo añadir la carpeta de usuario al paquete plugins: %s", e)
+        logger.warning(tr("No se pudo añadir la carpeta de usuario al paquete plugins: %s"), e)
 
 
 def plugin_search_roots() -> List[Path]:

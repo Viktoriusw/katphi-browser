@@ -9,6 +9,7 @@ Características:
 - Accesos directos a sitios frecuentes
 """
 
+from i18n import tr
 from PySide6.QtCore import QSettings, Signal, QObject
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                QLineEdit, QRadioButton, QButtonGroup, QPushButton,
@@ -119,7 +120,7 @@ class HomepageSettingsDialog(QDialog):
         super().__init__(parent)
         self.homepage_manager = homepage_manager
 
-        self.setWindowTitle("Configuración de página de inicio")
+        self.setWindowTitle(tr("Configuración de página de inicio"))
         self.setMinimumSize(550, 400)
 
         self.setup_ui()
@@ -129,24 +130,24 @@ class HomepageSettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Título
-        title = QLabel("Página de inicio y nuevas pestañas")
+        title = QLabel(tr("Página de inicio y nuevas pestañas"))
         title.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
         # Grupo: Página de inicio
-        home_group = QGroupBox("Página de inicio")
+        home_group = QGroupBox(tr("Página de inicio"))
         home_layout = QVBoxLayout()
 
         # Grupo de botones de radio
         self.button_group = QButtonGroup()
 
         # Opción 1: Página en blanco
-        self.blank_radio = QRadioButton("Página en blanco")
+        self.blank_radio = QRadioButton(tr("Página en blanco"))
         self.button_group.addButton(self.blank_radio, 0)
         home_layout.addWidget(self.blank_radio)
 
         # Opción 2: Motor de búsqueda predeterminado
-        self.search_engine_radio = QRadioButton("Motor de búsqueda predeterminado")
+        self.search_engine_radio = QRadioButton(tr("Motor de búsqueda predeterminado"))
         self.button_group.addButton(self.search_engine_radio, 1)
         home_layout.addWidget(self.search_engine_radio)
 
@@ -154,11 +155,11 @@ class HomepageSettingsDialog(QDialog):
         if hasattr(self.homepage_manager.parent_window, 'search_engine_manager'):
             engine = self.homepage_manager.parent_window.search_engine_manager.get_default_engine()
             if engine:
-                engine_info = QLabel(f"    Actual: {engine.name}")
+                engine_info = QLabel(tr("    Actual: {name}", name=engine.name))
                 engine_info.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-left: 24px; }")
                 home_layout.addWidget(engine_info)
         # Opción 3: URL personalizada
-        self.custom_radio = QRadioButton("URL personalizada:")
+        self.custom_radio = QRadioButton(tr("URL personalizada:"))
         self.button_group.addButton(self.custom_radio, 2)
         home_layout.addWidget(self.custom_radio)
 
@@ -166,13 +167,13 @@ class HomepageSettingsDialog(QDialog):
         custom_url_layout = QHBoxLayout()
         custom_url_layout.addSpacing(24)
         self.custom_url_input = QLineEdit()
-        self.custom_url_input.setPlaceholderText("https://www.ejemplo.com")
+        self.custom_url_input.setPlaceholderText(tr("https://www.ejemplo.com"))
         self.custom_url_input.textChanged.connect(self.on_custom_url_changed)
         custom_url_layout.addWidget(self.custom_url_input)
         home_layout.addLayout(custom_url_layout)
 
         # Botón: Usar página actual
-        use_current_btn = QPushButton("Usar página actual")
+        use_current_btn = QPushButton(tr("Usar página actual"))
         use_current_btn.clicked.connect(self.use_current_page)
         use_current_btn.setMaximumWidth(180)
         use_current_btn.setStyleSheet("""
@@ -196,15 +197,15 @@ class HomepageSettingsDialog(QDialog):
         layout.addWidget(home_group)
 
         # Grupo: Nuevas pestañas
-        new_tab_group = QGroupBox("Nuevas pestañas")
+        new_tab_group = QGroupBox(tr("Nuevas pestañas"))
         new_tab_layout = QVBoxLayout()
 
-        self.use_for_new_tabs_check = QCheckBox("Usar página de inicio para nuevas pestañas")
+        self.use_for_new_tabs_check = QCheckBox(tr("Usar página de inicio para nuevas pestañas"))
         self.use_for_new_tabs_check.setChecked(True)
         new_tab_layout.addWidget(self.use_for_new_tabs_check)
 
         info_label = QLabel(
-            "Si está desactivado, las nuevas pestañas usarán el motor de búsqueda predeterminado."
+            tr("Si está desactivado, las nuevas pestañas usarán el motor de búsqueda predeterminado.")
         )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("QWidget { color: #666; font-size: 11px; margin-top: 5px; }")
@@ -215,7 +216,7 @@ class HomepageSettingsDialog(QDialog):
 
         # Información adicional
         tip_label = QLabel(
-            "Consejo: Puedes cambiar el motor de búsqueda predeterminado en Ajustes > Búsqueda"
+            tr("Consejo: Puedes cambiar el motor de búsqueda predeterminado en Ajustes > Búsqueda")
         )
         tip_label.setWordWrap(True)
         tip_label.setStyleSheet("QWidget { color: #0066cc; font-size: 11px; margin-top: 10px; padding: 8px; background-color: #f0f7ff; border-radius: 4px; }")
@@ -227,11 +228,11 @@ class HomepageSettingsDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
 
-        cancel_btn = QPushButton("Cancelar")
+        cancel_btn = QPushButton(tr("Cancelar"))
         cancel_btn.clicked.connect(self.reject)
         buttons_layout.addWidget(cancel_btn)
 
-        save_btn = QPushButton("Guardar")
+        save_btn = QPushButton(tr("Guardar"))
         save_btn.clicked.connect(self.save_settings)
         save_btn.setStyleSheet("""
             QPushButton {
@@ -279,21 +280,21 @@ class HomepageSettingsDialog(QDialog):
                         self.custom_radio.setChecked(True)
                         QMessageBox.information(
                             self,
-                            "Página actual seleccionada",
-                            f"Página de inicio configurada a:\n{current_url}"
+                            tr("Página actual seleccionada"),
+                            tr("Página de inicio configurada a:\n{current_url}", current_url=current_url)
                         )
                         return
             QMessageBox.warning(
                 self,
-                "Sin página actual",
-                "No hay una página válida en la pestaña actual."
+                tr("Sin página actual"),
+                tr("No hay una página válida en la pestaña actual.")
             )
         except Exception as e:
-            print(f"[Homepage] Error using current page: {e}")
+            print(tr("[Homepage] Error using current page: {e}", e=e))
             QMessageBox.warning(
                 self,
-                "Error",
-                "No se pudo usar la página actual."
+                tr("Error"),
+                tr("No se pudo usar la página actual.")
             )
     def save_settings(self):
         """Guardar configuración"""
@@ -309,8 +310,8 @@ class HomepageSettingsDialog(QDialog):
             if not custom_url:
                 QMessageBox.warning(
                     self,
-                    "URL vacía",
-                    "Por favor, ingresa una URL personalizada."
+                    tr("URL vacía"),
+                    tr("Por favor, ingresa una URL personalizada.")
                 )
                 return
             self.homepage_manager.custom_url = custom_url
@@ -322,9 +323,9 @@ class HomepageSettingsDialog(QDialog):
 
         QMessageBox.information(
             self,
-            "Configuración guardada",
-            "La página de inicio ha sido configurada correctamente.\n\n"
-            "Los cambios se aplicarán en las nuevas pestañas que abras."
+            tr("Configuración guardada"),
+            tr("La página de inicio ha sido configurada correctamente.\n\n"
+            "Los cambios se aplicarán en las nuevas pestañas que abras.")
         )
 
         self.accept()

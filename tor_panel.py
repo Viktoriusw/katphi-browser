@@ -6,6 +6,7 @@ Estados: DESCONECTADO, CONECTANDO (con progreso), CONECTADO, NO DISPONIBLE.
 Sigue el flujo de Tor Browser: usuario activa → bootstrap → reinicio automático.
 """
 
+from i18n import tr
 from typing import Optional
 
 from PySide6.QtWidgets import (
@@ -62,7 +63,7 @@ class TorBootstrapWorker(QThread):
         if success:
             self.finished_success.emit()
         else:
-            msg = self.tor_manager.error_message or "Error desconocido"
+            msg = self.tor_manager.error_message or tr("Error desconocido")
             self.finished_error.emit(msg)
 
 
@@ -88,7 +89,7 @@ class TorPanel(QWidget):
         layout.setSpacing(12)
 
         # Título
-        title = QLabel("Red Tor")
+        title = QLabel(tr("Red Tor"))
         title.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(title)
 
@@ -97,7 +98,7 @@ class TorPanel(QWidget):
         self.state_frame.setFrameStyle(QFrame.StyledPanel)
         state_layout = QVBoxLayout(self.state_frame)
 
-        self.status_label = QLabel("Estado: Desconectado")
+        self.status_label = QLabel(tr("Estado: Desconectado"))
         self.status_label.setWordWrap(True)
         state_layout.addWidget(self.status_label)
 
@@ -117,21 +118,21 @@ class TorPanel(QWidget):
         # Botones
         btn_layout = QVBoxLayout()
 
-        self.connect_btn = QPushButton("Conectar a Tor")
+        self.connect_btn = QPushButton(tr("Conectar a Tor"))
         self.connect_btn.clicked.connect(self._on_connect_clicked)
         btn_layout.addWidget(self.connect_btn)
 
-        self.cancel_btn = QPushButton("Cancelar")
+        self.cancel_btn = QPushButton(tr("Cancelar"))
         self.cancel_btn.clicked.connect(self._on_cancel_clicked)
         self.cancel_btn.setVisible(False)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.disconnect_btn = QPushButton("Desconectar")
+        self.disconnect_btn = QPushButton(tr("Desconectar"))
         self.disconnect_btn.clicked.connect(self._on_disconnect_clicked)
         self.disconnect_btn.setVisible(False)
         btn_layout.addWidget(self.disconnect_btn)
 
-        self.new_identity_btn = QPushButton("Nueva identidad")
+        self.new_identity_btn = QPushButton(tr("Nueva identidad"))
         self.new_identity_btn.clicked.connect(self._on_new_identity_clicked)
         self.new_identity_btn.setVisible(False)
         btn_layout.addWidget(self.new_identity_btn)
@@ -140,7 +141,7 @@ class TorPanel(QWidget):
         layout.addStretch()
     def _update_ui_state(self) -> None:
         """Actualiza la UI según el estado actual."""
-        err = self.tor_manager.get_availability_error() if TOR_AVAILABLE else "stem no instalado"
+        err = self.tor_manager.get_availability_error() if TOR_AVAILABLE else tr("stem no instalado")
 
         if err:
             self._show_unavailable(err)
@@ -165,10 +166,10 @@ class TorPanel(QWidget):
         elif status == TorStatus.CONNECTED:
             self._show_connected()
         else:
-            self._show_error(self.tor_manager.error_message or "Error")
+            self._show_error(self.tor_manager.error_message or tr("Error"))
     def _show_unavailable(self, message: str) -> None:
         """Estado: Tor no disponible (falta stem o binario)."""
-        self.status_label.setText("Tor no disponible")
+        self.status_label.setText(tr("Tor no disponible"))
         self.detail_label.setText(message)
         self.progress_bar.setVisible(False)
         self.connect_btn.setEnabled(False)
@@ -178,10 +179,10 @@ class TorPanel(QWidget):
         self.new_identity_btn.setVisible(False)
     def _show_disconnected(self) -> None:
         """Estado: Desconectado, listo para conectar."""
-        self.status_label.setText("Tor desconectado")
+        self.status_label.setText(tr("Tor desconectado"))
         self.detail_label.setText(
-            "Conecta a la red Tor para navegar de forma anónima. "
-            "El navegador se reiniciará automáticamente al conectar."
+            tr("Conecta a la red Tor para navegar de forma anónima. "
+            "El navegador se reiniciará automáticamente al conectar.")
         )
         self.progress_bar.setVisible(False)
         self.connect_btn.setEnabled(True)
@@ -192,8 +193,8 @@ class TorPanel(QWidget):
     def _show_connecting(self) -> None:
         """Estado: Bootstrap en progreso."""
         pct = self.tor_manager.bootstrap_percent
-        self.status_label.setText(f"Conectando... Bootstrap: {pct}%")
-        self.detail_label.setText("Espere mientras Tor establece el circuito...")
+        self.status_label.setText(tr("Conectando... Bootstrap: {pct}%", pct=pct))
+        self.detail_label.setText(tr("Espere mientras Tor establece el circuito..."))
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(pct)
         self.connect_btn.setVisible(False)
@@ -202,9 +203,9 @@ class TorPanel(QWidget):
         self.new_identity_btn.setVisible(False)
     def _show_connected(self) -> None:
         """Estado: Conectado."""
-        self.status_label.setText("Tor activo")
+        self.status_label.setText(tr("Tor activo"))
         self.status_label.setStyleSheet("QWidget { color: #2e7d32; font-weight: bold; }")
-        self.detail_label.setText("Tu tráfico está enrutado por la red Tor.")
+        self.detail_label.setText(tr("Tu tráfico está enrutado por la red Tor."))
         self.detail_label.setStyleSheet("QWidget { color: #666; font-size: 11px; }")
         self.progress_bar.setVisible(False)
         self.connect_btn.setVisible(False)
@@ -213,7 +214,7 @@ class TorPanel(QWidget):
         self.new_identity_btn.setVisible(True)
     def _show_error(self, message: str) -> None:
         """Estado: Error."""
-        self.status_label.setText("Error")
+        self.status_label.setText(tr("Error"))
         self.status_label.setStyleSheet("QWidget { color: #c62828; }")
         self.detail_label.setText(message)
         self.progress_bar.setVisible(False)
@@ -240,7 +241,7 @@ class TorPanel(QWidget):
     def _on_bootstrap_progress(self, pct: int) -> None:
         self.tor_manager._bootstrap_percent = pct
         self.progress_bar.setValue(pct)
-        self.status_label.setText(f"Conectando... Bootstrap: {pct}%")
+        self.status_label.setText(tr("Conectando... Bootstrap: {pct}%", pct=pct))
     def _on_bootstrap_success(self) -> None:
         self._bootstrap_worker = None
         # Si Tor ya estaba corriendo (SOCKS5 activo, _process=None), no pedir reinicio
@@ -249,13 +250,13 @@ class TorPanel(QWidget):
             self._update_ui_state()
             return
         if not self._restart_callback:
-            self._show_error("No hay callback de reinicio configurado")
+            self._show_error(tr("No hay callback de reinicio configurado"))
             return
         reply = QMessageBox.question(
             self,
-            "Reiniciar navegador",
-            "Tor está listo. El navegador se reiniciará para activar la conexión Tor.\n\n"
-            "¿Continuar?",
+            tr("Reiniciar navegador"),
+            tr("Tor está listo. El navegador se reiniciará para activar la conexión Tor.\n\n"
+            "¿Continuar?"),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
@@ -281,8 +282,8 @@ class TorPanel(QWidget):
         """Usuario pulsa Desconectar."""
         reply = QMessageBox.question(
             self,
-            "Desconectar Tor",
-            "El navegador se reiniciará para desactivar Tor.\n\n¿Continuar?",
+            tr("Desconectar Tor"),
+            tr("El navegador se reiniciará para desactivar Tor.\n\n¿Continuar?"),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -293,6 +294,6 @@ class TorPanel(QWidget):
     def _on_new_identity_clicked(self) -> None:
         """Usuario solicita nueva identidad (nuevo circuito)."""
         if self.tor_manager.request_new_identity():
-            self.detail_label.setText("Nueva identidad solicitada. El próximo circuito usará otra IP.")
+            self.detail_label.setText(tr("Nueva identidad solicitada. El próximo circuito usará otra IP."))
         else:
-            self.detail_label.setText("Error al solicitar nueva identidad.")
+            self.detail_label.setText(tr("Error al solicitar nueva identidad."))

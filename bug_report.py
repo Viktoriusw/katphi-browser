@@ -13,6 +13,7 @@ rutas personales, correos ni claves.
 """
 from __future__ import annotations
 
+from i18n import tr
 import getpass
 import json
 import logging
@@ -38,15 +39,15 @@ _REDACTIONS = [
     (re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s\"'<>)]+"), "<url>"),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), "<token>"),
     (re.compile(r"(?i)\b(bearer|token|authorization|api[_-]?key|password|passwd|secret)\b(\s*[:=]\s*|\s+)\S+"),
-     r"\1\2<oculto>"),
-    (re.compile(r"\b(sk|pk|rk)-[A-Za-z0-9_-]{16,}"), "<clave>"),
-    (re.compile(r"\b(hf|gh[pousr])_[A-Za-z0-9]{16,}"), "<clave>"),
-    (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"), "<clave>"),
-    (re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+"), "<correo>"),
+     tr(r"\1\2<oculto>")),
+    (re.compile(r"\b(sk|pk|rk)-[A-Za-z0-9_-]{16,}"), tr("<clave>")),
+    (re.compile(r"\b(hf|gh[pousr])_[A-Za-z0-9]{16,}"), tr("<clave>")),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"), tr("<clave>")),
+    (re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+"), tr("<correo>")),
     (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "<ip>"),
     (re.compile(r"\b(?:[0-9a-fA-F]{1,4}:){4,7}[0-9a-fA-F]{1,4}\b"), "<ip>"),
-    (re.compile(r"(?i)(/home/|/Users/|C:\\Users\\)[^/\\\s]+"), r"\1<usuario>"),
-    (re.compile(r"\bsc_[0-9a-f]{6,}\b"), "<cuenta>"),
+    (re.compile(r"(?i)(/home/|/Users/|C:\\Users\\)[^/\\\s]+"), tr(r"\1<usuario>")),
+    (re.compile(r"\bsc_[0-9a-f]{6,}\b"), tr("<cuenta>")),
     (re.compile(r"\b[0-9a-f]{32,}\b"), "<id>"),
 ]
 
@@ -97,7 +98,7 @@ def read_last_log() -> str:
                 f.readline()           # descartar la línea cortada
             return f.read().decode("utf-8", "replace")
     except OSError as e:
-        logger.warning("[bug_report] No se pudo leer el log: %s", e)
+        logger.warning(tr("[bug_report] No se pudo leer el log: %s"), e)
         return ""
 
 
@@ -160,9 +161,9 @@ class _Sender(QObject):
                     detail = r.json().get("detail", "")
                 except ValueError:
                     detail = ""
-                self.finished.emit(False, detail or f"Error del servidor ({r.status_code})")
+                self.finished.emit(False, detail or tr("Error del servidor ({status_code})", status_code=r.status_code))
         except Exception as e:
-            self.finished.emit(False, f"No se pudo conectar con Katphi ({type(e).__name__})")
+            self.finished.emit(False, tr("No se pudo conectar con Katphi ({name__})", name__=type(e).__name__))
 
 
 class BugReportDialog(QDialog):
@@ -170,7 +171,7 @@ class BugReportDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Informar de un error a Katphi")
+        self.setWindowTitle(tr("Informar de un error a Katphi"))
         self.setMinimumSize(720, 560)
         self._thread = None
         self._raw_log = read_last_log()
@@ -178,29 +179,29 @@ class BugReportDialog(QDialog):
 
         layout = QVBoxLayout(self)
         intro = QLabel(
-            "Puedes enviarnos el último log del navegador para ayudarnos a encontrar el error. "
+            tr("Puedes enviarnos el último log del navegador para ayudarnos a encontrar el error. "
             "<b>Solo se envía si tú lo confirmas.</b><br>"
             "Se envía: versión de Katphi, sistema operativo, tu descripción y el log de abajo, "
             "ya anonimizado.<br>No se envía: tu cuenta, cookies, el nombre del equipo, "
             "las páginas que visitas (las direcciones se sustituyen por &lt;url&gt;), rutas "
-            "personales, correos ni claves. Los informes se borran a los 90 días.")
+            "personales, correos ni claves. Los informes se borran a los 90 días."))
         intro.setWordWrap(True)
         intro.setTextFormat(Qt.RichText)
         layout.addWidget(intro)
 
-        layout.addWidget(QLabel("¿Qué estabas haciendo cuando ocurrió el error? (opcional)"))
+        layout.addWidget(QLabel(tr("¿Qué estabas haciendo cuando ocurrió el error? (opcional)")))
         self.description = QPlainTextEdit()
-        self.description.setPlaceholderText("Por ejemplo: al abrir un PDF descargado el navegador se cerró.")
+        self.description.setPlaceholderText(tr("Por ejemplo: al abrir un PDF descargado el navegador se cerró."))
         self.description.setMaximumHeight(90)
         layout.addWidget(self.description)
 
-        self.include_log = QCheckBox("Incluir el log (recomendado)")
+        self.include_log = QCheckBox(tr("Incluir el log (recomendado)"))
         self.include_log.setChecked(bool(self._raw_log))
         self.include_log.setEnabled(bool(self._raw_log))
         self.include_log.toggled.connect(self._refresh_preview)
         layout.addWidget(self.include_log)
 
-        layout.addWidget(QLabel("Esto es exactamente lo que se enviará:"))
+        layout.addWidget(QLabel(tr("Esto es exactamente lo que se enviará:")))
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
         self.preview.setLineWrapMode(QPlainTextEdit.NoWrap)
@@ -208,15 +209,15 @@ class BugReportDialog(QDialog):
         layout.addWidget(self.preview, 1)
         self.description.textChanged.connect(self._refresh_preview)
 
-        self.consent = QCheckBox("He revisado el contenido y quiero enviarlo a Katphi")
+        self.consent = QCheckBox(tr("He revisado el contenido y quiero enviarlo a Katphi"))
         layout.addWidget(self.consent)
 
         self.status = QLabel("")
         layout.addWidget(self.status)
 
         self.buttons = QDialogButtonBox()
-        self.send_btn = self.buttons.addButton("Enviar informe", QDialogButtonBox.AcceptRole)
-        self.buttons.addButton("Cancelar", QDialogButtonBox.RejectRole)
+        self.send_btn = self.buttons.addButton(tr("Enviar informe"), QDialogButtonBox.AcceptRole)
+        self.buttons.addButton(tr("Cancelar"), QDialogButtonBox.RejectRole)
         self.send_btn.setEnabled(False)
         self.consent.toggled.connect(self._update_send)
         self.buttons.accepted.connect(self._send)
@@ -233,9 +234,7 @@ class BugReportDialog(QDialog):
 
     def _refresh_preview(self):
         p = self.payload()
-        text = (f"Katphi {p['app_version']} · {p['platform']} · {p['os']}\n\n"
-                f"--- Descripción ---\n{p['description'] or '(sin descripción)'}\n\n"
-                f"--- Log ---\n{p['log'] or '(no se incluye el log)'}")
+        text = (tr("Katphi {value} · {value2} · {value3}\n\n--- Descripción ---\n{value4}\n\n--- Log ---\n{value5}", value=p['app_version'], value2=p['platform'], value3=p['os'], value4=p['description'] or tr('(sin descripción)'), value5=p['log'] or tr('(no se incluye el log)')))
         self.preview.setPlainText(text)
         self._update_send()
 
@@ -248,7 +247,7 @@ class BugReportDialog(QDialog):
         if not self.consent.isChecked():
             return
         payload = self.payload()
-        self.status.setText("Enviando…")
+        self.status.setText(tr("Enviando…"))
         self.send_btn.setEnabled(False)
         self._thread = QThread(self)
         self._sender = _Sender(payload)
@@ -263,9 +262,8 @@ class BugReportDialog(QDialog):
         if ok:
             self.report_id = info
             QMessageBox.information(
-                self, "Informe enviado",
-                f"Gracias. Tu informe se ha enviado con el código {info}.\n"
-                "Si nos escribes sobre este error, indica ese código.")
+                self, tr("Informe enviado"),
+                tr("Gracias. Tu informe se ha enviado con el código {info}.\nSi nos escribes sobre este error, indica ese código.", info=info))
             self.accept()
         else:
             self.status.setText(info)

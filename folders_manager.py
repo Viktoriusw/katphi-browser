@@ -10,6 +10,7 @@ Proporciona:
 
 from __future__ import annotations
 
+from i18n import tr
 import shutil
 import sqlite3
 from typing import Dict, List, Optional
@@ -39,10 +40,10 @@ class BookmarksMigration:
     def backup(self) -> bool:
         try:
             shutil.copy2(self.db_path, self.backup_path)
-            logger.info("Backup creado: %s", self.backup_path)
+            logger.info(tr("Backup creado: %s"), self.backup_path)
             return True
         except OSError as e:
-            logger.error("Error creando backup: %s", e)
+            logger.error(tr("Error creando backup: %s"), e)
             return False
     def restore(self) -> bool:
         try:
@@ -50,7 +51,7 @@ class BookmarksMigration:
             logger.info("Backup restaurado")
             return True
         except OSError as e:
-            logger.error("Error restaurando backup: %s", e)
+            logger.error(tr("Error restaurando backup: %s"), e)
             return False
     def migrate(self) -> bool:
         """
@@ -60,7 +61,7 @@ class BookmarksMigration:
         """
         import os
         if not os.path.exists(self.db_path):
-            logger.info("bookmarks.db no existe — creando BD nueva")
+            logger.info(tr("bookmarks.db no existe — creando BD nueva"))
             self._create_new_database()
             return True
         self.backup()
@@ -72,17 +73,17 @@ class BookmarksMigration:
                 self._ensure_bookmark_columns(conn)
                 self._migrate_categories_to_folders(conn)
                 conn.commit()
-                logger.info("Migración completada exitosamente")
+                logger.info(tr("Migración completada exitosamente"))
                 return True
             except Exception as e:
                 conn.rollback()
-                logger.error("Error durante migración: %s — restaurando backup", e)
+                logger.error(tr("Error durante migración: %s — restaurando backup"), e)
                 self.restore()
                 return False
             finally:
                 conn.close()
         except sqlite3.Error as e:
-            logger.error("No se pudo conectar a la BD: %s", e)
+            logger.error(tr("No se pudo conectar a la BD: %s"), e)
             return False
     # ── Privados ───────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ class BookmarksMigration:
         """)
         conn.commit()
         conn.close()
-        logger.info("Nueva BD creada: %s", self.db_path)
+        logger.info(tr("Nueva BD creada: %s"), self.db_path)
     def _ensure_folders_table(self, conn: sqlite3.Connection):
         conn.execute("""
             CREATE TABLE IF NOT EXISTS bookmark_folders (
@@ -143,10 +144,10 @@ class BookmarksMigration:
         existing = {row[1] for row in cur.fetchall()}
         if "folder_id" not in existing:
             conn.execute("ALTER TABLE bookmarks ADD COLUMN folder_id INTEGER DEFAULT 1")
-            logger.info("  + columna folder_id añadida a bookmarks")
+            logger.info(tr("  + columna folder_id añadida a bookmarks"))
         if "position" not in existing:
             conn.execute("ALTER TABLE bookmarks ADD COLUMN position INTEGER DEFAULT 0")
-            logger.info("  + columna position añadida a bookmarks")
+            logger.info(tr("  + columna position añadida a bookmarks"))
         if "date_added" not in existing:
             # SQLite no permite DEFAULT CURRENT_TIMESTAMP en ALTER TABLE
             # (solo se puede usar en CREATE TABLE), así que usamos DEFAULT NULL
@@ -178,7 +179,7 @@ class BookmarksMigration:
                     (cat_name,),
                 )
                 folder_id = cur2.lastrowid
-                logger.info("  Carpeta creada para categoría '%s' → id=%d", cat_name, folder_id)
+                logger.info(tr("  Carpeta creada para categoría '%s' → id=%d"), cat_name, folder_id)
             # Mover marcadores de esta categoría a la carpeta
             conn.execute(
                 "UPDATE bookmarks SET folder_id = ? WHERE category = ? AND (folder_id IS NULL OR folder_id = 1)",
@@ -245,7 +246,7 @@ class FoldersManager:
                     VALUES (1, 'Marcadores', NULL);
                 """)
         except sqlite3.Error as e:
-            logger.error("FoldersManager bootstrap error: %s", e)
+            logger.error(tr("FoldersManager bootstrap error: %s"), e)
     # ── Conexión ──────────────────────────────────────────────────────────────
 
     def _conn(self) -> sqlite3.Connection:
@@ -265,7 +266,7 @@ class FoldersManager:
         """
         name = (name or "").strip()
         if not name:
-            raise ValueError("El nombre de la carpeta no puede estar vacío")
+            raise ValueError(tr("El nombre de la carpeta no puede estar vacío"))
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT COALESCE(MAX(position), 0) FROM bookmark_folders WHERE parent_id = ?",
@@ -278,7 +279,7 @@ class FoldersManager:
                 (name, parent_id, next_pos),
             )
             folder_id = cur.lastrowid
-            logger.info("Carpeta creada: %r (id=%d, parent=%s)", name, folder_id, parent_id)
+            logger.info(tr("Carpeta creada: %r (id=%d, parent=%s)"), name, folder_id, parent_id)
             return folder_id
     def delete_folder(self, folder_id: int, recursive: bool = True) -> bool:
         """
@@ -287,7 +288,7 @@ class FoldersManager:
         No se puede eliminar la carpeta raíz (id=1).
         """
         if folder_id == self.ROOT_ID:
-            logger.error("No se puede eliminar la carpeta raíz")
+            logger.error(tr("No se puede eliminar la carpeta raíz"))
             return False
         try:
             with self._conn() as conn:
@@ -300,16 +301,16 @@ class FoldersManager:
                     for fid in reversed(descendants):
                         conn.execute("DELETE FROM bookmark_folders WHERE id = ?", (fid,))
                 conn.execute("DELETE FROM bookmark_folders WHERE id = ?", (folder_id,))
-                logger.info("Carpeta %d eliminada (recursive=%s)", folder_id, recursive)
+                logger.info(tr("Carpeta %d eliminada (recursive=%s)"), folder_id, recursive)
                 return True
         except sqlite3.Error as e:
-            logger.error("Error eliminando carpeta %d: %s", folder_id, e)
+            logger.error(tr("Error eliminando carpeta %d: %s"), folder_id, e)
             return False
     def rename_folder(self, folder_id: int, new_name: str) -> bool:
         """Renombra una carpeta."""
         new_name = (new_name or "").strip()
         if not new_name:
-            logger.error("El nombre no puede estar vacío")
+            logger.error(tr("El nombre no puede estar vacío"))
             return False
         try:
             with self._conn() as conn:
@@ -317,10 +318,10 @@ class FoldersManager:
                     "UPDATE bookmark_folders SET name = ? WHERE id = ?",
                     (new_name, folder_id),
                 )
-            logger.info("Carpeta %d renombrada a %r", folder_id, new_name)
+            logger.info(tr("Carpeta %d renombrada a %r"), folder_id, new_name)
             return True
         except sqlite3.Error as e:
-            logger.error("Error renombrando carpeta %d: %s", folder_id, e)
+            logger.error(tr("Error renombrando carpeta %d: %s"), folder_id, e)
             return False
     def move_folder(self, folder_id: int, new_parent_id: int) -> bool:
         """
@@ -328,13 +329,13 @@ class FoldersManager:
         Previene moverla dentro de sí misma o de sus descendientes.
         """
         if folder_id == self.ROOT_ID:
-            logger.error("No se puede mover la carpeta raíz")
+            logger.error(tr("No se puede mover la carpeta raíz"))
             return False
         if folder_id == new_parent_id:
-            logger.error("No se puede mover una carpeta dentro de sí misma")
+            logger.error(tr("No se puede mover una carpeta dentro de sí misma"))
             return False
         if self._is_descendant(folder_id, new_parent_id):
-            logger.error("No se puede mover una carpeta dentro de su propia descendencia")
+            logger.error(tr("No se puede mover una carpeta dentro de su propia descendencia"))
             return False
         try:
             with self._conn() as conn:
@@ -342,10 +343,10 @@ class FoldersManager:
                     "UPDATE bookmark_folders SET parent_id = ? WHERE id = ?",
                     (new_parent_id, folder_id),
                 )
-            logger.info("Carpeta %d movida a padre %d", folder_id, new_parent_id)
+            logger.info(tr("Carpeta %d movida a padre %d"), folder_id, new_parent_id)
             return True
         except sqlite3.Error as e:
-            logger.error("Error moviendo carpeta: %s", e)
+            logger.error(tr("Error moviendo carpeta: %s"), e)
             return False
     # ── Consultas ─────────────────────────────────────────────────────────────
 
@@ -391,7 +392,7 @@ class FoldersManager:
         folder = self.get_folder(parent_id)
         return {
             "id": parent_id,
-            "name": folder.name if folder else "Marcadores",
+            "name": folder.name if folder else tr("Marcadores"),
             "type": "folder",
             "children_folders": [
                 self.get_hierarchy(f.id) for f in self.get_children(parent_id)

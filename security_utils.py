@@ -3,6 +3,7 @@
 Utilidades de seguridad para cifrado de tokens y datos sensibles.
 """
 
+from i18n import tr
 import base64
 import hashlib
 import logging
@@ -69,7 +70,7 @@ class TokenEncryption:
         try:
             return self._fernet.encrypt(data.encode()).decode()
         except Exception as e:
-            logger.error("Error cifrando datos: %s", e)
+            logger.error(tr("Error cifrando datos: %s"), e)
             return ""
     def decrypt(self, encrypted_data: str) -> str:
         """Descifra un token Fernet.
@@ -85,7 +86,7 @@ class TokenEncryption:
             return self._fernet.decrypt(encrypted_data.encode()).decode()
         except Exception as e:
             err_msg = repr(e) if not str(e) else str(e)
-            logger.debug("Error descifrando datos (token inválido/expirado): %s", err_msg)
+            logger.debug(tr("Error descifrando datos (token inválido/expirado): %s"), err_msg)
             return ""
     # Alias para compatibilidad
     def encrypt_token(self, token: str) -> str:

@@ -13,6 +13,7 @@ editor premium por encima del visor gratuito).
 """
 from __future__ import annotations
 
+from i18n import tr
 import logging
 import mimetypes
 import os
@@ -87,5 +88,5 @@ def open_path(path: str) -> bool:
     try:
         return bool(h.open_callback(os.path.abspath(path)))
     except Exception as e:
-        logger.error("[file_handlers] %s no pudo abrir %s: %s", h.plugin_id, path, e)
+        logger.error(tr("[file_handlers] %s no pudo abrir %s: %s"), h.plugin_id, path, e)
         return False

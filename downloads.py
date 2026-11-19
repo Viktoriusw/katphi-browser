@@ -1,3 +1,4 @@
+from i18n import tr
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
 
 
@@ -76,7 +77,7 @@ class DownloadManager(QObject):
 
             'text/plain': 'Text File',
 
-            'text/html': 'Web Page',
+            'text/html': tr('Web Page'),
 
             'text/css': 'Style Sheet',
 
@@ -96,13 +97,13 @@ class DownloadManager(QObject):
 
             # Audio
 
-            'audio/mpeg': 'MP3 Audio File',
+            'audio/mpeg': tr('MP3 Audio File'),
 
-            'audio/wav': 'WAV Audio File',
+            'audio/wav': tr('WAV Audio File'),
 
-            'audio/ogg': 'OGG Audio File',
+            'audio/ogg': tr('OGG Audio File'),
 
-            'audio/webm': 'WebM Audio File',
+            'audio/webm': tr('WebM Audio File'),
 
             # Video
 
@@ -147,7 +148,7 @@ class DownloadManager(QObject):
 
         # Title
 
-        title = QLabel("Downloads")
+        title = QLabel(tr("Downloads"))
 
         title.setStyleSheet("font-size: 16px; font-weight: bold;")
 
@@ -197,7 +198,7 @@ class DownloadManager(QObject):
             profile.downloadRequested.connect(self.handle_download)
             self._connected_profiles.add(key)
         except Exception as e:
-            print(f"Error connecting download profile: {e}")
+            print(tr("Error connecting download profile: {e}", e=e))
 
     def handle_download(self, download):
         """Handles a new download"""
@@ -238,11 +239,11 @@ class DownloadManager(QObject):
 
                     self.parent,
 
-                    "Save File",
+                    tr("Save File"),
 
                     os.path.expanduser(f"~/Downloads/{suggested_name}"),
 
-                    "All Files (*.*)"
+                    tr("All Files (*.*)")
                 )
 
             if file_path:
@@ -280,7 +281,7 @@ class DownloadManager(QObject):
             else:
                 download.cancel()
         except Exception as e:
-            print(f"Error handling download: {str(e)}")
+            print(tr("Error handling download: {value}", value=str(e)))
 
             self.download_failed.emit(str(e))
     # -----------------------------------------------------------------
@@ -304,11 +305,11 @@ class DownloadManager(QObject):
             return None
         from PySide6.QtWidgets import QMessageBox
         box = QMessageBox(self.parent)
-        box.setWindowTitle("Descarga")
-        box.setText(f"¿Qué quieres hacer con «{suggested_name}»?")
-        open_btn = box.addButton(f"Abrir en {handler.label}", QMessageBox.AcceptRole)
-        save_btn = box.addButton("Guardar…", QMessageBox.ActionRole)
-        box.addButton("Cancelar", QMessageBox.RejectRole)
+        box.setWindowTitle(tr("Descarga"))
+        box.setText(tr("¿Qué quieres hacer con «{suggested_name}»?", suggested_name=suggested_name))
+        open_btn = box.addButton(tr("Abrir en {label}", label=handler.label), QMessageBox.AcceptRole)
+        save_btn = box.addButton(tr("Guardar…"), QMessageBox.ActionRole)
+        box.addButton(tr("Cancelar"), QMessageBox.RejectRole)
         box.setDefaultButton(open_btn)
         box.exec()
         clicked = box.clickedButton()
@@ -352,7 +353,7 @@ class DownloadManager(QObject):
                 try:
                     handler.open_callback(path)
                 except Exception as open_ex:
-                    print(f"[Downloads] {handler.plugin_id} no pudo abrir {path}: {open_ex}")
+                    print(tr("[Downloads] {plugin_id} no pudo abrir {path}: {open_ex}", plugin_id=handler.plugin_id, path=path, open_ex=open_ex))
             elif pending_open and state in (QWebEngineDownloadRequest.DownloadCancelled,
                                             QWebEngineDownloadRequest.DownloadInterrupted):
                 self._open_after_download.pop(id(download), None)
@@ -386,7 +387,7 @@ class DownloadManager(QObject):
 
                         self.download_progress.emit(progress)
         except Exception as e:
-            print(f"Error handling state change: {str(e)}")
+            print(tr("Error handling state change: {value}", value=str(e)))
     def get_file_type_info(self, file_path):
         """Gets information about the file type"""
 
@@ -439,7 +440,7 @@ class DownloadManager(QObject):
                 'icon': icon_name
             }
         except Exception as e:
-            print(f"Error getting file type: {str(e)}")
+            print(tr("Error getting file type: {value}", value=str(e)))
 
             return {
 
@@ -530,7 +531,7 @@ class DownloadManager(QObject):
 
             # Cancel button
 
-            cancel_button = QPushButton("Cancel")
+            cancel_button = QPushButton(tr("Cancel"))
 
             cancel_button.clicked.connect(lambda: self.cancel_download(download))
 
@@ -551,7 +552,7 @@ class DownloadManager(QObject):
 
             self.downloads_layout.addWidget(container)
         except Exception as e:
-            print(f"Error creating download widget: {str(e)}")
+            print(tr("Error creating download widget: {value}", value=str(e)))
     def cancel_download(self, download):
         """Cancels an ongoing download"""
 
@@ -563,7 +564,7 @@ class DownloadManager(QObject):
 
                 self.download_failed.emit("Download cancelled by user")
         except Exception as e:
-            print(f"Error cancelling download: {str(e)}")
+            print(tr("Error cancelling download: {value}", value=str(e)))
     def cleanup_download(self, download):
         """Cleans up download resources"""
 
@@ -577,7 +578,7 @@ class DownloadManager(QObject):
 
                 del self.downloads[download]
         except Exception as e:
-            print(f"Error cleaning up download: {str(e)}")
+            print(tr("Error cleaning up download: {value}", value=str(e)))
     def get_widget(self):
         """Returns the main widget of the download manager"""
 
@@ -610,22 +611,22 @@ class DownloadManager(QObject):
 
             msg.setIcon(QMessageBox.Information)
 
-            msg.setWindowTitle("Download started")
+            msg.setWindowTitle(tr("Download started"))
 
-            msg.setText(f"Downloading {file_info['description']}")
+            msg.setText(tr("Downloading {value}", value=file_info['description']))
 
-            msg.setInformativeText(f"Name: {path.name}\nLocation: {save_path}")
+            msg.setInformativeText(tr("Name: {name}\nLocation: {save_path}", name=path.name, save_path=save_path))
 
             # Add warning based on file type
 
             if file_info['mime_type'] in ['application/x-msdownload', 'application/x-executable']:
-                msg.setDetailedText("WARNING: This is an executable file. Ensure it comes from a trusted source.")
+                msg.setDetailedText(tr("WARNING: This is an executable file. Ensure it comes from a trusted source."))
             elif file_info['mime_type'].startswith('application/') and not file_info['mime_type'] in ['application/pdf', 'application/zip']:
-                msg.setDetailedText("WARNING: This file may contain executable code. Verify its source before opening it.")
+                msg.setDetailedText(tr("WARNING: This file may contain executable code. Verify its source before opening it."))
             msg.exec()
         except Exception as e:
-            print(f"Error showing confirmation: {str(e)}")
+            print(tr("Error showing confirmation: {value}", value=str(e)))
 
-            QMessageBox.information(self.parent, "Download started",
+            QMessageBox.information(self.parent, tr("Download started"),
 
-                                  f"The file is being downloaded to: {save_path}")
+                                  tr("The file is being downloaded to: {save_path}", save_path=save_path))

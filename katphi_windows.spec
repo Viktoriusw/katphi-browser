@@ -120,7 +120,7 @@ project_datas = [
 ]
 
 # Edición gratuita: el paquete solo puede llevar los plugins gratuitos.
-_FREE_PLUGINS = {'themes', 'split_view', 'voice_control', 'office_viewer'}
+_FREE_PLUGINS = {'themes', 'split_view', 'voice_control', 'office_viewer', 'adblock'}
 _bundled = {d for d in os.listdir('plugins')
             if os.path.isdir(os.path.join('plugins', d)) and d != '__pycache__'}
 if _bundled - _FREE_PLUGINS:
@@ -148,6 +148,11 @@ app_hiddenimports = [
     'file_handlers',
     # Informe de error anónimo (panel de logs)
     'bug_report',
+    # Idioma de la interfaz (es/en); los plugins lo importan en tiempo de ejecución
+    'i18n',
+    'locales',
+    'locales.en',
+    'locales.es',
     # Stdlib usados por reflexión
     'importlib.util',
     'importlib.metadata',
